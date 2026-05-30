@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.11.8,<0.12.0"]
+requires = ["uv_build>=0.11.17,<0.12.0"]
 build-backend = "uv_build"
 
 [project]
@@ -14,23 +14,23 @@ dependencies = [
 
 [dependency-groups]
 docs = [
-    "mkdocs>=1.6,<2",
-    "mkdocs-material>=9.7,<10",
-    "mkdocstrings[python]>=1.0,<2",
+    "mkdocs>=1.6.1,<2",
+    "mkdocs-material>=9.7.6,<10",
+    "mkdocstrings[python]>=1.0.4,<2",
 ]
 test = [
-    "pytest>=9.0,<10",
+    "pytest>=9.0.3,<10",
     "pytest-cov>=7.1,<8",
-    "python-dotenv>=1.2,<2",
+    "python-dotenv>=1.2.2,<2",
 ]
 dev = [
     {include-group = "docs"},
     {include-group = "test"},
-    "debugpy>=1.8,<2",
-    "keyring>=25.0,<26",
+    "debugpy>=1.8.20,<2",
+    "keyring>=25.7.0,<26",
     "mypy>=2.1,<3",
     "pre-commit>=4.6,<5",
-    "ruff>=0.15,<1",
+    "ruff>=0.15.15,<1",
 ]
 
 [tool.uv_build]
