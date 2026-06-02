@@ -1035,13 +1035,11 @@ wheels = [
 
 [[package]]
 name = "python-repo-template"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "." }
 
 [package.dev-dependencies]
 dev = [
-    { name = "azure-identity" },
-    { name = "azure-keyvault-secrets" },
     { name = "debugpy" },
     { name = "keyring" },
     { name = "mkdocs" },
@@ -1073,8 +1071,6 @@ test = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "azure-identity", specifier = ">=1.17,<2" },
-    { name = "azure-keyvault-secrets", specifier = ">=4.8,<5" },
     { name = "debugpy", specifier = ">=1.8,<2" },
     { name = "keyring", specifier = ">=25.0,<26" },
     { name = "mkdocs", specifier = ">=1.6,<2" },
