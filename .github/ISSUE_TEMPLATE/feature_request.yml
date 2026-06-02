@@ -1,5 +1,18 @@
+# =============================================================================
+# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# =============================================================================
+# This feature_request.yml is part of python_repo_template, a starter repo
+# scaffold.
+#
+# Purpose: Defines a structured GitHub issue form for feature requests.
+# Prompts contributors to explain the problem they are solving and the
+# alternatives they have already considered, which makes triage much easier.
+#
+# No customization is required for most projects.
+# =============================================================================
+
 name: Feature request
-description: Suggest a new page parser, client capability, or other enhancement.
+description: Suggest a new enhancement.
 labels: ["enhancement"]
 body:
   - type: markdown
@@ -12,7 +25,7 @@ body:
     attributes:
       label: Problem or motivation
       description: What are you trying to do that is currently difficult or impossible?
-      placeholder: "There is no parser for the Adlumin Reports page, so I have to ..."
+      placeholder: ""
     validations:
       required: true
 

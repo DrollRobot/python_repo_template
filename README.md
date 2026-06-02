@@ -9,8 +9,23 @@
 
 My goal with this project is to create a baseline for new python projects with the most commonly used tools and community best practices.
 
-It's mostly for personal use, but maybe others will have suggestions for improvements, or find it useful themselves?
+It's mostly for personal use. But maybe others will have suggestions? Or find it useful themselves?
 
+
+# Tool choices
+
+Based on some personal preference, and what I understand are the most widely used tools in the Python ecosystem.
+
+- **uv** for dependency management and virtual environments. Fast. Allows very simple package install directly from Github.
+- **pre-commit** for git hooks to run checks before commits.
+- **ruff** for linting and formatting. Fast.
+- **mypy** for static type checking.
+- **pytest** for testing.
+- **mkdocs** for documentation. Integrates easily with GitHub Pages for hosting.
+- **keyring** for credential storage. Cross-platform. Allows never keeping secrets in the repo. 
+- **detect-secrets** for scanning for secrets before commits. Helps prevent accidental leaks.
+- **GitHub Actions** for CI and docs deployment. Free for public repos, and widely used.
+- **VSCode** for development. Most popular IDE. Lots of documentation, extensions.
 
 ## Making a new repo from this template
 
@@ -22,6 +37,7 @@ git clone https://github.com/DrollRobot/python_repo_template.git YOUR-PROJECT-NA
 
 - Perform a recursive find/replace replacing 'python_repo_template' with your_project_name.
 - Perform a recursive find/replace replacing 'python-repo-template' with your-project-name.
+- Perform a recursive find/replace replacing 'DrollRobot' with your github username.
 
 **Choose a license**
 
@@ -76,5 +92,7 @@ The GitHub Actions workflow in `.github/workflows/docs.yml` will keep the site u
 ```powershell
 uvx detect-secrets scan > .secrets.baseline
 ```
+
+**Write some code!**
 
 

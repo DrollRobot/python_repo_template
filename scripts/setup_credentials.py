@@ -1,15 +1,20 @@
-"""Setup script: store Adlumin credentials in the OS native keyring.
+"""Setup script: Stores secrets in the OS native keyring.
 
-Run this once per credential type, then configure .env to use the
+Stores secrets in the OS native keyring rather than on disk in .env.testing.
+The .env.testing file holds the keyring key names, not the actual secrets.
+
+Run this once per credential type, then configure .env.testing to use the
 stored credentials for tests and dev scripts without Azure KeyVault.
 
 Usage:
-    uv run scripts/setup_credentials.py --type userpassotp
-    uv run scripts/setup_credentials.py --type session_token
+    uv run scripts/setup_credentials.py --type user_pass
+    uv run scripts/setup_credentials.py --type cert_thumbprint
+    uv run scripts/setup_credentials.py --type service_principal
 
 Credential types:
-    userpassotp    -- portal username, password, and TOTP seed (full authentication)
-    session_token  -- existing _adlumin_session cookie value (skips authentication)
+    user_pass         -- username and password
+    cert_thumbprint   -- certificate thumbprint (single value)
+    service_principal -- tenant ID, client ID, and client secret
 
 Credentials are stored in:
   - Windows: Credential Manager
@@ -26,57 +31,77 @@ from pathlib import Path
 
 import keyring
 
+from tests._bootstrap import _KEYRING_SERVICE, load_settings
+
 _PROJECT_ROOT = Path(__file__).parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from tests._bootstrap import _KEYRING_SERVICE, load_settings  # noqa: E402
 
+def _store_user_pass(settings: dict[str, str]) -> None:
+    print("Script assumes you have the following in your .env file:")
+    print("    CREDENTIAL_BACKEND=keyring")
+    print("    CREDENTIAL_TYPE=user_pass")
+    print("    USERNAME_KEY=python_repo_template_username")
+    print("    PASSWORD_KEY=python_repo_template_password")
 
-def _store_userpassotp(settings: dict[str, str]) -> None:
-    username_key = settings["ADLUMIN_USERNAME_SECRET_NAME"]
-    password_key = settings["ADLUMIN_PASSWORD_SECRET_NAME"]
-    totp_key = settings["ADLUMIN_TOTP_SECRET_NAME"]
+    username_key = settings["USERNAME_KEY"]
+    password_key = settings["PASSWORD_KEY"]
 
-    print("Storing userpassotp credentials")
-    print(f"  Keyring service : {_KEYRING_SERVICE}")
-    print(f"  Username key    : {username_key}")
-    print(f"  Password key    : {password_key}")
-    print(f"  TOTP seed key   : {totp_key}")
     print()
-
-    username = getpass.getpass("Adlumin portal username (email): ")
-    password = getpass.getpass("Adlumin portal password: ")
-    totp_seed = getpass.getpass("TOTP seed (base32 secret, not a one-time code): ")
+    print(f"  Keyring service : {_KEYRING_SERVICE}")
+    username = getpass.getpass(f"Enter value for {username_key}: ")
+    password = getpass.getpass(f"Enter value for {password_key}: ")
 
     keyring.set_password(_KEYRING_SERVICE, username_key, username)
     keyring.set_password(_KEYRING_SERVICE, password_key, password)
-    keyring.set_password(_KEYRING_SERVICE, totp_key, totp_seed)
 
     print()
-    print("Credentials stored. Add these lines to .env:")
-    print()
+    print("Credentials stored.")
+
+
+def _store_cert_thumbprint(settings: dict[str, str]) -> None:
+    thumbprint_key = settings["CERT_THUMBPRINT_KEY"]
+
+    print("Script assumes you have the following in your .env file:")
     print("    CREDENTIAL_BACKEND=keyring")
-    print("    CREDENTIAL_TYPE=userpassotp")
-
-
-def _store_session_token(settings: dict[str, str]) -> None:
-    token_key = settings["ADLUMIN_SESSION_TOKEN_SECRET_NAME"]
-
-    print("Storing session token")
-    print(f"  Keyring service    : {_KEYRING_SERVICE}")
-    print(f"  Session token key  : {token_key}")
-    print()
-
-    session_token = getpass.getpass("_adlumin_session cookie value: ")
-
-    keyring.set_password(_KEYRING_SERVICE, token_key, session_token)
+    print("    CREDENTIAL_TYPE=cert_thumbprint")
+    print("    CERT_THUMBPRINT_KEY=python_repo_template_cert_thumbprint")
 
     print()
-    print("Session token stored. Add these lines to .env:")
+    print(f"  Keyring service : {_KEYRING_SERVICE}")
+    thumbprint = getpass.getpass(f"Enter value for {thumbprint_key}: ")
+
+    keyring.set_password(_KEYRING_SERVICE, thumbprint_key, thumbprint)
+
     print()
+    print("Credentials stored.")
+
+
+def _store_service_principal(settings: dict[str, str]) -> None:
+    tenant_id_key = settings["TENANT_ID_KEY"]
+    client_id_key = settings["CLIENT_ID_KEY"]
+    client_secret_key = settings["CLIENT_SECRET_KEY"]
+
+    print("Script assumes you have the following in your .env.testing file:")
     print("    CREDENTIAL_BACKEND=keyring")
-    print("    CREDENTIAL_TYPE=session_token")
+    print("    CREDENTIAL_TYPE=service_principal")
+    print("    TENANT_ID_KEY=python_repo_template_tenant_id")
+    print("    CLIENT_ID_KEY=python_repo_template_client_id")
+    print("    CLIENT_SECRET_KEY=python_repo_template_client_secret")
+
+    print()
+    print(f"  Keyring service : {_KEYRING_SERVICE}")
+    tenant_id = getpass.getpass(f"Enter value for {tenant_id_key}: ")
+    client_id = getpass.getpass(f"Enter value for {client_id_key}: ")
+    client_secret = getpass.getpass(f"Enter value for {client_secret_key}: ")
+
+    keyring.set_password(_KEYRING_SERVICE, tenant_id_key, tenant_id)
+    keyring.set_password(_KEYRING_SERVICE, client_id_key, client_id)
+    keyring.set_password(_KEYRING_SERVICE, client_secret_key, client_secret)
+
+    print()
+    print("Credentials stored.")
 
 
 def main() -> None:
@@ -87,7 +112,7 @@ def main() -> None:
     parser.add_argument(
         "--type",
         dest="cred_type",
-        choices=["userpassotp", "session_token"],
+        choices=["user_pass", "cert_thumbprint", "service_principal"],
         required=True,
         help="Type of credentials to store.",
     )
@@ -98,15 +123,14 @@ def main() -> None:
     except FileNotFoundError as exc:
         sys.exit(f"ERROR: .env not found at {exc}")
 
-    if args.cred_type == "session_token":
-        if "ADLUMIN_SESSION_TOKEN_SECRET_NAME" not in settings:
-            sys.exit(
-                "ERROR: ADLUMIN_SESSION_TOKEN_SECRET_NAME is not set in .env. "
-                "Add it with the key name to use for the session token."
-            )
-        _store_session_token(settings)
+    if args.cred_type == "user_pass":
+        _store_user_pass(settings)
+    elif args.cred_type == "cert_thumbprint":
+        _store_cert_thumbprint(settings)
+    elif args.cred_type == "service_principal":
+        _store_service_principal(settings)
     else:
-        _store_userpassotp(settings)
+        sys.exit(f"ERROR: Unsupported credential type: {args.cred_type}")
 
 
 if __name__ == "__main__":

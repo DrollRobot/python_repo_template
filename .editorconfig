@@ -1,3 +1,22 @@
+# =============================================================================
+# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# =============================================================================
+# This .editorconfig is part of python_repo_template, a starter repo scaffold.
+#
+# Purpose: .editorconfig is read by most editors (VS Code, PyCharm, Vim, etc.)
+# to enforce consistent whitespace and encoding rules across all contributors,
+# regardless of their personal editor settings. No plugin is required in
+# editors that support it natively; VS Code and others auto-detect the file.
+#
+# The defaults here follow Python community conventions (PEP 8):
+#   - UTF-8 encoding, LF line endings, 4-space indentation
+#   - Final newline on all files, trailing whitespace trimmed
+#   - 2-space indentation for YAML/JSON/TOML (common in those ecosystems)
+#   - Trailing whitespace preserved in Markdown (two trailing spaces = <br>)
+#
+# Adjust indent sizes or add per-file-type overrides to match your project.
+# =============================================================================
+
 root = true
 
 [*]
@@ -12,7 +31,7 @@ trim_trailing_whitespace = true
 indent_size = 2
 
 [*.md]
-trim_trailing_whitespace = false  # markdown uses trailing spaces for line breaks
+trim_trailing_whitespace = false
 
 [Makefile]
 indent_style = tab

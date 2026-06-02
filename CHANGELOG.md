@@ -1,3 +1,13 @@
+<!--
+=============================================================================
+TEMPLATE SETUP NOTES -- remove this block - FIXME
+=============================================================================
+This CHANGELOG.md is part of python_repo_template, a starter repo scaffold.
+- Replace "python-repo-template" in the comparison/release URLs with your repo name.
+- Fill in the [1.0.0] release date and describe your initial release under ### Added.
+=============================================================================
+-->
+
 # Changelog
 
 All notable changes to this project will be documented in this file.

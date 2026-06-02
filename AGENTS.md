@@ -1,3 +1,14 @@
+<!--
+=============================================================================
+TEMPLATE SETUP NOTES -- remove this block - FIXME
+=============================================================================
+This AGENTS.md is part of python_repo_template, a starter repo scaffold.
+It instructs AI coding agents (GitHub Copilot, Cursor, etc.) on project
+conventions, required checks, and how to run tests.
+- Fill in the Package Purpose section.
+=============================================================================
+-->
+
 # Agent Rules
 
 ## Package Purpose
@@ -5,8 +16,12 @@
 <!-- FIXME: Describe what this package does, who consumes it, and any key
      constraints (e.g. "credentials are always supplied by the caller"). -->
 
-`python-repo-template` is a Python package that FIXME.
+`python-repo-template` is a Python package that ...
 
+## Code Formatting and Style
+
+- Follow pep8 style guidelines.
+- Always include thorough docstrings for all functions and classes.
 
 ## Writing Tests for New Code
 
@@ -21,7 +36,7 @@
 # dependencies
 uv sync                               # after pyproject.toml edits
 uv lock --check                       # verify lockfile in sync
-uv run pre-commit autoupdate          # peridically update precommit dependencies
+uv run pre-commit autoupdate          # periodically update precommit dependencies
 
 # code checks
 uv run ruff check .                   # lint

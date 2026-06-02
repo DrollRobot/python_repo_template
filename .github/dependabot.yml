@@ -1,3 +1,23 @@
+# =============================================================================
+# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# =============================================================================
+# This dependabot.yml is part of python_repo_template, a starter repo scaffold.
+#
+# Purpose: Dependabot is a GitHub service that automatically opens pull
+# requests to bump outdated dependencies. With this config it runs weekly
+# for two ecosystems:
+#   - uv          -- Python package dependencies (uv.lock / pyproject.toml)
+#   - github-actions -- .github/workflows action version pins
+#
+# Deps in each ecosystem are grouped into a single PR per cycle so you get
+# one review rather than one PR per package.
+#
+# To customize:
+#   - Change interval to "monthly" if weekly PRs are too noisy.
+#   - Adjust open-pull-requests-limit if you want more or fewer open at once.
+#   - Add a target-branch key if your default branch is not "main".
+# =============================================================================
+
 # .github/dependabot.yml
 
 version: 2

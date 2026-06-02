@@ -1,3 +1,16 @@
+# =============================================================================
+# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# =============================================================================
+# This docs.yml is part of python_repo_template, a starter repo scaffold.
+#
+# Purpose: Deploys the MkDocs site to GitHub Pages whenever docs/, mkdocs.yml,
+# or src/ changes are pushed to main. The gh-deploy command pushes the built
+# site to the gh-pages branch, which GitHub Pages serves automatically.
+#
+# Pre-requisite (one-time, in repo Settings -> Pages):
+#   Set the source to "Deploy from a branch" and select the gh-pages branch.
+# =============================================================================
+
 # .github/workflows/docs.yml
 
 name: Docs

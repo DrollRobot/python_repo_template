@@ -1,3 +1,29 @@
+# =============================================================================
+# TEMPLATE SETUP NOTES -- remove this block - FIXME
+# =============================================================================
+# This ci.yml is part of python_repo_template, a starter repo scaffold.
+#
+# Purpose: Runs on every push and pull request to main. Blocks merges if
+# lint, formatting, type checking, or unit tests fail. Integration tests
+# (marked @pytest.mark.integration) are excluded here because they require
+# credentials; run them separately in a secrets-aware workflow if needed.
+#
+# GitHub setup (one-time, to make CI actually block merges):
+#   1. Push this file to your repo so the workflow runs at least once.
+#   2. Go to Settings -> Branches -> Add branch protection rule.
+#   3. Set the pattern to: main
+#   4. Enable "Require status checks to pass before merging".
+#   5. Search for and add the "check" job (the job name from this file).
+#   6. Optionally enable "Require branches to be up to date before merging".
+#   7. Save the rule.
+#
+# Without branch protection, CI will still run and report pass/fail, but
+# it will not prevent merging a failing PR.
+#
+# No customization is required for most projects. If you rename src/ or
+# add test directories, update the mypy and pytest commands accordingly.
+# =============================================================================
+
 # .github/workflows/ci.yml
 
 name: CI

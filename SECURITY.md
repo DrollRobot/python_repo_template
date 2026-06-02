@@ -1,3 +1,21 @@
+<!--
+=============================================================================
+TEMPLATE SETUP NOTES -- remove this block - FIXME
+=============================================================================
+This SECURITY.md is part of python_repo_template, a starter repo scaffold.
+
+Purpose: SECURITY.md is recognized automatically by GitHub. It appears on
+your repository's Security tab and is linked whenever someone tries to open
+a public issue that looks like a vulnerability report. It tells users how to
+report security issues responsibly (private disclosure) rather than exposing
+them publicly before a fix is available.
+
+To customize for your project:
+- Adjust the supported versions table to reflect your release policy.
+- Update the response timeline if 5 business days does not fit your project.
+=============================================================================
+-->
+
 # Security Policy
 
 ## Supported versions
@@ -19,7 +37,7 @@ Use one of the following:
   click "Report a vulnerability". This keeps the report private and creates a
   coordinated disclosure process.
 - **Email:** Contact the maintainer at the email address listed on the GitHub
-  profile for [FIXME](https://github.com/FIXME).
+  profile for [DrollRobot](https://github.com/DrollRobot).
 
 Please include:
 

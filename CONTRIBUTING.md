@@ -1,3 +1,17 @@
+<!--
+=============================================================================
+TEMPLATE SETUP NOTES -- remove this block when you use this template
+=============================================================================
+This CONTRIBUTING.md is part of python_repo_template, a starter repo scaffold.
+
+Purpose: CONTRIBUTING.md is recognized automatically by GitHub. It is linked
+in the sidebar when someone opens a new issue or pull request, prompting them
+to read your guidelines before submitting. It tells contributors how to set
+up a dev environment, run checks, follow your code conventions, and submit
+changes in a way that is easy for you to review and merge.
+=============================================================================
+-->
+
 # Contributing to python-repo-template
 
 Thank you for your interest in contributing!
@@ -45,7 +59,6 @@ uv run mkdocs gh-deploy --force
 
 Pre-commit runs lint, format, type check, and secret detection on every
 commit. To run it manually across all files:
-
 ```
 uv run pre-commit run --all-files
 ```
@@ -54,24 +67,20 @@ uv run pre-commit run --all-files
 
 ### Code structure
 
-- `src/adlumin_web_tools/` -- library source (src layout)
+<!-- FIXME: update paths and descriptions to match your project layout -->
+
+- `src/python_repo_template/` -- library source (src layout)
 - `tests/` -- pytest test suite
 - `docs/` -- MkDocs documentation source
 
-### request_* / parse_* pattern
+### Naming and module conventions
 
-HTTP calls and HTML parsing are intentionally kept in separate functions:
-
-- `request_*` -- makes the HTTP call, returns raw HTML
-- `parse_*` -- accepts raw HTML, returns typed objects
-
-Write one test for each. Integration tests (network) go in
-`tests/test_integration.py`, marked `@pytest.mark.integration`. Pure-logic
-tests go in `tests/test_pages_unit.py` or `tests/test_utils.py`.
+<!-- FIXME: describe the key architectural patterns your project uses.
+     Example patterns: command/handler, service/repository, client/parser, etc. -->
 
 ### Public API
 
-Export new public symbols from `src/adlumin_web_tools/__init__.py`.
+Export new public symbols from `src/python_repo_template/__init__.py`.
 
 ### Type annotations
 

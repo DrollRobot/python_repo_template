@@ -1,3 +1,16 @@
+# =============================================================================
+# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# =============================================================================
+# This audit.yml is part of python_repo_template, a starter repo scaffold.
+#
+# Purpose: Runs `uv audit` on every push and pull request to main, checking
+# all locked dependencies against the OSV vulnerability database. Blocks
+# merges if any known vulnerability is found in the dependency tree.
+#
+# No customization is required. To suppress a false positive, add a
+# pyproject.toml [tool.uv.audit] ignore entry with a justification comment.
+# =============================================================================
+
 # .github/workflows/audit.yml
 
 name: Security audit

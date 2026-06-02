@@ -1,6 +1,27 @@
-# to set up:
-# uv add --dev pre-commit or uv tool install pre-commit
-# uv run pre-commit install
+# =============================================================================
+# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# =============================================================================
+# This .pre-commit-config.yaml is part of python_repo_template, a starter
+# repo scaffold. pre-commit runs a suite of checks automatically on every
+# git commit, catching lint errors, formatting issues, type errors, and
+# accidentally committed secrets before they reach the repo.
+#
+# First-time setup (run once after cloning):
+#   uv run pre-commit install          # install the git hook
+#   uv run pre-commit run --all-files  # optional: check existing files now
+#
+# To keep hook versions current:
+#   uv run pre-commit autoupdate       # bump all rev: pins to latest
+#
+# Hooks included in this config:
+#   pre-commit-hooks  -- trailing whitespace, EOF newline, YAML/TOML syntax,
+#                        large file guard, line-ending normalization
+#   ruff              -- lint (with --fix) and format
+#   mypy              -- static type checking across src/ and tests/
+#   detect-secrets    -- prevents secrets from being committed; requires a
+#                        baseline file (.secrets.baseline). Create it once with:
+#                          uv run detect-secrets scan > .secrets.baseline
+# =============================================================================
 
 default_language_version:
   python: python3.13

@@ -1,3 +1,19 @@
+# =============================================================================
+# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# =============================================================================
+# This bug_report.yml is part of python_repo_template, a starter repo scaffold.
+#
+# Purpose: Defines a structured GitHub issue form for bug reports. GitHub
+# renders this as a web form instead of a blank text box, which produces
+# more complete and consistent reports.
+#
+# To customize:
+#   - Update the version label ("python_repo_template version") to your package name.
+#   - Replace the placeholder text in "Steps to reproduce" with a
+#     relevant example from your own API.
+#   - Do a find/replace on "DrollRobot" to substitute your GitHub username.
+# =============================================================================
+
 name: Bug report
 description: Something is not working as documented or expected.
 labels: ["bug"]
@@ -13,7 +29,7 @@ body:
     attributes:
       label: What happened?
       description: A clear description of the bug.
-      placeholder: "When I call parse_dashboard() with HTML that contains ... it raises ..."
+      placeholder: "When I call <function>() with ... it raises ..."
     validations:
       required: true
 
@@ -37,7 +53,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: adlumin_web_tools version
+      label: python_repo_template version
       placeholder: "1.0.0"
     validations:
       required: true
