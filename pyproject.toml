@@ -71,3 +71,7 @@ convention = "google"
 [tool.mypy]
 python_version = "3.13"
 strict = true
+
+# [[tool.mypy.overrides]] # FIXME add if imports don't provide type hints and throw mypy errors
+# module = [""] 
+# ignore_missing_imports = true

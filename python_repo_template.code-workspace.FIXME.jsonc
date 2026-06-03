@@ -115,5 +115,8 @@
     //         "approveResponse": true
     //     }
     // },
+    // "chat.tools.terminal.autoApprove": { # FIXME preapprove specific tools for agents to run in the terminal
+    //     "uv": true
+    // }
 }
 }
