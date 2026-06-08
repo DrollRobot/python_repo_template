@@ -100,7 +100,7 @@
     "chat.disableAIFeatures": true, // FIXME AI disabled by default, just in case you're not a fan
     "github.copilot.nextEditSuggestions.enabled": true,
     "github.copilot.enable": { // FIXME in case you want to restrict what file types AI can see
-        "*": false, // all file types disabled by default. enable only the types you want
+        "*": false, // all file types disabled by default. enable types only as needed.
         "plaintext": true,
         "markdown": true,
         "python": true,
