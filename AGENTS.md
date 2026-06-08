@@ -16,39 +16,29 @@ conventions, required checks, and how to run tests.
 <!-- FIXME: Describe what this package does, who consumes it, and any key
      constraints (e.g. "credentials are always supplied by the caller"). -->
 
-`python-repo-template` is a Python package that ...
+## General rules
+- All environment specific values should live in .env, not in source.
+- Fail early, fail loudly. Avoid default values that could mask errors. 
 
 ## Code Formatting and Style
 
 - Follow pep8 style guidelines.
 - Always include thorough docstrings for all functions and classes.
+- Line length limit: 100 characters.
+- Use type hints for all function signatures.
 
 ## Writing Tests for New Code
 
-- Pure logic (parsers, utilities): unit tests in `tests/`. No network or I/O.
-- External calls (HTTP, DB, filesystem): integration tests marked
+- All new code should have tests for every branch.
+- Pure logic branches (parsers, utilities with no network or I/O) get unit
+  tests in `tests/`.
+- Tests for branches with external calls (HTTP, DB) should be marked
   `@pytest.mark.integration`.
-- Export new public symbols from `src/python_repo_template/__init__.py`.
 
-## After Any Code Changes:
+## Testing after code changes
 
-```
-# dependencies
-uv sync                               # after pyproject.toml edits
-uv lock --check                       # verify lockfile in sync
-uv run pre-commit autoupdate          # periodically update precommit dependencies
+After writing new code, run tests as described in [AGENTS.TESTING.md](AGENTS.TESTING.md).
 
-# code checks
-uv run ruff check .                   # lint
-uv run ruff format .                  # apply ruff formatting
-uv run mypy src tests                 # type check
+## Build and Release
 
-# tests
-uv run pytest -m "not integration"    # offline tests
-uv run pytest                         # online and offline tests (when credentialed)
-
-# docs
-uv run mkdocs build --strict          # build docs, fail on warnings
-uv run mkdocs gh-deploy --force       # push to GitHub Pages (gh-pages branch)
-
-```
+For build and release procedures, see [AGENTS.RELEASING.md](AGENTS.RELEASING.md).

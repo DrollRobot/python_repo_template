@@ -65,7 +65,7 @@ uv run pre-commit autoupdate
 
 **Create CLAUDE.md symlink**
 
-- Claude AI does not read `AGENTS.md` directly; a symlink lets it see the same instructions.
+- Claude Code does not read `AGENTS.md` directly; a symlink lets it see the same instructions.
 ```powershell
 # Windows
 New-Item -ItemType SymbolicLink -Path CLAUDE.md -Target AGENTS.md
@@ -94,5 +94,3 @@ uvx detect-secrets scan > .secrets.baseline
 ```
 
 **Write some code!**
-
-
