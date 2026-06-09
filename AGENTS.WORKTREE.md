@@ -6,9 +6,9 @@ repo-level `AGENTS.md`; this file wins on worktree/PR matters.
 ## Assume
 
 - You're in a worktree the user already opened, on branch `wt/<slug>`, forked
-  from and tracking the remote base (`origin/dev`, `origin/develop`, etc.) that
-  is the PR target — i.e. created with `git worktree add -b wt/<slug>
-  origin/<base>` after a fetch.
+  from and tracking the remote base (normally `origin/develop`) that is the PR
+  target — i.e. created with `git worktree add -b wt/<slug> origin/<base>`
+  after a fetch.
 - `git` and `gh` exist and are authenticated. Never handle credentials yourself.
 
 ## Testing
@@ -21,6 +21,22 @@ repo-level `AGENTS.md`; this file wins on worktree/PR matters.
 - Commit in logical units with conventional-commit messages
   (`type(scope): summary`). Keep the branch buildable.
 
+## Branching model: git flow
+
+This project uses **git flow**. That means:
+
+- `main` is the release branch. It is **protected** — never commit, merge, or
+  push to it directly. Releases land on `main` only through the maintainer's
+  release process.
+- `develop` is the integration branch. It is the **default base** for all
+  feature work and pull requests. Unless the user explicitly says otherwise,
+  the PR target is always `develop`, never `main`.
+- Feature work happens on `wt/<slug>` branches forked
+  from `develop`, and merges back into `develop` via PR.
+
+If you ever find yourself about to push or open a PR against `main`, stop —
+that is almost certainly wrong. The target is `develop`.
+
 ## Pull Requests
 
 When the user confirms they're ready to complete the worktree and create a pull
@@ -31,8 +47,9 @@ A `-u` push repoints tracking, so we need to be sure.
 ```
 git rev-parse --abbrev-ref '@{u}'
 ```
-The above will output something like origin/dev. The base you would use in step
-3 is 'dev'.
+The above will output something like origin/develop. The base you would use in
+step 3 is 'develop' — the git flow integration branch, and the default target
+for this project. Never target `main`.
 Still not sure? Ask the user. Never guess the merge target.
 
 **2. Push:**
