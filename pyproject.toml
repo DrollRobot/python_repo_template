@@ -23,6 +23,7 @@ test = [
     "pytest>=9.0,<10",
     "pytest-cov>=7.1,<8",
     "python-dotenv>=1.2,<2",
+    "tabulate>=0.10,<1",
 ]
 keyvault = [
     "azure-identity>=1.17,<2",
