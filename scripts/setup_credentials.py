@@ -37,13 +37,15 @@ _PROJECT_ROOT = Path(__file__).parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+PACKAGE_NAME = "python_repo_template"
+
 
 def _store_user_pass(settings: dict[str, str]) -> None:
     print("Script assumes you have the following in your .env file:")
     print("    CREDENTIAL_BACKEND=keyring")
     print("    CREDENTIAL_TYPE=user_pass")
-    print("    USERNAME_KEY=python_repo_template_username")
-    print("    PASSWORD_KEY=python_repo_template_password")
+    print(f"    USERNAME_KEY={PACKAGE_NAME}_username")
+    print(f"    PASSWORD_KEY={PACKAGE_NAME}_password")
 
     username_key = settings["USERNAME_KEY"]
     password_key = settings["PASSWORD_KEY"]
@@ -66,7 +68,7 @@ def _store_cert_thumbprint(settings: dict[str, str]) -> None:
     print("Script assumes you have the following in your .env file:")
     print("    CREDENTIAL_BACKEND=keyring")
     print("    CREDENTIAL_TYPE=cert_thumbprint")
-    print("    CERT_THUMBPRINT_KEY=python_repo_template_cert_thumbprint")
+    print(f"    CERT_THUMBPRINT_KEY={PACKAGE_NAME}_cert_thumbprint")
 
     print()
     print(f"  Keyring service : {_KEYRING_SERVICE}")
@@ -86,9 +88,9 @@ def _store_service_principal(settings: dict[str, str]) -> None:
     print("Script assumes you have the following in your .env.testing file:")
     print("    CREDENTIAL_BACKEND=keyring")
     print("    CREDENTIAL_TYPE=service_principal")
-    print("    TENANT_ID_KEY=python_repo_template_tenant_id")
-    print("    CLIENT_ID_KEY=python_repo_template_client_id")
-    print("    CLIENT_SECRET_KEY=python_repo_template_client_secret")
+    print(f"    TENANT_ID_KEY={PACKAGE_NAME}_tenant_id")
+    print(f"    CLIENT_ID_KEY={PACKAGE_NAME}_client_id")
+    print(f"    CLIENT_SECRET_KEY={PACKAGE_NAME}_client_secret")
 
     print()
     print(f"  Keyring service : {_KEYRING_SERVICE}")
