@@ -67,6 +67,8 @@ git merge $source
 
 uv version --bump $Bump
 
+Start-Sleep -Seconds 1
+
 $version = (uv version --short).Trim()
 if ([string]::IsNullOrWhiteSpace($version)) {
     throw "Failed to read version from uv"
