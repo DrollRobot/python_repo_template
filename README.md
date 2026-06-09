@@ -94,3 +94,6 @@ uvx detect-secrets scan > .secrets.baseline
 ```
 
 **Write some code!**
+
+
+# FIXME add scripts for stripping template artifactsp
