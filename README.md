@@ -25,7 +25,7 @@ Based on some personal preference, and what I understand are the most widely use
 - **keyring** for credential storage. Cross-platform. Allows never keeping secrets in the repo. 
 - **detect-secrets** for scanning for secrets before commits. Helps prevent accidental leaks.
 - **GitHub Actions** for CI and docs deployment. Free for public repos, and widely used.
-- **VSCode** for development. Most popular IDE. Lots of documentation, extensions.
+- **VSCode** for development. Most popular IDE. Lots of documentation. Many extensions.
 
 ## Making a new repo from this template
 
@@ -33,22 +33,29 @@ Based on some personal preference, and what I understand are the most widely use
 ```bash
 git clone https://github.com/DrollRobot/python_repo_template.git YOUR-PROJECT-NAME
 ```
-- Rename `src/python_repo_template/` folder to your project name.
+**Run the setup scripts**
 
-- Perform a recursive find/replace replacing 'python_repo_template' with your_project_name.
-- Perform a recursive find/replace replacing 'python-repo-template' with your-project-name.
-- Perform a recursive find/replace replacing 'DrollRobot' with your github username.
+The `scripts/template_setup/` folder has standard-library Python helpers that
+automate the tedious parts. Run the whole transition in one guided pass:
 
-**Choose a license**
+```powershell
+uv run scripts/template_setup/setup_new_project.py
+```
 
-- The template includes a few of the common licenses. Pick one, delete the others.
-- Rename the chosen file to `LICENSE`. (no file extension)
-- Update the copyright year and name inside the LICENSE file.
-- Update the license badge in the README.md (this) file.
+…or run any step on its own (details in `scripts/template_setup/README.md`):
 
-**Fill in all `FIXME` placeholders**
+- `rename_project.py NAME` — replace `python_repo_template` / `python-repo-template`
+  throughout and rename the package folder + `.code-workspace` file.
+- `strip_template_headers.py` — remove the `TEMPLATE SETUP NOTES` header banners.
+- `set_github_user.py USER` — replace `DrollRobot` with your GitHub username.
+- `choose_license.py` — pick one license, fill in the copyright line, delete the rest.
+- `find_fixmes.py` — list every remaining `FIXME` (read-only checklist).
+- `reinit_git.py` — delete `.git` and start a fresh history (destructive).
+- `cleanup.py` — delete the `template_setup/` folder once you're done (destructive).
 
-- Perform a recursive search for 'FIXME', and fix all issues found.
+Each script previews its changes and asks before applying; most accept
+`--dry-run` and `-y`/`--yes`. After choosing a license, update the license badge
+near the top of this README to match.
 
 ** Create venv and install basic dev/test dependencies**
 
@@ -94,6 +101,3 @@ uvx detect-secrets scan > .secrets.baseline
 ```
 
 **Write some code!**
-
-
-# FIXME add scripts for stripping template artifactsp

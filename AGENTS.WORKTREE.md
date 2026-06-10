@@ -9,7 +9,6 @@ repo-level `AGENTS.md`; this file wins on worktree/PR matters.
   from and tracking the remote base (normally `origin/develop`) that is the PR
   target — i.e. created with `git worktree add -b wt/<slug> origin/<base>`
   after a fetch.
-- `git` and `gh` exist and are authenticated. Never handle credentials yourself.
 
 ## Testing
 
@@ -17,82 +16,40 @@ repo-level `AGENTS.md`; this file wins on worktree/PR matters.
 
 ## Commits
 
-- Agents should commit freely, ensuring pre-commit checks pass.
-- Commit in logical units with conventional-commit messages
-  (`type(scope): summary`). Keep the branch buildable.
+- Agents should commit freely, ensuring all pre-commit checks pass.
+- Commit messages should follow Chris Beam's guidance: 
+  https://chris.beams.io/posts/git-commit/
+  Fetch the page at least once every session. Do not rely on memory for this.
 
-## Branching model: git flow
+## Completing the worktree
 
-This project uses **git flow**. That means:
+Pushing and opening the PR are **not** your job. Do **not** run `git push` or
+`gh pr create`. The user will handle that.
 
-- `main` is the release branch. It is **protected** — never commit, merge, or
-  push to it directly. Releases land on `main` only through the maintainer's
-  release process.
-- `develop` is the integration branch. It is the **default base** for all
-  feature work and pull requests. Unless the user explicitly says otherwise,
-  the PR target is always `develop`, never `main`.
-- Feature work happens on `wt/<slug>` branches forked
-  from `develop`, and merges back into `develop` via PR.
+When the user says the worktree is done ("done", "ship it", etc.), your job is to
+leave it in this state:
 
-If you ever find yourself about to push or open a PR against `main`, stop —
-that is almost certainly wrong. The target is `develop`.
+**1. Commit everything**
+Nothing uncommitted, nothing untracked. Commit all work in logical units with
+conventional-commit messages. Make the most recent commit subject a clean
+`type(scope): summary` — it stands in for the PR title.
 
-## Pull Requests
+**2. Write the PR description to `PR.md`**
+Write a real description to `PR.md` at the worktree root, using the template
+below. Add `Closes #N` if the slug encodes an issue. Do not commit `PR.md`.
 
-When the user confirms they're ready to complete the worktree and create a pull
-request, follow this procedure:
+**PR body template** (write this to `PR.md`)
+Use `.github/pull_request_template.md` as a template, but write it in the style
+of a human summarizing the work, not a checklist for the contributor.
 
-**1. Confirm the base before pushing**
-A `-u` push repoints tracking, so we need to be sure.
-```
-git rev-parse --abbrev-ref '@{u}'
-```
-The above will output something like origin/develop. The base you would use in
-step 3 is 'develop' — the git flow integration branch, and the default target
-for this project. Never target `main`.
-Still not sure? Ask the user. Never guess the merge target.
-
-**2. Push:**
-```
-git symbolic-ref --short HEAD | grep -q '^wt/' || { echo "Not on a wt/ branch;
- refusing to push"; exit 1; }
-git push -u origin HEAD
-```
-
-**3. Open the PR**
-Against the base from step 1:
-```
-gh pr create --base <BASE> --title "<type(scope): summary>" --body-file <file>
-```
-Add `Closes #N` to the body if the slug encodes an issue. Use `--draft` only if
-asked. Write a real description, not `--fill`.
-
-**PR body template**
-```
-## What
-What this change does and why, in a sentence or two.
-
-## Changes
-- The meaningful changes, not every commit.
-
-## Testing
-- What you ran and the result.
-
-## Notes
-- Tradeoffs, follow-ups, risks.
-
-Closes #<issue>   <!-- omit if none -->
-```
-
-**4. Report to the user**
-
-The PR URL and a one-line summary, then stop. The user will clean up the worktree.
+**3. Stop and tell the user**
+Report that everything is committed and `PR.md` is written, then stop. The user
+takes it from there.
 
 ## Review
 
-- Do not push or open a PR until the user says the worktree is complete ("done",
-  "ship it", etc.). Commit freely before then.
-- Never merge, approve, enable auto-merge, force-push, or push to the base
-  branch. Your job ends at "PR opened, here's the URL."
+- Never push, open a PR, run `scripts/complete_worktree.py`, merge, approve,
+  enable auto-merge, force-push, or push to the base branch. Your job ends at
+  "everything committed, `PR.md` written." Commit freely before then.
 - Stay in this worktree. Don't touch sibling worktrees, the main checkout, hooks,
   or `.git/info/exclude`.
