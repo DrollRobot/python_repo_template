@@ -14,7 +14,7 @@
     Short name for the work, e.g. "issue-42" or "fix/login".
 
 .PARAMETER Base
-    Branch to fork from. Defaults to $env:WT_BASE, then "main".
+    Branch to fork from. Defaults to $env:WT_BASE, then "develop".
 
 .PARAMETER NoBootstrap
     Skip the per-worktree dependency install.
@@ -44,7 +44,7 @@ param(
     [string]$Slug,
 
     [Parameter(Position = 1)]
-    [string]$Base = $(if ($env:WT_BASE) { $env:WT_BASE } else { 'dev' }),
+    [string]$Base = $(if ($env:WT_BASE) { $env:WT_BASE } else { 'develop' }),
 
     [switch]$NoBootstrap
 )
