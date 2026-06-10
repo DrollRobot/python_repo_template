@@ -1,7 +1,10 @@
 """Scans the project for unwanted string patterns and fails the test if any are found.
 
-If adding sensitive strings, gitignore .local, move script to .local/tests, create
-.local/tests/__init.__.py and add the following to pyproject.toml:
+If adding sensitive strings that you don't want committed:
+- Add .local/ to .gitignore
+- Move script to .local/tests
+- Create .local/tests/__init__.py
+- Update pyproject.toml to include .local/tests in testpaths:
 [tool.pytest.ini_options]
 testpaths = ["tests",".local/tests"]
 
@@ -28,7 +31,7 @@ UNWANTED_PATTERNS: list[tuple[str, str]] = [
 ]
 
 EXCEPTION_PATTERNS: list[str] = [
-    # r"\bnoqa\b",
+    r"#\s*noqa:.*unwanted_strings",
 ]
 
 EXCLUDED_EXTENSIONS: set[str] = {
