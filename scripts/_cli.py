@@ -269,3 +269,12 @@ def capture_ok(args: Sequence[str], *, cwd: str | os.PathLike[str] | None = None
     if result.returncode != 0:
         return None
     return (result.stdout or "").strip()
+
+
+# Plain Git Bash (mintty) relays a native Windows program's stdin through a
+# pipe, and interactive reads are known to stall mid-session — winpty exists
+# for exactly this. Warn up front instead of letting a y/n prompt freeze the
+# terminal. VS Code's integrated terminal sets TERM_PROGRAM=vscode and is fine.
+if os.environ.get("TERM_PROGRAM") == "mintty":
+    warn("WARNING: interactive prompts can freeze in plain Git Bash (mintty).")
+    warn("Run via 'winpty python ...', or use PowerShell or VS Code's terminal.")
