@@ -51,7 +51,8 @@ uv run scripts/template_setup/setup_new_project.py
 - `choose_license.py` — pick one license, fill in the copyright line, delete the rest.
 - `find_fixmes.py` — list every remaining `FIXME` (read-only checklist).
 - `reinit_git.py` — delete `.git` and start a fresh history (destructive).
-- `cleanup.py` — delete the `template_setup/` folder once you're done (destructive).
+- `cleanup.py` — delete the `template_setup/` folder and the dev-script tests
+  once you're done (destructive).
 
 Each script previews its changes and asks before applying; most accept
 `--dry-run` and `-y`/`--yes`. After choosing a license, update the license badge

@@ -22,7 +22,7 @@ python scripts/template_setup/setup_new_project.py
 | `find_fixmes.py` | List every remaining `FIXME` (in contents and file names). Read-only. |
 | `choose_license.py` | Pick one `LICENSE.*.FIXME`, fill in the copyright line, delete the rest. |
 | `reinit_git.py` | **Destructive.** Delete `.git` and run `git init` for a fresh history. |
-| `cleanup.py` | **Destructive.** Delete this `template_setup/` folder once you're done. |
+| `cleanup.py` | **Destructive.** Delete this `template_setup/` folder and the unit tests for the dev scripts (the scripts stay) once you're done. |
 
 Most scripts accept `--dry-run` (preview without writing) and `-y`/`--yes`
 (skip the confirmation prompt). Every change is previewed and confirmed before

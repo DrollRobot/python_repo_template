@@ -3,8 +3,10 @@
 After you have renamed the project, stripped the headers, chosen a license, and
 worked through the FIXMEs, these setup scripts have served their purpose. This
 script deletes them (the whole ``scripts/template_setup/`` folder, including
-itself) and any leftover ``LICENSE.*.FIXME`` candidates -- but only once a real
-``LICENSE`` file exists, so you are never left with no license.
+itself), the unit tests for the dev scripts (the scripts themselves stay --
+their tests only matter while developing the template), and any leftover
+``LICENSE.*.FIXME`` candidates -- but only once a real ``LICENSE`` file
+exists, so you are never left with no license.
 
 It does NOT edit prose for you; it prints reminders for the manual bits (such as
 removing the template instructions from README.md).
@@ -30,6 +32,29 @@ REMINDERS = [
 ]
 
 
+def dev_script_tests(root: Path) -> list[Path]:
+    """Find the unit tests that cover the dev and setup scripts.
+
+    The dev scripts in ``scripts/`` stay useful in the new project, but their
+    unit tests only matter while developing the template itself. A test file
+    is matched to its script by name: ``tests/test_<name>.py`` covers
+    ``scripts/<name>.py`` or ``scripts/template_setup/<name>.py``. Tests with
+    no matching script (the project's own tests) are kept.
+
+    Args:
+        root: Project root directory.
+
+    Returns:
+        Test files that cover an existing script, in sorted order.
+    """
+    script_dirs = (root / "scripts", root / "scripts" / "template_setup")
+    return [
+        test_file
+        for test_file in sorted((root / "tests").glob("test_*.py"))
+        if any((folder / test_file.name.removeprefix("test_")).exists() for folder in script_dirs)
+    ]
+
+
 def _gather_targets(root: Path) -> list[Path]:
     """Collect the scaffolding paths that are safe to delete.
 
@@ -38,11 +63,13 @@ def _gather_targets(root: Path) -> list[Path]:
 
     Returns:
         Paths to delete: leftover license candidates (only when a real
-        ``LICENSE`` already exists) and the setup-scripts folder itself.
+        ``LICENSE`` already exists), the unit tests for the dev scripts, and
+        the setup-scripts folder itself.
     """
     targets: list[Path] = []
     if (root / "LICENSE").exists():
         targets.extend(sorted(root.glob("LICENSE.*.FIXME")))
+    targets.extend(dev_script_tests(root))
     targets.append(_common.SETUP_DIR)
     return targets
 
