@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
         description="Merge the current branch into main, bump the version, tag, and push."
     )
     parser.add_argument(
-        "bump",
+        "--bump",
         nargs="?",
         choices=("patch", "minor", "major"),
         help="semantic version bump level",
