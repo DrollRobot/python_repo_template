@@ -24,9 +24,12 @@ same slug that created a worktree will clean it up. Every step runs against
 the main worktree, so this is safe to run even from inside the worktree
 being removed (git refuses to remove the worktree you are standing in).
 
+Pass -y/--yes to answer every prompt with 'y' for non-interactive use.
+
 Usage:
     python scripts/remove_worktree.py issue-42
     python scripts/remove_worktree.py fix/login
+    python scripts/remove_worktree.py issue-42 -y
 
 Env overrides mirror new_worktree.py: WT_HOME (parent dir for worktrees),
 WT_PREFIX (branch prefix, default "wt/").
@@ -77,6 +80,12 @@ def parse_args() -> argparse.Namespace:
         help="integration branch to refresh, that the PR was merged into "
         "(default: $WT_BASE, then develop)",
     )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="assume 'yes' to every confirmation prompt (non-interactive)",
+    )
     return parser.parse_args()
 
 
@@ -99,6 +108,7 @@ def same_path(a: str, b: str) -> bool:
 def main() -> None:
     """Run the interactive worktree teardown flow."""
     args = parse_args()
+    cli.set_assume_yes(args.yes)
 
     # --- what this does (shown up front, before anything is touched) ------------
 

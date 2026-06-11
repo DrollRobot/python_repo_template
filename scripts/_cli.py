@@ -51,6 +51,18 @@ def _supports_color() -> bool:
 
 _COLOR = _supports_color()
 
+_assume_yes = False
+
+
+def set_assume_yes(value: bool) -> None:
+    """Answer every confirmation prompt with 'y' (for a script's -y/--yes flag).
+
+    Args:
+        value: ``True`` to auto-answer prompts, ``False`` to ask normally.
+    """
+    global _assume_yes
+    _assume_yes = value
+
 
 def _code(escape: str) -> str:
     return escape if _COLOR else ""
@@ -130,8 +142,12 @@ def confirm(prompt: str) -> bool:
         prompt: Question to display (without the ``[y/n]`` suffix).
 
     Returns:
-        ``True`` for yes, ``False`` for no.
+        ``True`` for yes, ``False`` for no. Always ``True`` in assume-yes mode,
+        with the auto-answer printed so the transcript still shows the step.
     """
+    if _assume_yes:
+        print(f"{prompt} [y/n] y {GRAY}(auto: --yes){RESET}")
+        return True
     while True:
         answer = input(f"{prompt} [y/n] ").strip().lower()
         if answer in ("y", "yes"):
@@ -149,9 +165,13 @@ def prompt_value(prompt: str, *, default: str = "") -> str:
         default: Value returned when the user presses Enter without typing.
 
     Returns:
-        The entered value, or ``default`` if nothing was entered.
+        The entered value, or ``default`` if nothing was entered. In assume-yes
+        mode the default is returned without prompting.
     """
     suffix = f" [{default}]" if default else ""
+    if _assume_yes:
+        print(f"{prompt}{suffix}: {default} {GRAY}(auto: --yes){RESET}")
+        return default
     answer = input(f"{prompt}{suffix}: ").strip()
     return answer or default
 

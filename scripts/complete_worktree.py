@@ -17,9 +17,12 @@ The procedure mirrors AGENTS.WORKTREE.md:
   7. Report the PR URL and stop. The worktree is NOT cleaned up — that is
      left to the user, per AGENTS.WORKTREE.md.
 
+Pass -y/--yes to answer every prompt with 'y' for non-interactive use.
+
 Usage:
     python scripts/complete_worktree.py
     python scripts/complete_worktree.py --title "feat(auth): add SSO login" --draft
+    python scripts/complete_worktree.py -y
 
 Requirements:
     - Run from inside the worktree, on a wt/ branch with all work committed.
@@ -55,12 +58,19 @@ def parse_args() -> argparse.Namespace:
         help="path to the PR body file (default: PR.md at the worktree root)",
     )
     parser.add_argument("--draft", action="store_true", help="open the PR as a draft")
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="assume 'yes' to every confirmation prompt (non-interactive)",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     """Run the interactive verify-push-PR flow."""
     args = parse_args()
+    cli.set_assume_yes(args.yes)
 
     # --- gather state ----------------------------------------------------------
 
