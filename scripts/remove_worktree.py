@@ -24,12 +24,17 @@ same slug that created a worktree will clean it up. Every step runs against
 the main worktree, so this is safe to run even from inside the worktree
 being removed (git refuses to remove the worktree you are standing in).
 
-Pass -y/--yes to answer every prompt with 'y' for non-interactive use.
+Run without a slug to pick one interactively: the script lists every open
+worktree whose branch carries the wt/ prefix and asks which to remove.
+
+Pass -y/--yes to answer every prompt with 'y' for non-interactive use (a slug
+is required in that case, since there is nobody to answer the picker).
 
 Usage:
     python scripts/remove_worktree.py issue-42
     python scripts/remove_worktree.py fix/login
     python scripts/remove_worktree.py issue-42 -y
+    python scripts/remove_worktree.py
 
 Env overrides mirror new_worktree.py: WT_HOME (parent dir for worktrees),
 WT_PREFIX (branch prefix, default "wt/").
@@ -72,7 +77,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Delete a finished git worktree created by new_worktree.py."
     )
-    parser.add_argument("slug", type=slug_arg, help="the same slug passed to new_worktree.py")
+    parser.add_argument(
+        "slug",
+        type=slug_arg,
+        nargs="?",
+        default=None,
+        help="the same slug passed to new_worktree.py (omit to pick from a list of open worktrees)",
+    )
     parser.add_argument(
         "base",
         nargs="?",
@@ -86,7 +97,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="assume 'yes' to every confirmation prompt (non-interactive)",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.yes and args.slug is None:
+        parser.error("a slug is required with -y/--yes (there is nobody to answer the picker)")
+    return args
 
 
 def same_path(a: str, b: str) -> bool:
@@ -103,6 +117,95 @@ def same_path(a: str, b: str) -> bool:
         ``True`` if the paths refer to the same location.
     """
     return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
+def parse_worktrees(porcelain: str) -> list[tuple[str, str | None]]:
+    """Parse ``git worktree list --porcelain`` output into (path, branch) pairs.
+
+    Args:
+        porcelain: Raw porcelain output.
+
+    Returns:
+        One ``(path, branch_ref)`` pair per worktree, in listing order (the
+        main worktree first). ``branch_ref`` is the full ref (e.g.
+        ``refs/heads/wt/issue-42``), or ``None`` for a detached HEAD.
+    """
+    entries: list[tuple[str, str | None]] = []
+    path: str | None = None
+    branch: str | None = None
+    for line in porcelain.splitlines():
+        if line.startswith("worktree "):
+            if path is not None:
+                entries.append((path, branch))
+            path = line.removeprefix("worktree ")
+            branch = None
+        elif line.startswith("branch "):
+            branch = line.removeprefix("branch ")
+    if path is not None:
+        entries.append((path, branch))
+    return entries
+
+
+def open_worktree_slugs(
+    worktrees: list[tuple[str, str | None]], prefix: str
+) -> list[tuple[str, str]]:
+    """Find the open worktrees that look like they were made by new_worktree.py.
+
+    Args:
+        worktrees: ``(path, branch_ref)`` pairs from :func:`parse_worktrees`.
+        prefix: Branch prefix (e.g. ``wt/``).
+
+    Returns:
+        ``(slug, path)`` pairs for every linked worktree (the main worktree is
+        skipped) whose branch starts with the prefix.
+    """
+    ref_prefix = f"refs/heads/{prefix}"
+    return [
+        (branch.removeprefix(ref_prefix), path)
+        for path, branch in worktrees[1:]
+        if branch is not None and branch.startswith(ref_prefix)
+    ]
+
+
+def parse_choice(answer: str, count: int) -> int | None:
+    """Parse a 1-based menu selection.
+
+    Args:
+        answer: Raw user input.
+        count: Number of menu entries.
+
+    Returns:
+        The selected number, or ``None`` if the input is not a number in
+        ``1..count``.
+    """
+    try:
+        value = int(answer)
+    except ValueError:
+        return None
+    if not 1 <= value <= count:
+        return None
+    return value
+
+
+def prompt_for_slug(candidates: list[tuple[str, str]]) -> str:
+    """Show the open worktrees and ask which one to remove.
+
+    Args:
+        candidates: ``(slug, path)`` pairs from :func:`open_worktree_slugs`.
+
+    Returns:
+        The slug of the selected worktree.
+    """
+    cli.section("Open worktrees")
+    for index, (slug, path) in enumerate(candidates, start=1):
+        print(f"  {index}. {slug}  {cli.GRAY}{path}{cli.RESET}")
+    print()
+    while True:
+        answer = input(f"Which worktree should be removed? [1-{len(candidates)}] ").strip()
+        choice = parse_choice(answer, len(candidates))
+        if choice is not None:
+            return candidates[choice - 1][0]
+        print(f"  Please enter a number between 1 and {len(candidates)}.")
 
 
 def main() -> None:
@@ -128,30 +231,38 @@ def main() -> None:
 
     # --- resolve paths (mirrors new_worktree.py) -------------------------------
 
-    cli.section("Cleanup setup")
-
     # Resolve the MAIN worktree, not whichever worktree we happen to be standing
     # in: `git worktree list` always reports the main worktree first. Deriving
     # names from it means this works even when run from inside the worktree we
     # remove.
     porcelain = cli.capture(["git", "worktree", "list", "--porcelain"])
-    worktree_paths = [
-        line.removeprefix("worktree ")
-        for line in porcelain.splitlines()
-        if line.startswith("worktree ")
-    ]
+    worktrees = parse_worktrees(porcelain)
+    worktree_paths = [path for path, _ in worktrees]
     if not worktree_paths:
         cli.die("Could not determine the main worktree (are you inside a git repository?).")
     main_repo = worktree_paths[0]
 
     repo_name = Path(main_repo).name
     prefix = os.environ.get("WT_PREFIX") or "wt/"
-    branch = f"{prefix}{args.slug}"
-    dir_slug = args.slug.replace("/", "-")
+
+    slug = args.slug
+    if slug is None:
+        candidates = open_worktree_slugs(worktrees, prefix)
+        if not candidates:
+            cli.die(
+                f"No open worktrees with branch prefix '{prefix}' found. "
+                "Pass a slug to clean up leftovers (e.g. a branch without a worktree)."
+            )
+        slug = prompt_for_slug(candidates)
+
+    cli.section("Cleanup setup")
+
+    branch = f"{prefix}{slug}"
+    dir_slug = slug.replace("/", "-")
     wt_home = Path(os.environ.get("WT_HOME") or Path(main_repo).parent / f"{repo_name}-wt")
     wt_path = wt_home / dir_slug
 
-    cli.info("Slug", args.slug)
+    cli.info("Slug", slug)
     cli.info("Branch", branch)
     cli.info("Worktree", str(wt_path))
     cli.info("Integration branch", args.base)
@@ -169,7 +280,7 @@ def main() -> None:
 
     if not wt_registered and not branch_exists:
         print()
-        cli.success(f"Nothing to clean up for slug '{args.slug}'.")
+        cli.success(f"Nothing to clean up for slug '{slug}'.")
         sys.exit(0)
 
     # Operate from the main worktree for every step. This guarantees the
@@ -218,7 +329,7 @@ def main() -> None:
     # --- done -------------------------------------------------------------------
 
     cli.section("Done")
-    cli.success(f"  Removed worktree '{args.slug}'.")
+    cli.success(f"  Removed worktree '{slug}'.")
     cli.info("Current branch", cli.capture(["git", "branch", "--show-current"]))
     cli.info("Location", os.getcwd())
 
