@@ -8,7 +8,8 @@ remaining steps. The output of every git and gh command is shown.
 
 The procedure mirrors AGENTS.WORKTREE.md:
   1. Confirm we are on a wt/ branch in a worktree (never main/develop).
-  2. Verify the working tree is clean — everything is committed.
+  2. Verify the working tree is clean — everything is committed. PR.md itself
+     is exempt; it may stay uncommitted since it only feeds `gh pr create`.
   3. Resolve the PR base from the branch's UPSTREAM *before* pushing, since
      `git push -u` repoints tracking. Refuses to target main.
   4. Show the PR.md body and confirm the title.
@@ -25,7 +26,8 @@ Usage:
     python scripts/complete_worktree.py -y
 
 Requirements:
-    - Run from inside the worktree, on a wt/ branch with all work committed.
+    - Run from inside the worktree, on a wt/ branch with all work committed
+      (PR.md itself does not need to be committed).
     - `git` and `gh` installed and authenticated.
     - A PR.md body file written by the agent at the worktree root.
 """
@@ -37,6 +39,30 @@ import sys
 from pathlib import Path
 
 import _cli as cli
+
+
+def dirty_status_lines(status_lines: list[str], exempt_path: str | None) -> list[str]:
+    """Filter ``git status --porcelain`` lines, ignoring the exempt PR body file.
+
+    Args:
+        status_lines: Output lines from ``git status --porcelain``.
+        exempt_path: Repo-root-relative POSIX path allowed to stay uncommitted
+            (the PR body file), or ``None`` when no path is exempt.
+
+    Returns:
+        The lines describing changes to any file other than ``exempt_path``.
+    """
+    dirty: list[str] = []
+    for line in status_lines:
+        if not line.strip():
+            continue
+        # Porcelain v1: two status letters, a space, then the path. Paths with
+        # special characters are quoted; the plain strip covers the simple case.
+        path = line[3:].strip().strip('"')
+        if exempt_path is not None and path == exempt_path:
+            continue
+        dirty.append(line)
+    return dirty
 
 
 def parse_args() -> argparse.Namespace:
@@ -145,15 +171,22 @@ def main() -> None:
     cli.section("Working tree status")
     cli.run(["git", "status", "--short", "--branch"])
 
-    tree_clean = cli.exit_code(["git", "diff-index", "--quiet", "HEAD", "--"]) == 0
-    # diff-index ignores untracked files; catch those too (PR.md may be untracked).
-    untracked = cli.capture(["git", "ls-files", "--others", "--exclude-standard"])
-    if not tree_clean or untracked:
+    # The PR body file only feeds `gh pr create`, so it may stay uncommitted;
+    # exempt it from the clean-tree check (when it lives inside the worktree).
+    try:
+        exempt = body_path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        exempt = None
+    status_lines = cli.capture(["git", "status", "--porcelain"]).splitlines()
+    dirty = dirty_status_lines(status_lines, exempt)
+    if dirty:
         print()
-        cli.warn("  Working tree is not clean. Commit everything (including PR.md if")
-        cli.warn("  it should be tracked) before completing the worktree.")
+        cli.warn(
+            f"  Working tree is not clean. Commit everything except {body_path.name} "
+            "before completing the worktree."
+        )
         cli.die("Uncommitted changes present; refusing to push.")
-    cli.success("  Working tree is clean; all changes committed.")
+    cli.success(f"  Working tree is clean; all changes committed ({body_path.name} is exempt).")
 
     # --- existing PR guard -----------------------------------------------------
 
