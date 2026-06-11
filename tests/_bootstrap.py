@@ -82,9 +82,7 @@ def build_kv_client(settings: dict[str, str]) -> SecretClient:
 # ---------------------------------------------------------------------------
 
 
-def _fetch_user_pass_from_keyvault(
-    settings: dict[str, str], kv: SecretClient
-) -> tuple[str, str]:
+def _fetch_user_pass_from_keyvault(settings: dict[str, str], kv: SecretClient) -> tuple[str, str]:
     username = kv.get_secret(settings["USERNAME_KEY"]).value
     password = kv.get_secret(settings["PASSWORD_KEY"]).value
     if not username or not password:
@@ -108,9 +106,7 @@ def _fetch_user_pass_from_keyring(settings: dict[str, str]) -> tuple[str, str]:
     return username, password
 
 
-def get_user_pass(
-    settings: dict[str, str], kv: SecretClient | None = None
-) -> tuple[str, str]:
+def get_user_pass(settings: dict[str, str], kv: SecretClient | None = None) -> tuple[str, str]:
     """Retrieve username and password from the configured backend.
 
     Returns:
@@ -132,9 +128,7 @@ def get_user_pass(
 # ---------------------------------------------------------------------------
 
 
-def _fetch_cert_thumbprint_from_keyvault(
-    settings: dict[str, str], kv: SecretClient
-) -> str:
+def _fetch_cert_thumbprint_from_keyvault(settings: dict[str, str], kv: SecretClient) -> str:
     thumbprint = kv.get_secret(settings["CERT_THUMBPRINT_KEY"]).value
     if not thumbprint:
         raise ValueError("Certificate thumbprint KeyVault secret returned no value.")
@@ -155,9 +149,7 @@ def _fetch_cert_thumbprint_from_keyring(settings: dict[str, str]) -> str:
     return thumbprint
 
 
-def get_cert_thumbprint(
-    settings: dict[str, str], kv: SecretClient | None = None
-) -> str:
+def get_cert_thumbprint(settings: dict[str, str], kv: SecretClient | None = None) -> str:
     """Retrieve the certificate thumbprint from the configured backend.
 
     Returns:
@@ -226,6 +218,3 @@ def get_service_principal(
             "Set CREDENTIAL_BACKEND=keyring in .env.testing to use the OS keyring instead."
         )
     return _fetch_service_principal_from_keyvault(settings, kv)
-
-
-
