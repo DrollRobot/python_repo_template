@@ -3,7 +3,8 @@
 Walks through the release process one step at a time. Before each action it
 shows what is about to happen and prompts for confirmation (y/n); answering
 'n' aborts without making any further changes. The output of every git and
-uv command is shown so the process can be watched as it happens.
+uv command is shown so the process can be watched as it happens. Pass
+-y/--yes to answer every prompt with 'y' for non-interactive use.
 
 Along the way it reports the original branch, the working-tree status, and
 the current and target project versions.
@@ -14,6 +15,7 @@ to an explicit version number with --version.
 Usage:
     python scripts/push_new_tag_to_main.py patch
     python scripts/push_new_tag_to_main.py --version 2.0.0
+    python scripts/push_new_tag_to_main.py patch -y
 
 Bump levels:
     patch — bug fixes only           (1.4.2 -> 1.4.3)
@@ -46,7 +48,7 @@ def parse_args() -> argparse.Namespace:
         description="Merge the current branch into main, bump the version, tag, and push."
     )
     parser.add_argument(
-        "--bump",
+        "bump",
         nargs="?",
         choices=("patch", "minor", "major"),
         help="semantic version bump level",
@@ -54,6 +56,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version",
         help="explicit version number to set (e.g. 1.5.0), instead of a bump",
+    )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="assume 'yes' to every confirmation prompt (non-interactive)",
     )
     args = parser.parse_args()
 
@@ -67,6 +75,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """Run the interactive release flow."""
     args = parse_args()
+    cli.set_assume_yes(args.yes)
     use_bump = bool(args.bump)
 
     # --- gather state --------------------------------------------------------
