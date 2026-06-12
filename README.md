@@ -71,18 +71,6 @@ uv run pre-commit install
 uv run pre-commit autoupdate
 ```
 
-**Create CLAUDE.md symlink**
-
-- Claude Code does not read `AGENTS.md` directly; a symlink lets it see the same instructions.
-```powershell
-# Windows
-New-Item -ItemType SymbolicLink -Path CLAUDE.md -Target AGENTS.md
-```
-```bash
-# macOS / Linux
-ln -s AGENTS.md CLAUDE.md
-```
-
 **If using mkdocs, enable GitHub Pages for docs**
 
 - In the GitHub repo settings, set Pages source to the `gh-pages` branch.
