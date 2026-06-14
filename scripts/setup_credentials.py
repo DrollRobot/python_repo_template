@@ -39,6 +39,11 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 PACKAGE_NAME = "python_repo_template"
 
+# Version of this helper script itself. Bump on every change so copies in other
+# repos can be compared: patch = bugfix, minor = new flag/behavior, major =
+# breaking CLI change.
+__version__ = "1.0.0"
+
 
 def _store_user_pass(settings: dict[str, str]) -> None:
     print("Script assumes you have the following in your .env file:")
@@ -108,6 +113,8 @@ def _store_service_principal(settings: dict[str, str]) -> None:
 
 def main() -> None:
     """Parse CLI arguments and store the chosen credential type in the OS keyring."""
+    print(f"setup_credentials v{__version__}")
+    print("")
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

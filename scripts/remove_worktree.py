@@ -50,6 +50,11 @@ from pathlib import Path
 
 import _cli as cli
 
+# Version of this helper script itself. Bump on every change so copies in other
+# repos can be compared: patch = bugfix, minor = new flag/behavior, major =
+# breaking CLI change.
+__version__ = "1.0.0"
+
 
 def slug_arg(value: str) -> str:
     """Validate the worktree slug (same rules as new_worktree.py).
@@ -212,6 +217,9 @@ def main() -> None:
     """Run the interactive worktree teardown flow."""
     args = parse_args()
     cli.set_assume_yes(args.yes)
+
+    cli.info("Script version", __version__)
+    print("")
 
     # --- what this does (shown up front, before anything is touched) ------------
 

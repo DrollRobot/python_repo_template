@@ -40,6 +40,11 @@ from pathlib import Path
 
 import _cli as cli
 
+# Version of this helper script itself. Bump on every change so copies in other
+# repos can be compared: patch = bugfix, minor = new flag/behavior, major =
+# breaking CLI change.
+__version__ = "1.0.0"
+
 
 def dirty_status_lines(status_lines: list[str], exempt_path: str | None) -> list[str]:
     """Filter ``git status --porcelain`` lines, ignoring the exempt PR body file.
@@ -97,6 +102,9 @@ def main() -> None:
     """Run the interactive verify-push-PR flow."""
     args = parse_args()
     cli.set_assume_yes(args.yes)
+
+    cli.info("Script version", __version__)
+    print("")
 
     # --- gather state ----------------------------------------------------------
 

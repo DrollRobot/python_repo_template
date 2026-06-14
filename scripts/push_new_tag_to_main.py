@@ -9,12 +9,17 @@ uv command is shown so the process can be watched as it happens. Pass
 Along the way it reports the original branch, the working-tree status, and
 the current and target project versions.
 
-The new version can either be bumped semantically (patch/minor/major) or set
-to an explicit version number with --version.
+The new version can either be bumped semantically (patch/minor/major), set
+to an explicit version number with --version, or left unchanged with
+--no-version. When --version names the version already in use, the version
+change is skipped automatically (same as --no-version). When the version is
+not changed (assuming the version was already updated by hand), the version update and
+the release commit are skipped.
 
 Usage:
     python scripts/push_new_tag_to_main.py patch
     python scripts/push_new_tag_to_main.py --version 2.0.0
+    python scripts/push_new_tag_to_main.py --no-version
     python scripts/push_new_tag_to_main.py patch -y
 
 Bump levels:
@@ -37,6 +42,11 @@ import time
 
 import _cli as cli
 
+# Version of this helper script itself (independent of the project version it
+# releases). Bump on every change so copies in other repos can be compared:
+# patch = bugfix, minor = new flag/behavior, major = breaking CLI change.
+__version__ = "1.0.0"
+
 
 def parse_args() -> argparse.Namespace:
     """Parse and validate the command line.
@@ -58,6 +68,11 @@ def parse_args() -> argparse.Namespace:
         help="explicit version number to set (e.g. 1.5.0), instead of a bump",
     )
     parser.add_argument(
+        "--no-version",
+        action="store_true",
+        help="merge and push without changing the version (no release commit or tag)",
+    )
+    parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
@@ -65,8 +80,10 @@ def parse_args() -> argparse.Namespace:
     )
     args = parser.parse_args()
 
-    if bool(args.bump) == bool(args.version):
-        parser.error("specify exactly one of: a bump level (patch/minor/major) or --version")
+    if sum((bool(args.bump), bool(args.version), args.no_version)) != 1:
+        parser.error(
+            "specify exactly one of: a bump level (patch/minor/major), --version, or --no-version"
+        )
     if args.version and not re.match(r"^\d+\.\d+\.\d+", args.version):
         parser.error(f"--version must look like X.Y.Z, got '{args.version}'")
     return args
@@ -77,6 +94,9 @@ def main() -> None:
     args = parse_args()
     cli.set_assume_yes(args.yes)
     use_bump = bool(args.bump)
+
+    cli.info("Script version", __version__)
+    print("")
 
     # --- gather state --------------------------------------------------------
 
@@ -90,7 +110,9 @@ def main() -> None:
 
     cli.info("Original branch", source)
     cli.info("Target branch", "main")
-    if use_bump:
+    if args.no_version:
+        cli.info("Version change", "none (--no-version)")
+    elif use_bump:
         cli.info("Version change", f"bump '{args.bump}'")
     else:
         cli.info("Version change", f"set to '{args.version}'")
@@ -112,11 +134,25 @@ def main() -> None:
         cli.die("Failed to read current version from uv.")
     cli.info("Current version", current_version)
 
-    print(f"  {cli.GRAY}Preview of the version change:{cli.RESET}")
-    if use_bump:
-        cli.run(["uv", "version", "--dry-run", "--bump", args.bump])
+    # Decide whether the version actually changes. A bump always changes it; an
+    # explicit --version only changes it when it differs from the current one.
+    if args.no_version:
+        version_changed = False
+    elif args.version:
+        version_changed = args.version != current_version
+        if not version_changed:
+            cli.info("Note", "requested version matches current; version unchanged")
     else:
-        cli.run(["uv", "version", "--dry-run", args.version])
+        version_changed = True
+
+    if version_changed:
+        print(f"  {cli.GRAY}Preview of the version change:{cli.RESET}")
+        if use_bump:
+            cli.run(["uv", "version", "--dry-run", "--bump", args.bump])
+        else:
+            cli.run(["uv", "version", "--dry-run", args.version])
+    else:
+        cli.info("Result", "version already set; update and release commit are skipped")
 
     # --- release steps ---------------------------------------------------------
 
@@ -128,27 +164,30 @@ def main() -> None:
     cli.step(f"Merge '{source}' into 'main'?")
     cli.run(["git", "merge", source])
 
-    cli.section("Step: update version")
-    cli.step("Apply the version change?")
-    if use_bump:
-        cli.run(["uv", "version", "--bump", args.bump])
+    if version_changed:
+        cli.section("Step: update version")
+        cli.step("Apply the version change?")
+        if use_bump:
+            cli.run(["uv", "version", "--bump", args.bump])
+        else:
+            cli.run(["uv", "version", args.version])
+
+        # Brief pause before reading back the version: writing pyproject.toml can
+        # leave uv.exe momentarily busy on Windows, which causes errors on the
+        # next call.
+        time.sleep(1)
+
+        version = cli.capture(["uv", "version", "--short"])
+        if not version:
+            cli.die("Failed to read new version from uv after update.")
+        cli.info("New version", version)
+
+        cli.section("Step: commit release")
+        cli.step(f"Stage all changes and commit as 'Release v{version}'?")
+        cli.run(["git", "add", "."])
+        cli.run(["git", "commit", "-m", f"Release v{version}"])
     else:
-        cli.run(["uv", "version", args.version])
-
-    # Brief pause before reading back the version: writing pyproject.toml can
-    # leave uv.exe momentarily busy on Windows, which causes errors on the
-    # next call.
-    time.sleep(1)
-
-    version = cli.capture(["uv", "version", "--short"])
-    if not version:
-        cli.die("Failed to read new version from uv after update.")
-    cli.info("New version", version)
-
-    cli.section("Step: commit release")
-    cli.step(f"Stage all changes and commit as 'Release v{version}'?")
-    cli.run(["git", "add", "."])
-    cli.run(["git", "commit", "-m", f"Release v{version}"])
+        version = current_version
 
     cli.section("Step: tag release")
     cli.step(f"Create annotated tag 'v{version}'?")

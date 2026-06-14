@@ -38,6 +38,11 @@ from typing import Any
 
 import _cli as cli
 
+# Version of this helper script itself. Bump on every change so copies in other
+# repos can be compared: patch = bugfix, minor = new flag/behavior, major =
+# breaking CLI change.
+__version__ = "1.0.0"
+
 
 def slug_arg(value: str) -> str:
     """Validate the worktree slug.
@@ -130,6 +135,9 @@ def main() -> None:
     """Run the interactive create-worktree flow."""
     args = parse_args()
     cli.set_assume_yes(args.yes)
+
+    cli.info("Script version", __version__)
+    print("")
 
     # --- resolve paths --------------------------------------------------------
 
