@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from tabulate import tabulate
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -94,6 +93,27 @@ class Hit:
     line: str
 
 
+def _format_table(rows: list[tuple[object, ...]], headers: list[str]) -> str:
+    """Render rows as a simple aligned text table (stdlib replacement for tabulate).
+
+    Mirrors tabulate's ``tablefmt="simple"`` layout: a header row, a row of
+    dashes underlining each column, then the data rows, with columns left-
+    aligned and padded to the widest cell.
+    """
+    columns = [headers, *([str(cell) for cell in row] for row in rows)]
+    widths = [max(len(str(col[i])) for col in columns) for i in range(len(headers))]
+
+    def _line(cells: list[str]) -> str:
+        return "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(cells)).rstrip()
+
+    lines = [
+        _line(headers),
+        _line(["-" * w for w in widths]),
+        *(_line([str(cell) for cell in row]) for row in rows),
+    ]
+    return "\n".join(lines)
+
+
 def _scan() -> tuple[list[Hit], int]:
     compiled_patterns = [(tag, re.compile(pat, re.IGNORECASE)) for tag, pat in UNWANTED_PATTERNS]
     compiled_exceptions = [re.compile(p, re.IGNORECASE) for p in EXCEPTION_PATTERNS]
@@ -140,10 +160,9 @@ def test_no_unwanted_strings() -> None:
     hits, exception_count = _scan()
 
     if hits:
-        table = tabulate(
+        table = _format_table(
             [(h.file, h.line_number, h.tag, h.line) for h in hits],
             headers=["File", "Line", "Tag", "Content"],
-            tablefmt="simple",
         )
         summary = f"{len(hits)} match(es), {exception_count} exception(s) suppressed."
         pytest.fail(f"\n{summary}\n\n{table}", pytrace=False)
