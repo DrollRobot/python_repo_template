@@ -6,10 +6,11 @@ and GitHub username up front and confirming once before making content changes:
     1. strip template headers
     2. rename the project
     3. set the GitHub username
-    4. choose a license            (optional)
-    5. report remaining FIXMEs
-    6. re-initialize git           (optional, destructive -- confirms separately)
-    7. remove this scaffolding     (optional, destructive -- confirms separately)
+    4. set the Python version
+    5. choose a license            (optional)
+    6. report remaining FIXMEs
+    7. re-initialize git           (optional, destructive -- confirms separately)
+    8. remove this scaffolding     (optional, destructive -- confirms separately)
 
 Each step is also runnable on its own; this just chains them. The destructive
 steps prompt for their own confirmation regardless of what you choose here.
@@ -29,6 +30,7 @@ import find_fixmes
 import reinit_git
 import rename_project
 import set_github_user
+import set_python_version
 import strip_template_headers
 
 
@@ -45,19 +47,27 @@ def main() -> None:
     if not new_name or not gh_user:
         sys.exit("ERROR: project name and GitHub username are both required.")
 
+    py_version = _common.prompt_value("Python version", default=set_python_version.DEFAULT_VERSION)
     want_license = _common.confirm("Choose a license as part of setup?")
 
+    actions = [
+        "strip headers",
+        "rename project",
+        "set GitHub user",
+        f"set Python {py_version}",
+    ]
+    if want_license:
+        actions.append("choose license")
+
     print()
-    print(
-        "  About to: strip headers, rename project, set GitHub user"
-        + (", choose license." if want_license else ".")
-    )
+    print("  About to: " + ", ".join(actions) + ".")
     if not _common.confirm("Proceed with these content changes?"):
         sys.exit("Aborted; nothing changed.")
 
     strip_template_headers.run(root, assume_yes=True)
     rename_project.run(root, new_name, assume_yes=True)
     set_github_user.run(root, gh_user, assume_yes=True)
+    set_python_version.run(root, py_version, assume_yes=True)
     if want_license:
         choose_license.run(root, assume_yes=True)
 
