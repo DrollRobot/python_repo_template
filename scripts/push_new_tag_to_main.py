@@ -27,6 +27,11 @@ Bump levels:
     minor — new features, no breaks  (1.4.2 -> 1.5.0)
     major — breaking changes         (1.4.2 -> 2.0.0)
 
+Before merging it fetches from origin and fast-forwards both the source branch
+and main if either is behind its remote, so a release can never be cut from a
+stale branch (e.g. a PR merged on the remote but not yet pulled). A diverged
+branch aborts.
+
 Requirements:
     - Run from inside the source branch.
     - `uv` installed and the project uses uv for version management.
@@ -45,7 +50,7 @@ import _cli as cli
 # Version of this helper script itself (independent of the project version it
 # releases). Bump on every change so copies in other repos can be compared:
 # patch = bugfix, minor = new flag/behavior, major = breaking CLI change.
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,6 +94,36 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def sync_status(local: str, remote: str) -> tuple[int, int] | None:
+    """Report how far a local ref is ahead of and behind a remote ref.
+
+    Prints an aligned ``ahead/behind`` summary. Aborts the script if the two
+    refs have diverged (each has commits the other lacks), since reconciling
+    that is a manual decision the release flow should not make automatically.
+
+    Args:
+        local: Local ref name (e.g. ``main`` or the source branch).
+        remote: Remote-tracking ref name (e.g. ``origin/main``).
+
+    Returns:
+        ``(ahead, behind)`` commit counts, or ``None`` if either ref does not
+        exist (nothing to compare).
+    """
+    if cli.capture_ok(["git", "rev-parse", "--verify", "--quiet", local]) is None:
+        return None
+    if cli.capture_ok(["git", "rev-parse", "--verify", "--quiet", remote]) is None:
+        return None
+    ahead = int(cli.capture(["git", "rev-list", "--count", f"{remote}..{local}"]))
+    behind = int(cli.capture(["git", "rev-list", "--count", f"{local}..{remote}"]))
+    cli.info(f"'{local}' vs {remote}", f"{ahead} ahead, {behind} behind")
+    if ahead > 0 and behind > 0:
+        cli.die(
+            f"Local '{local}' has diverged from {remote} "
+            f"({ahead} ahead, {behind} behind); reconcile manually before releasing."
+        )
+    return ahead, behind
+
+
 def main() -> None:
     """Run the interactive release flow."""
     args = parse_args()
@@ -125,6 +160,40 @@ def main() -> None:
     if cli.exit_code(["git", "diff-index", "--quiet", "HEAD", "--"]) != 0:
         cli.die("Working tree is not clean; commit or stash changes first.")
     cli.success("  Working tree is clean.")
+
+    # --- sync with origin ----------------------------------------------------
+
+    # Guard against releasing a stale branch. If a PR was merged into the
+    # source branch on the remote but never pulled, the local branch is behind
+    # origin and merging it into main would silently omit those commits. Fetch
+    # and fast-forward before anything is merged.
+    cli.section("Sync with origin")
+    cli.run(["git", "fetch", "origin"])
+
+    # Source branch: it is checked out, so fast-forward it with a pull.
+    upstream = f"origin/{source}"
+    status = sync_status(source, upstream)
+    if status is None:
+        cli.info("Note", f"no '{upstream}' on origin; nothing to sync")
+    elif status[1] > 0:
+        cli.warn(f"  Local '{source}' is {status[1]} commit(s) behind {upstream}.")
+        cli.step(f"Fast-forward '{source}' to {upstream}?")
+        cli.run(["git", "pull", "--ff-only", "origin", source])
+    else:
+        cli.success(f"  '{source}' is up to date with {upstream}.")
+
+    # Target branch: main is not checked out yet, so fast-forward its ref with
+    # a refspec fetch (which refuses a non-fast-forward update). Catches a stale
+    # local main early instead of at the 'git push origin main' rejection.
+    main_status = sync_status("main", "origin/main")
+    if main_status is None:
+        cli.info("Note", "no local 'main' or 'origin/main'; nothing to sync")
+    elif main_status[1] > 0:
+        cli.warn(f"  Local 'main' is {main_status[1]} commit(s) behind origin/main.")
+        cli.step("Fast-forward local 'main' to origin/main?")
+        cli.run(["git", "fetch", "origin", "main:main"])
+    else:
+        cli.success("  'main' is up to date with origin/main.")
 
     # --- versions --------------------------------------------------------------
 
