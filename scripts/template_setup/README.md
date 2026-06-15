@@ -19,6 +19,7 @@ python scripts/template_setup/setup_new_project.py
 | `rename_project.py NAME` | Replace `python_repo_template` / `python-repo-template` everywhere, rename the package folder, and turn `*.code-workspace.FIXME.jsonc` into `NAME.code-workspace`. |
 | `strip_template_headers.py` | Remove the `TEMPLATE SETUP NOTES` banner from the top of every file. |
 | `set_github_user.py USER` | Replace `DrollRobot` with your GitHub username. |
+| `choose_shell.py` | Pick your primary shell (bash/powershell), wire its Claude Code command hooks into `.claude/settings.json`, and delete the other shell's hook files. |
 | `find_fixmes.py` | List every remaining `FIXME` (in contents and file names). Read-only. |
 | `choose_license.py` | Pick one `LICENSE.*.FIXME`, fill in the copyright line, delete the rest. |
 | `reinit_git.py` | **Destructive.** Delete `.git` and run `git init` for a fresh history. |
@@ -28,8 +29,8 @@ Most scripts accept `--dry-run` (preview without writing) and `-y`/`--yes`
 (skip the confirmation prompt). Every change is previewed and confirmed before
 it is applied.
 
-Suggested order: **strip headers → rename → set user → choose license →
-find FIXMEs → reinit git → cleanup.** (Strip before rename so the workspace
+Suggested order: **strip headers → rename → set user → choose shell →
+choose license → find FIXMEs → reinit git → cleanup.** (Strip before rename so the workspace
 header is removed while the file still ends in `.jsonc`.) The whole
 `template_setup/` folder is
 disposable — `cleanup.py` (or the orchestrator) removes it when you're finished.

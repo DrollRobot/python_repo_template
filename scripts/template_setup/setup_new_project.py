@@ -7,10 +7,11 @@ and GitHub username up front and confirming once before making content changes:
     2. rename the project
     3. set the GitHub username
     4. set the Python version
-    5. choose a license            (optional)
-    6. report remaining FIXMEs
-    7. re-initialize git           (optional, destructive -- confirms separately)
-    8. remove this scaffolding     (optional, destructive -- confirms separately)
+    5. choose a primary shell      (wires Claude Code command hooks)
+    6. choose a license            (optional)
+    7. report remaining FIXMEs
+    8. re-initialize git           (optional, destructive -- confirms separately)
+    9. remove this scaffolding     (optional, destructive -- confirms separately)
 
 Each step is also runnable on its own; this just chains them. The destructive
 steps prompt for their own confirmation regardless of what you choose here.
@@ -25,6 +26,7 @@ import sys
 
 import _common
 import choose_license
+import choose_shell
 import cleanup
 import find_fixmes
 import reinit_git
@@ -48,6 +50,7 @@ def main() -> None:
         sys.exit("ERROR: project name and GitHub username are both required.")
 
     py_version = _common.prompt_value("Python version", default=set_python_version.DEFAULT_VERSION)
+    shell = choose_shell._prompt_choice()
     want_license = _common.confirm("Choose a license as part of setup?")
 
     actions = [
@@ -55,6 +58,7 @@ def main() -> None:
         "rename project",
         "set GitHub user",
         f"set Python {py_version}",
+        f"wire {shell} hooks",
     ]
     if want_license:
         actions.append("choose license")
@@ -68,6 +72,7 @@ def main() -> None:
     rename_project.run(root, new_name, assume_yes=True)
     set_github_user.run(root, gh_user, assume_yes=True)
     set_python_version.run(root, py_version, assume_yes=True)
+    choose_shell.run(root, shell, assume_yes=True)
     if want_license:
         choose_license.run(root, assume_yes=True)
 
