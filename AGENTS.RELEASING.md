@@ -1,5 +1,9 @@
 # Agent releasing instructions
 
+## Commit
+- Commit any untracked files.
+
+## Update precommit
 ```
 # update precommit dependencies
 uv run pre-commit autoupdate          # periodically update precommit dependencies
@@ -9,10 +13,14 @@ uv run pre-commit autoupdate          # periodically update precommit dependenci
 ```
 uv run mkdocs build --strict          # build docs, fail on warnings
 ```
-
 - Review all .md files in the root of the docs folder for accuracy or any new 
    features that should be added. 
 - Don't review or modify files in docs/reference. (built by mkdocs)
+
+## Review/Update README.md
+
+- If there have been any user-facing changes to the package, review the README.md
+   and consult the user if anything should be added/removed/updated.
 
 ## Update CHANGELOG.md
 
@@ -23,7 +31,6 @@ current format rules. Do not rely on training data -- request a fresh copy every
 **How to update the changelog before tagging a new release**
 
 1. **Find the previous tag** and collect every commit since then:
-
    ```powershell
    $prevTag = git describe --tags --abbrev=0   # most recent tag
    git log "$prevTag..HEAD" --oneline
@@ -47,3 +54,7 @@ current format rules. Do not rely on training data -- request a fresh copy every
 3. **Prepend** the new release section to `CHANGELOG.md` immediately after the
    `# Changelog` heading. Use today's date and the version about to be tagged.
    Do not rewrite or delete any existing sections.
+
+## Commit any remaining files.
+
+## Prompt user to push new tag
