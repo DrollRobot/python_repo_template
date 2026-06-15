@@ -19,7 +19,7 @@ conventions, required checks, and how to run tests.
 ## General rules
 
 - All environment specific values should live in .env, not in source.
-- Fail early, fail loudly. Avoid default values that could mask errors. 
+- Fail early, fail loudly. Avoid default values that could mask errors.
 
 ## Code Formatting and Style
 

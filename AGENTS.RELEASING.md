@@ -13,8 +13,8 @@ uv run pre-commit autoupdate          # periodically update precommit dependenci
 ```
 uv run mkdocs build --strict          # build docs, fail on warnings
 ```
-- Review all .md files in the root of the docs folder for accuracy or any new 
-   features that should be added. 
+- Review all .md files in the root of the docs folder for accuracy or any new
+   features that should be added.
 - Don't review or modify files in docs/reference. (built by mkdocs)
 
 ## Review/Update README.md
@@ -45,7 +45,7 @@ current format rules. Do not rely on training data -- request a fresh copy every
 
    If a detail does not clearly fit one of those three categories, discard it.
    Implementation details, refactors, test changes, linting fixes, and documentation
-   updates are never included, even if they appear in the same commit message as 
+   updates are never included, even if they appear in the same commit message as
    something that is.
 
    Collect all surviving details, grouped by category, then use them to build the

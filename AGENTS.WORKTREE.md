@@ -17,7 +17,7 @@ repo-level `AGENTS.md`; this file wins on worktree/PR matters.
 ## Commits
 
 - Agents should commit freely, ensuring all pre-commit checks pass.
-- Commit messages should follow Chris Beam's guidance: 
+- Commit messages should follow Chris Beam's guidance:
   https://chris.beams.io/posts/git-commit/
   Fetch the page at least once every session. Do not rely on memory for this.
 
