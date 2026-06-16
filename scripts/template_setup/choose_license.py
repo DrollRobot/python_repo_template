@@ -1,10 +1,11 @@
 """Pick one license, fill in the copyright line, and delete the rest.
 
-The template ships three candidate licenses:
+The template ships four candidate licenses:
 
     LICENSE.mit.FIXME
     LICENSE.apache.FIXME
     LICENSE.gnu.FIXME
+    LICENSE.proprietary.FIXME
 
 This script lets you choose one, renames it to ``LICENSE`` (no extension),
 substitutes the copyright year and holder name into the placeholders, and
@@ -13,6 +14,8 @@ deletes the unchosen candidates.
 Usage:
     uv run scripts/template_setup/choose_license.py
     uv run scripts/template_setup/choose_license.py --license mit --year 2026 --name "Ada Lovelace"
+    uv run scripts/template_setup/choose_license.py --license proprietary --year 2026 \
+        --name "Ada Lovelace" --company "Acme Corp"
 """
 
 from __future__ import annotations
@@ -29,33 +32,37 @@ CANDIDATES = {
     "mit": "LICENSE.mit.FIXME",
     "apache": "LICENSE.apache.FIXME",
     "gnu": "LICENSE.gnu.FIXME",
+    "proprietary": "LICENSE.proprietary.FIXME",
 }
 
 # The GNU GPL text carries its own copyright notice and takes no per-project
 # name, so name/year substitution is skipped for it.
-_NEEDS_HOLDER = {"mit", "apache"}
+_NEEDS_HOLDER = {"mit", "apache", "proprietary"}
+
+# Proprietary additionally distinguishes the copyright holder (author) from the
+# owning company, so it prompts for a company name on top of the holder name.
+_NEEDS_COMPANY = {"proprietary"}
 
 
-def _fill_placeholders(text: str, year: str, name: str) -> str:
-    """Substitute the copyright year and holder into license placeholders.
+def _fill_placeholders(text: str, year: str, name: str, company: str = "") -> str:
+    """Substitute the copyright year, holder, and company into placeholders.
 
-    Handles both the bracketed Apache form (``[FIXME year]``) and the bare MIT
-    form (``FIXME year``).
+    Every candidate uses the labeled brace form: ``FIXME{year}``,
+    ``FIXME{holder}``, and (proprietary only) ``FIXME{company}``.
 
     Args:
         text: License file contents.
         year: Copyright year.
-        name: Copyright holder name.
+        name: Copyright holder (author) name.
+        company: Owning company name; used by the proprietary license only.
 
     Returns:
         The license text with placeholders filled in.
     """
     replacements = [
-        ("[FIXME year]", year),
-        ("[FIXME name of copyright owner]", name),
-        ("FIXME year", year),
-        ("FIXME name of copyright owner", name),
-        ("FIXME name", name),
+        ("FIXME{year}", year),
+        ("FIXME{holder}", name),
+        ("FIXME{company}", company),
     ]
     for old, new in replacements:
         text = text.replace(old, new)
@@ -80,6 +87,7 @@ def run(
     key: str | None = None,
     year: str | None = None,
     name: str | None = None,
+    company: str | None = None,
     assume_yes: bool = False,
     dry_run: bool = False,
 ) -> int:
@@ -87,9 +95,10 @@ def run(
 
     Args:
         root: Project root directory.
-        key: License key (``mit``/``apache``/``gnu``); prompt if ``None``.
+        key: License key (``mit``/``apache``/``gnu``/``proprietary``); prompt if ``None``.
         year: Copyright year; prompt (default current year) if ``None``.
-        name: Copyright holder; prompt if ``None``.
+        name: Copyright holder (author); prompt if ``None``.
+        company: Owning company (proprietary only); prompt if ``None``.
         assume_yes: Skip the final confirmation prompt.
         dry_run: Show the plan without changing anything.
 
@@ -114,15 +123,21 @@ def run(
             year = _common.prompt_value("Copyright year", default=str(datetime.date.today().year))
         if name is None:
             name = _common.prompt_value("Copyright holder name")
+    if key in _NEEDS_COMPANY and company is None:
+        company = _common.prompt_value("Company name")
     year = year or ""
     name = name or ""
+    company = company or ""
 
     chosen = available[key]
     others = [path for other_key, path in available.items() if other_key != key]
 
     _common.info("Chosen", f"{chosen.name} -> LICENSE")
     if key in _NEEDS_HOLDER:
-        _common.info("Copyright", f"{year} {name}".strip())
+        copyright_line = f"{year} {name}".strip()
+        if key in _NEEDS_COMPANY:
+            copyright_line = f"{copyright_line}, {company}".strip(", ")
+        _common.info("Copyright", copyright_line)
     if others:
         print(f"  Delete: {', '.join(path.name for path in others)}")
 
@@ -137,7 +152,7 @@ def run(
 
     text = _common.read_text(chosen) or ""
     if key in _NEEDS_HOLDER:
-        text = _fill_placeholders(text, year, name)
+        text = _fill_placeholders(text, year, name, company)
     _common.write_text(root / "LICENSE", text)
     chosen.unlink()
     for path in others:
@@ -175,7 +190,8 @@ def main() -> None:
     )
     parser.add_argument("--license", dest="key", choices=sorted(CANDIDATES), help="License to use.")
     parser.add_argument("--year", help="Copyright year (default: current year).")
-    parser.add_argument("--name", help="Copyright holder name.")
+    parser.add_argument("--name", help="Copyright holder (author) name.")
+    parser.add_argument("--company", help="Owning company name (proprietary license only).")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt.")
     parser.add_argument(
         "--dry-run", action="store_true", help="Show what would change without writing."
@@ -189,6 +205,7 @@ def main() -> None:
             key=args.key,
             year=args.year,
             name=args.name,
+            company=args.company,
             assume_yes=args.yes,
             dry_run=args.dry_run,
         )
