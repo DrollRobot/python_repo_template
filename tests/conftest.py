@@ -58,3 +58,13 @@ def test_settings() -> dict[str, str]:
 # def client(test_settings: dict[str, str]) -> MyClient:
 #     """Return a client configured for integration tests."""
 #     return MyClient(api_key=test_settings["MY_API_KEY"])
+#
+# Credentials via the configured backend (CREDENTIAL_BACKEND in .env: keyring by
+# default, keyvault when you flip it). The call is backend-agnostic:
+#
+# from tests._bootstrap import get_user_pass
+#
+# @pytest.fixture(scope="session")
+# def credentials(test_settings: dict[str, str]) -> tuple[str, str]:
+#     """Username/password from keyring (dev) or KeyVault (prod) per .env."""
+#     return get_user_pass(test_settings)

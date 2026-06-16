@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Credentials made modular. The Azure KeyVault backend moved out of
+  `tests/_bootstrap.py` into its own `tests/_keyvault.py`, loaded lazily by the
+  dispatcher; `_bootstrap.py` no longer imports `azure`. The default backend is
+  now keyring (was keyvault), still switchable at runtime via `CREDENTIAL_BACKEND`
+  in `.env`. `setup_credentials.py` is now self-contained (no longer imports from
+  `tests/`). Settings load from `.env` (was `.env.testing`). Added an "Optional
+  features & how to remove them" guide to the README, and declared the
+  `integration` pytest marker.
+
 ### Added
 
 - `set_python_version.py` template-setup step that retargets the project's

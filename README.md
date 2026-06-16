@@ -90,3 +90,20 @@ uvx detect-secrets scan > .secrets.baseline
 ```
 
 **Write some code!**
+
+## Optional features & how to remove them
+
+Each optional feature is isolated so you can delete it cleanly: remove the listed
+files and config lines, then re-lock with `uv lock`.
+
+| Feature | Delete | Remove from config |
+| --- | --- | --- |
+| **Credentials (keyring)** | `tests/_bootstrap.py`, `scripts/setup_credentials.py` | the `keyring` dep in `pyproject.toml`; the credentials block in `.env.example`; the commented credentials example in `tests/conftest.py`; the keyring bullet above |
+| **Azure KeyVault backend** | `tests/_keyvault.py` | the `keyvault` group + its `dev` include in `pyproject.toml`; the `KEYVAULT_*` block in `.env.example` (leave `CREDENTIAL_BACKEND=keyring`) |
+| **MkDocs docs** | `docs/`, `mkdocs.yml`, `.github/workflows/docs.yml` | the `docs` group + its `dev` include in `pyproject.toml`; the mkdocs bullet + Pages step above |
+| **Worktree scripts** | `scripts/new_worktree.py`, `scripts/complete_worktree.py`, `scripts/remove_worktree.py`, and their `tests/test_*.py` | — (`scripts/_cli.py` stays; the release script uses it) |
+| **Release script** | `scripts/push_new_tag_to_main.py` | — (also delete `scripts/_cli.py` if nothing else uses it) |
+
+The common case — dropping KeyVault but keeping keyring — is just deleting
+`tests/_keyvault.py` and the two `pyproject.toml` lines; the keyring path keeps
+working with no other changes.

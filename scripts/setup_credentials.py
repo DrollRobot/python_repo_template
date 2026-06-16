@@ -1,9 +1,9 @@
 """Setup script: Stores secrets in the OS native keyring.
 
-Stores secrets in the OS native keyring rather than on disk in .env.testing.
-The .env.testing file holds the keyring key names, not the actual secrets.
+Stores secrets in the OS native keyring rather than on disk in .env.
+The .env file holds the keyring key names, not the actual secrets.
 
-Run this once per credential type, then configure .env.testing to use the
+Run this once per credential type, then configure .env to use the
 stored credentials for tests and dev scripts without Azure KeyVault.
 
 Usage:
@@ -31,18 +31,28 @@ from pathlib import Path
 
 import keyring
 
-from tests._bootstrap import _KEYRING_SERVICE, load_settings
-
-_PROJECT_ROOT = Path(__file__).parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-
+_ENV_FILE = Path(__file__).parent.parent / ".env"
+_KEYRING_SERVICE = "python_repo_template"
 PACKAGE_NAME = "python_repo_template"
 
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.0.0"
+__version__ = "1.1.0"
+
+
+def load_settings(env_file: Path = _ENV_FILE) -> dict[str, str]:
+    """Load key/value pairs from *env_file* and return as a plain dict.
+
+    Raises:
+        FileNotFoundError: if the file does not exist.
+    """
+    from dotenv import dotenv_values
+
+    if not env_file.exists():
+        raise FileNotFoundError(env_file)
+    values = dotenv_values(env_file)
+    return {k: v for k, v in values.items() if v is not None}
 
 
 def _store_user_pass(settings: dict[str, str]) -> None:
@@ -90,7 +100,7 @@ def _store_service_principal(settings: dict[str, str]) -> None:
     client_id_key = settings["CLIENT_ID_KEY"]
     client_secret_key = settings["CLIENT_SECRET_KEY"]
 
-    print("Script assumes you have the following in your .env.testing file:")
+    print("Script assumes you have the following in your .env file:")
     print("    CREDENTIAL_BACKEND=keyring")
     print("    CREDENTIAL_TYPE=service_principal")
     print(f"    TENANT_ID_KEY={PACKAGE_NAME}_tenant_id")
