@@ -42,17 +42,8 @@ automate the tedious parts. Run the whole transition in one guided pass:
 uv run scripts/template_setup/setup_new_project.py
 ```
 
-…or run any step on its own (details in `scripts/template_setup/README.md`):
-
-- `rename_project.py NAME` — replace `python_repo_template` / `python-repo-template`
-  throughout and rename the package folder + `.code-workspace` file.
-- `strip_template_headers.py` — remove the `TEMPLATE SETUP NOTES` header banners.
-- `set_github_user.py USER` — replace `DrollRobot` with your GitHub username.
-- `choose_license.py` — pick one license, fill in the copyright line, delete the rest.
-- `find_fixmes.py` — list every remaining `FIXME` (read-only checklist).
-- `reinit_git.py` — delete `.git` and start a fresh history (destructive).
-- `cleanup.py` — delete the `template_setup/` folder and the dev-script tests
-  once you're done (destructive).
+…or run any step on its own — see `scripts/template_setup/README.md` for the
+full list of steps and what each one does.
 
 Each script previews its changes and asks before applying; most accept
 `--dry-run` and `-y`/`--yes`. After choosing a license, update the license badge

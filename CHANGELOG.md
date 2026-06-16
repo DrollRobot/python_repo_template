@@ -7,19 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Credentials made modular. The Azure KeyVault backend moved out of
-  `tests/_bootstrap.py` into its own `tests/_keyvault.py`, loaded lazily by the
-  dispatcher; `_bootstrap.py` no longer imports `azure`. The default backend is
-  now keyring (was keyvault), still switchable at runtime via `CREDENTIAL_BACKEND`
-  in `.env`. `setup_credentials.py` is now self-contained (no longer imports from
-  `tests/`). Settings load from `.env` (was `.env.testing`). Added an "Optional
-  features & how to remove them" guide to the README, and declared the
-  `integration` pytest marker.
+## [1.4.0] - 2026-06-16
 
 ### Added
 
+- `choose_shell.py` template-setup step that asks for the primary shell and
+  wires the matching Claude Code `PreToolUse` command hooks into
+  `.claude/settings.json` (merging idempotently and preserving unrelated
+  entries), then removes the unused hook pair. Wired into the
+  `setup_new_project.py` orchestrator.
 - `set_python_version.py` template-setup step that retargets the project's
   Python version everywhere it is declared (`.python-version`, `pyproject.toml`,
   pre-commit, docs, badge, issue template). The default lives in one
@@ -30,6 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--no-version` option to `push_new_tag_to_main.py`, which merges, tags, and
   pushes without changing the version. Passing `--version` with the version
   already in use is treated the same way.
+
+### Changed
+
+- `push_new_tag_to_main.py` now fetches from origin and fast-forwards both the
+  source branch and `main` before merging, aborting if either has diverged, so a
+  release can no longer be cut from a stale branch (e.g. a PR merged on the
+  remote but not yet pulled).
+- Credentials made modular. The Azure KeyVault backend moved out of
+  `tests/_bootstrap.py` into its own `tests/_keyvault.py`, loaded lazily by the
+  dispatcher; `_bootstrap.py` no longer imports `azure`. The default backend is
+  now keyring (was keyvault), still switchable at runtime via `CREDENTIAL_BACKEND`
+  in `.env`. `setup_credentials.py` is now self-contained (no longer imports from
+  `tests/`). Settings load from `.env` (was `.env.testing`). Added an "Optional
+  features & how to remove them" guide to the README, and declared the
+  `integration` pytest marker.
 
 ## [1.3.0] - 2026-06-12
 
@@ -128,7 +139,8 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/DrollRobot/python_repo_template/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.1.0...v1.2.0
