@@ -29,24 +29,16 @@ uv run pre-commit install
 
 ## Running checks
 
+The full list of lint, format, type-check, test, and pre-commit commands lives
+in [AGENTS.TESTING.md](AGENTS.TESTING.md). Run those before opening a PR.
+
+Pre-commit also runs lint, format, type check, and secret detection
+automatically on every commit.
+
+### Docs
+
 ```
-# Verify lockfile
-uv lock --check
-
-# Lint and format
-uv run ruff check .
-uv run ruff format --check .
-
-# Type checking
-uv run mypy src tests
-
-# Unit tests (no credentials needed)
-uv run pytest -m "not integration"
-
-# Integration tests (requires .env -- see AGENTS.md)
-uv run pytest -m integration
-
-# Docs (live preview at http://127.0.0.1:8000)
+# live preview at http://127.0.0.1:8000
 uv run mkdocs serve
 
 # or build static HTML once
@@ -54,13 +46,6 @@ uv run mkdocs build --strict
 
 # deploy to GitHub Pages
 uv run mkdocs gh-deploy --force
-```
-
-
-Pre-commit runs lint, format, type check, and secret detection on every
-commit. To run it manually across all files:
-```
-uv run pre-commit run --all-files
 ```
 
 ## Project conventions
@@ -90,10 +75,10 @@ so downstream consumers depend on its type information.
 ## Pull requests
 
 1. Branch from `main` and open a PR against `main`.
-2. Ensure `uv run pre-commit run --all-files` passes clean.
-3. Ensure `uv run pytest -m "not integration"` passes.
-4. Update `CHANGELOG.md` under `## [Unreleased]`.
-5. Update docstrings and `docs/` if the public API changed.
+2. Run the checks and tests in [AGENTS.TESTING.md](AGENTS.TESTING.md) and ensure
+   they pass clean.
+3. Update `CHANGELOG.md` under `## [Unreleased]`.
+4. Update docstrings and `docs/` if the public API changed.
 
 ## Reporting issues
 

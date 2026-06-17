@@ -43,7 +43,7 @@ dev = [
 
 [tool.uv.sources]
 # FIXME add any local/github dependencies here.
-# other-project = { git = "https://github.com/USERNAME/other-project.git", tag = "v1.2.1" }
+# other-project = { git = "https://github.com/USERNAME/other-project.git", tag = "v1.2.3" }
 # other-project = { path = "/PATH/TO/PROJECT", editable = true }
 
 [project.scripts]
@@ -55,7 +55,13 @@ package-data = { python_repo_template = ["py.typed"] }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "--cov=python_repo_template --cov-report=term-missing --strict-markers --strict-config"
+addopts = [
+    "--cov=python_repo_template",
+    "--cov-report=term-missing",
+    "--cov-fail-under=0", # FIXME: the test coverage gate is disabled for template. set to 80? 90?
+    "--strict-markers",
+    "--strict-config",
+]
 xfail_strict = true
 filterwarnings = ["error"]
 markers = [

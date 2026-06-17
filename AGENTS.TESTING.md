@@ -9,6 +9,17 @@ uv lock --check                       # verify lockfile in sync
 uv run ruff check .                   # lint
 uv run ruff format .                  # apply ruff formatting
 uv run mypy src tests                 # type check
+
+# tests
 uv run pytest -m "not integration"    # offline tests
 uv run pytest                         # online and offline tests (when credentialed)
+
+# dependency CVE audit (network; OSV database) -- also gated in CI via audit.yml
+uv audit
+
+# docs build catches broken refs/nav and docstring import errors
+uv run mkdocs build --strict
+
+# run every pre-commit hook across the repo (lint, format, type, secret scan)
+uv run pre-commit run --all-files
 ```
