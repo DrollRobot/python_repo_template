@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `set_version.py` template-setup step that resets the project's release version
+  in `pyproject.toml` (default `0.1.0`), and `reset_changelog.py`, which drops the
+  template's own `CHANGELOG.md` history in favour of a blank `CHANGELOG.md.FIXME`
+  skeleton. Both are wired into the `setup_new_project.py` orchestrator.
+
 ## [1.4.0] - 2026-06-16
 
 ### Added
