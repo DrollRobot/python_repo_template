@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-17
+
 ### Added
 
 - `remove_mkdocs.py` template-setup step that drops the documentation site for
@@ -19,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `pyproject.toml` (default `0.1.0`), and `reset_changelog.py`, which drops the
   template's own `CHANGELOG.md` history in favour of a blank `CHANGELOG.md.FIXME`
   skeleton. Both are wired into the `setup_new_project.py` orchestrator.
+- Proprietary (internal-use) license option: a fourth `LICENSE.proprietary.FIXME`
+  candidate for confidential or internal-only projects. The license chooser offers
+  it and prompts for an owning company name in addition to the copyright holder;
+  all candidate placeholders now use a labelled `FIXME{...}` brace form.
+
+### Removed
+
+- `pydantic-settings` is no longer a template dependency. It was an unused runtime
+  dependency -- `.env` loading goes through `python-dotenv` in the `test` group.
 
 ## [1.4.0] - 2026-06-16
 
@@ -152,7 +163,8 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/DrollRobot/python_repo_template/compare/v1.2.0...v1.2.1
