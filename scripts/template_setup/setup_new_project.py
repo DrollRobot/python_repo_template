@@ -11,9 +11,10 @@ and GitHub username up front and confirming once before making content changes:
      6. reset the changelog         (drops the template's history)
      7. choose a primary shell      (wires Claude Code command hooks)
      8. choose a license            (optional)
-     9. report remaining FIXMEs
-    10. re-initialize git           (optional, destructive -- confirms separately)
-    11. remove this scaffolding     (optional, destructive -- confirms separately)
+     9. remove mkdocs               (optional, if you don't want a docs site)
+    10. report remaining FIXMEs
+    11. re-initialize git           (optional, destructive -- confirms separately)
+    12. remove this scaffolding     (optional, destructive -- confirms separately)
 
 Each step is also runnable on its own; this just chains them. The destructive
 steps prompt for their own confirmation regardless of what you choose here.
@@ -32,6 +33,7 @@ import choose_shell
 import cleanup
 import find_fixmes
 import reinit_git
+import remove_mkdocs
 import rename_project
 import reset_changelog
 import set_github_user
@@ -57,6 +59,7 @@ def main() -> None:
     version = _common.prompt_value("Project version", default=set_version.DEFAULT_VERSION)
     shell = choose_shell._prompt_choice()
     want_license = _common.confirm("Choose a license as part of setup?")
+    want_remove_mkdocs = _common.confirm("Remove mkdocs (documentation site)?")
 
     actions = [
         "strip headers",
@@ -69,6 +72,8 @@ def main() -> None:
     ]
     if want_license:
         actions.append("choose license")
+    if want_remove_mkdocs:
+        actions.append("remove mkdocs")
 
     print()
     print("  About to: " + ", ".join(actions) + ".")
@@ -84,6 +89,8 @@ def main() -> None:
     choose_shell.run(root, shell, assume_yes=True)
     if want_license:
         choose_license.run(root, assume_yes=True)
+    if want_remove_mkdocs:
+        remove_mkdocs.run(root, assume_yes=True)
 
     # Report what is left to fill in by hand.
     find_fixmes.run(root)

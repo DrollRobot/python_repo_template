@@ -25,6 +25,7 @@ python scripts/template_setup/setup_new_project.py
 | `reset_changelog.py` | Drop the template's own `CHANGELOG.md` history and put the blank `CHANGELOG.md.FIXME` skeleton in its place. |
 | `find_fixmes.py` | List every remaining `FIXME` (in contents and file names). Read-only. |
 | `choose_license.py` | Pick one `LICENSE.*.FIXME`, fill in the copyright line, delete the rest. |
+| `remove_mkdocs.py` | Drop the docs site if you don't want one: deletes `docs/`, `mkdocs.yml`, and the Pages workflow, and strips the `docs` dependency group and every mkdocs reference from `pyproject.toml`, `.gitignore`, `README.md`, `CONTRIBUTING.md`, and `AGENTS.RELEASING.md`. |
 | `reinit_git.py` | **Destructive.** Delete `.git` and run `git init` for a fresh history. |
 | `cleanup.py` | **Destructive.** Delete this `template_setup/` folder and the unit tests for the dev scripts (the scripts stay) once you're done. |
 
@@ -33,8 +34,8 @@ Most scripts accept `--dry-run` (preview without writing) and `-y`/`--yes`
 it is applied.
 
 Suggested order: **strip headers → rename → set user → set python version →
-set version → reset changelog → choose shell → choose license → find FIXMEs →
-reinit git → cleanup.** (Strip before rename so the workspace
+set version → reset changelog → choose shell → choose license → remove mkdocs
+(optional) → find FIXMEs → reinit git → cleanup.** (Strip before rename so the workspace
 header is removed while the file still ends in `.jsonc`. Reset the changelog
 after rename and set-user so the skeleton's links pick up the new project name
 and username.) The whole

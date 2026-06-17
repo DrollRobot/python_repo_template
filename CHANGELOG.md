@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `remove_mkdocs.py` template-setup step that drops the documentation site for
+  projects that don't want one: it deletes `docs/`, `mkdocs.yml`, and the Pages
+  deploy workflow, and strips the `docs` dependency group and every mkdocs
+  reference from `pyproject.toml`, `.gitignore`, `README.md`, `CONTRIBUTING.md`,
+  and `AGENTS.RELEASING.md`. Offered as an optional step in the
+  `setup_new_project.py` orchestrator.
 - `set_version.py` template-setup step that resets the project's release version
   in `pyproject.toml` (default `0.1.0`), and `reset_changelog.py`, which drops the
   template's own `CHANGELOG.md` history in favour of a blank `CHANGELOG.md.FIXME`
