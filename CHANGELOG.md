@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- `choose_shell.py` now asks whether to install the Claude Code command hooks at
-  all before asking for a primary shell. Declining (or passing `--no-hooks`)
-  removes all four hook files instead of wiring any, so projects that don't want
-  the hooks ship none. The `setup_new_project.py` orchestrator gates the shell
-  prompt behind this choice.
-
 ## [1.5.0] - 2026-06-17
 
 ### Added
@@ -33,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   candidate for confidential or internal-only projects. The license chooser offers
   it and prompts for an owning company name in addition to the copyright holder;
   all candidate placeholders now use a labelled `FIXME{...}` brace form.
+
+### Changed
+
+- `choose_shell.py` now asks whether to install the Claude Code command hooks at
+  all before asking for a primary shell. Declining (or passing `--no-hooks`)
+  removes all four hook files instead of wiring any, so projects that don't want
+  the hooks ship none. The `setup_new_project.py` orchestrator gates the shell
+  prompt behind this choice.
+- Default Python target raised from 3.13 to 3.14 throughout the template:
+  `.python-version`, `pyproject.toml` (`requires-python`, ruff `target-version`,
+  mypy `python_version`), `.pre-commit-config.yaml`, the docs, the README badge,
+  and the issue template. `set_python_version.py`'s built-in default is bumped to
+  3.14 to match.
 
 ### Removed
 
