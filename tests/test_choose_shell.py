@@ -126,7 +126,7 @@ def test_read_settings_non_object_returns_empty(tmp_path: Path) -> None:
 def test_run_invalid_shell_returns_one(tmp_path: Path) -> None:
     """An unrecognized shell name is rejected without writing anything."""
     root = _make_project(tmp_path)
-    assert choose_shell.run(root, "fish", assume_yes=True) == 1
+    assert choose_shell.run(root, "fish", install=True, assume_yes=True) == 1
     assert not (root / choose_shell.SETTINGS_PATH).exists()
 
 
@@ -134,13 +134,13 @@ def test_run_missing_hook_files_returns_one(tmp_path: Path) -> None:
     """A shell whose hook files are absent is rejected."""
     root = tmp_path
     (root / choose_shell.HOOKS_DIR).mkdir(parents=True)
-    assert choose_shell.run(root, "bash", assume_yes=True) == 1
+    assert choose_shell.run(root, "bash", install=True, assume_yes=True) == 1
 
 
 def test_run_dry_run_changes_nothing(tmp_path: Path) -> None:
     """A dry run neither writes settings nor deletes the other shell's hooks."""
     root = _make_project(tmp_path)
-    assert choose_shell.run(root, "powershell", assume_yes=True, dry_run=True) == 0
+    assert choose_shell.run(root, "powershell", install=True, assume_yes=True, dry_run=True) == 0
     assert not (root / choose_shell.SETTINGS_PATH).exists()
     hooks = root / choose_shell.HOOKS_DIR
     assert (hooks / "canonical-commands-bash.py").exists()
@@ -149,7 +149,7 @@ def test_run_dry_run_changes_nothing(tmp_path: Path) -> None:
 def test_run_writes_settings_and_deletes_unused(tmp_path: Path) -> None:
     """A real run wires the chosen hooks and removes the other shell's files."""
     root = _make_project(tmp_path)
-    assert choose_shell.run(root, "powershell", assume_yes=True) == 0
+    assert choose_shell.run(root, "powershell", install=True, assume_yes=True) == 0
 
     settings = json.loads((root / choose_shell.SETTINGS_PATH).read_text(encoding="utf-8"))
     entry = settings["hooks"]["PreToolUse"][-1]
@@ -159,3 +159,32 @@ def test_run_writes_settings_and_deletes_unused(tmp_path: Path) -> None:
     assert (hooks / "canonical-commands-pwsh.py").exists()
     assert not (hooks / "canonical-commands-bash.py").exists()
     assert not (hooks / "no-chained-commands-bash.py").exists()
+
+
+def test_run_decline_removes_all_hooks(tmp_path: Path) -> None:
+    """Declining the hooks deletes every hook file and writes no settings."""
+    root = _make_project(tmp_path)
+    assert choose_shell.run(root, install=False, assume_yes=True) == 0
+
+    assert not (root / choose_shell.SETTINGS_PATH).exists()
+    hooks = root / choose_shell.HOOKS_DIR
+    assert not hooks.exists()  # the emptied directory is removed too
+
+
+def test_run_decline_dry_run_keeps_hooks(tmp_path: Path) -> None:
+    """A declined dry run reports the removal but deletes nothing."""
+    root = _make_project(tmp_path)
+    assert choose_shell.run(root, install=False, assume_yes=True, dry_run=True) == 0
+
+    hooks = root / choose_shell.HOOKS_DIR
+    for name in choose_shell._ALL_HOOK_FILES:
+        assert (hooks / name).exists()
+
+
+def test_remove_all_hooks_returns_removed_names(tmp_path: Path) -> None:
+    """The remover deletes present hook files and reports them sorted."""
+    root = _make_project(tmp_path)
+    hooks = root / choose_shell.HOOKS_DIR
+    removed = choose_shell._remove_all_hooks(hooks)
+    assert removed == sorted(choose_shell._ALL_HOOK_FILES)
+    assert not hooks.exists()

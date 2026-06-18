@@ -1,4 +1,4 @@
-"""Pick a primary shell and wire its command hooks into Claude Code.
+"""Optionally install Claude Code command hooks, wired to your primary shell.
 
 The template ships two flavors of two ``PreToolUse`` hooks under
 ``.claude/hooks/``:
@@ -7,14 +7,17 @@ The template ships two flavors of two ``PreToolUse`` hooks under
     canonical-commands-bash.py   no-chained-commands-bash.py   (Bash)
 
 Each hook keeps shell invocations consistent so a permission allowlist keeps
-matching. This script asks which shell you primarily use, writes the matching
-pair into ``.claude/settings.json`` (merging with anything already there), and
-deletes the unused pair so the project ships only the hooks it uses.
+matching. This script first asks whether to install the hooks at all. Decline
+and it deletes all four hook files so none linger. Accept and it asks which
+shell you primarily use, writes the matching pair into ``.claude/settings.json``
+(merging with anything already there), and deletes the unused pair so the
+project ships only the hooks it uses.
 
 Usage:
     uv run scripts/template_setup/choose_shell.py
     uv run scripts/template_setup/choose_shell.py --shell bash
     uv run scripts/template_setup/choose_shell.py --shell powershell --dry-run
+    uv run scripts/template_setup/choose_shell.py --no-hooks
 """
 
 from __future__ import annotations
@@ -126,25 +129,81 @@ def _merge_settings(existing: dict, entry: dict) -> dict:
     return settings
 
 
+def _remove_all_hooks(hooks_dir: Path) -> list[str]:
+    """Delete every template hook file (and the dir if it empties out).
+
+    Args:
+        hooks_dir: The ``.claude/hooks`` directory.
+
+    Returns:
+        Sorted names of the hook files that were present and removed.
+    """
+    removed = []
+    for name in sorted(_ALL_HOOK_FILES):
+        path = hooks_dir / name
+        if path.exists():
+            path.unlink()
+            removed.append(name)
+    if hooks_dir.exists() and not any(hooks_dir.iterdir()):
+        hooks_dir.rmdir()
+    return removed
+
+
+def _decline_hooks(hooks_dir: Path, *, dry_run: bool = False) -> int:
+    """Remove all hook files when the user opts out of installing the hooks.
+
+    Args:
+        hooks_dir: The ``.claude/hooks`` directory.
+        dry_run: Show what would be removed without deleting anything.
+
+    Returns:
+        Process exit code (always 0).
+    """
+    present = sorted(name for name in _ALL_HOOK_FILES if (hooks_dir / name).exists())
+    _common.info("Hooks", "skipped")
+    if present:
+        print(f"  Delete: {', '.join(present)}")
+    else:
+        print("  No hook files to remove.")
+
+    if dry_run:
+        print("\n  (dry run -- nothing changed)")
+        return 0
+
+    _remove_all_hooks(hooks_dir)
+    if present:
+        print("\n  Removed the pre-tool hook scripts; no settings written.")
+    return 0
+
+
 def run(
     root: Path,
     shell: str | None = None,
     *,
+    install: bool | None = None,
     assume_yes: bool = False,
     dry_run: bool = False,
 ) -> int:
-    """Wire the chosen shell's hooks into settings and drop the other shell's.
+    """Install the chosen shell's hooks into settings, or remove them on decline.
 
     Args:
         root: Project root directory.
-        shell: ``powershell`` or ``bash``; prompt if ``None``.
+        shell: ``powershell`` or ``bash``; prompt if ``None`` (only when installing).
+        install: Whether to install the hooks at all; prompt if ``None``.
         assume_yes: Skip the confirmation prompt.
         dry_run: Show the plan without changing anything.
 
     Returns:
         Process exit code (0 on success, 1 if aborted or invalid).
     """
-    _common.section("Choose a primary shell")
+    _common.section("Claude Code command hooks")
+
+    hooks_dir = root / HOOKS_DIR
+
+    if install is None:
+        install = _prompt_install()
+    if not install:
+        return _decline_hooks(hooks_dir, dry_run=dry_run)
 
     if shell is None:
         shell = _prompt_choice()
@@ -154,7 +213,6 @@ def run(
         return 1
     spec = SHELLS[shell]
 
-    hooks_dir = root / HOOKS_DIR
     missing = [name for name in spec["hooks"] if not (hooks_dir / name).exists()]
     if missing:
         print(f"  Missing hook file(s): {', '.join(missing)}. Has setup already run?")
@@ -211,6 +269,24 @@ def _read_settings(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _prompt_install() -> bool:
+    """Ask whether to install the Claude Code command hooks at all.
+
+    Returns:
+        ``True`` to install (and then choose a shell), ``False`` to skip them
+        and remove the hook files.
+    """
+    print("Claude pre-tool hooks:")
+    print("  1. No chained commands. (allows allowlist to evaluate properly)")
+    print(
+        "  2. Keep command invocation consistent. "
+        "(avoids having to allow multiple similar commands)"
+    )
+    print("Declining removes the hook scripts entirely.")
+    print()
+    return _common.confirm("  Install Claude pre-tool hooks?")
+
+
 def _prompt_choice() -> str:
     """Prompt the user to pick a primary shell by number.
 
@@ -229,19 +305,26 @@ def _prompt_choice() -> str:
 
 
 def main() -> None:
-    """Parse arguments and run the shell chooser."""
+    """Parse arguments and run the hook installer."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--shell", choices=sorted(SHELLS), help="Primary shell to wire in.")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--shell", choices=sorted(SHELLS), help="Primary shell to wire in.")
+    group.add_argument(
+        "--no-hooks", action="store_true", help="Skip the hooks and remove the hook files."
+    )
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt.")
     parser.add_argument(
         "--dry-run", action="store_true", help="Show what would change without writing."
     )
     args = parser.parse_args()
 
+    # --no-hooks declines; --shell implies installing; otherwise prompt.
+    install: bool | None = False if args.no_hooks else True if args.shell else None
+
     root = _common.find_root()
-    sys.exit(run(root, args.shell, assume_yes=args.yes, dry_run=args.dry_run))
+    sys.exit(run(root, args.shell, install=install, assume_yes=args.yes, dry_run=args.dry_run))
 
 
 if __name__ == "__main__":

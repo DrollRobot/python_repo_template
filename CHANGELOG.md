@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `choose_shell.py` now asks whether to install the Claude Code command hooks at
+  all before asking for a primary shell. Declining (or passing `--no-hooks`)
+  removes all four hook files instead of wiring any, so projects that don't want
+  the hooks ship none. The `setup_new_project.py` orchestrator gates the shell
+  prompt behind this choice.
+
 ## [1.5.0] - 2026-06-17
 
 ### Added

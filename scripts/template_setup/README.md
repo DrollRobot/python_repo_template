@@ -19,7 +19,7 @@ python scripts/template_setup/setup_new_project.py
 | `rename_project.py NAME` | Replace `python_repo_template` / `python-repo-template` everywhere, rename the package folder, and turn `*.code-workspace.FIXME.jsonc` into `NAME.code-workspace`. |
 | `strip_template_headers.py` | Remove the `TEMPLATE SETUP NOTES` banner from the top of every file. |
 | `set_github_user.py USER` | Replace `DrollRobot` with your GitHub username. |
-| `choose_shell.py` | Pick your primary shell (bash/powershell), wire its Claude Code command hooks into `.claude/settings.json`, and delete the other shell's hook files. |
+| `choose_shell.py` | Ask whether to install the Claude Code command hooks. Decline (or pass `--no-hooks`) and it deletes all four hook files; accept and it asks your primary shell (bash/powershell), wires that pair into `.claude/settings.json`, and deletes the other shell's files. |
 | `set_python_version.py [VERSION]` | Retarget the project's Python version everywhere it is declared (`.python-version`, `pyproject.toml`, pre-commit, docs, README badge, issue template). |
 | `set_version.py [VERSION]` | Set the project's release version in `pyproject.toml` (default `0.1.0` for a fresh project). |
 | `reset_changelog.py` | Drop the template's own `CHANGELOG.md` history and put the blank `CHANGELOG.md.FIXME` skeleton in its place. |

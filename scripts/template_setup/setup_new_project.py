@@ -9,7 +9,7 @@ and GitHub username up front and confirming once before making content changes:
      4. set the Python version
      5. set the project version    (resets to 0.1.0 for a new project)
      6. reset the changelog         (drops the template's history)
-     7. choose a primary shell      (wires Claude Code command hooks)
+     7. install command hooks       (optional; wires Claude Code hooks to your shell)
      8. choose a license            (optional)
      9. remove mkdocs               (optional, if you don't want a docs site)
     10. report remaining FIXMEs
@@ -57,7 +57,8 @@ def main() -> None:
 
     py_version = _common.prompt_value("Python version", default=set_python_version.DEFAULT_VERSION)
     version = _common.prompt_value("Project version", default=set_version.DEFAULT_VERSION)
-    shell = choose_shell._prompt_choice()
+    install_hooks = choose_shell._prompt_install()
+    shell = choose_shell._prompt_choice() if install_hooks else None
     want_license = _common.confirm("Choose a license as part of setup?")
     want_remove_mkdocs = _common.confirm("Remove mkdocs (documentation site)?")
 
@@ -68,7 +69,7 @@ def main() -> None:
         f"set Python {py_version}",
         f"set version {version}",
         "reset changelog",
-        f"wire {shell} hooks",
+        f"wire {shell} hooks" if install_hooks else "remove command hooks",
     ]
     if want_license:
         actions.append("choose license")
@@ -86,7 +87,7 @@ def main() -> None:
     set_python_version.run(root, py_version, assume_yes=True)
     set_version.run(root, version, assume_yes=True)
     reset_changelog.run(root, assume_yes=True)
-    choose_shell.run(root, shell, assume_yes=True)
+    choose_shell.run(root, shell, install=install_hooks, assume_yes=True)
     if want_license:
         choose_license.run(root, assume_yes=True)
     if want_remove_mkdocs:
