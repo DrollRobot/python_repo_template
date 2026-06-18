@@ -27,13 +27,13 @@ PYPROJECT = (
     "[project]\n"
     'name = "demo"\n'
     'version = "1.4.0"\n'
-    'requires-python = ">=3.13"\n'
+    'requires-python = ">=3.14"\n'
     "\n"
     "[tool.ruff]\n"
-    'target-version = "py313"\n'
+    'target-version = "py314"\n'
     "\n"
     "[tool.mypy]\n"
-    'python_version = "3.13"\n'
+    'python_version = "3.14"\n'
 )
 
 
@@ -44,7 +44,7 @@ def test_validate_accepts_valid() -> None:
     assert set_version.validate("  2.3.4  ") == "2.3.4"
 
 
-@pytest.mark.parametrize("bad", ["1", "1.0", "abc", "", "py313"])
+@pytest.mark.parametrize("bad", ["1", "1.0", "abc", "", "py314"])
 def test_validate_rejects_invalid(bad: str) -> None:
     """Anything that is not MAJOR.MINOR.PATCH raises ValueError."""
     with pytest.raises(ValueError, match="not a valid version"):
@@ -57,8 +57,8 @@ def test_set_version_touches_only_project_version() -> None:
     assert 'version = "0.1.0"' in result
     assert '"1.4.0"' not in result
     # The look-alike fields must survive unchanged.
-    assert 'target-version = "py313"' in result
-    assert 'python_version = "3.13"' in result
+    assert 'target-version = "py314"' in result
+    assert 'python_version = "3.14"' in result
 
 
 def test_run_updates_pyproject(tmp_path: Path) -> None:
@@ -68,7 +68,7 @@ def test_run_updates_pyproject(tmp_path: Path) -> None:
 
     pyproject = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
     assert 'version = "0.1.0"' in pyproject
-    assert 'target-version = "py313"' in pyproject
+    assert 'target-version = "py314"' in pyproject
 
 
 def test_run_is_idempotent(tmp_path: Path) -> None:

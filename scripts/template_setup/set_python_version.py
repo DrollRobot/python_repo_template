@@ -3,9 +3,9 @@
 A fresh clone targets one Python version, written into several files in three
 different spellings:
 
-    3.13     dotted     (.python-version, requires-python, mypy, docs, badge)
-    py313    compact    (ruff target-version)
-    3.13.3   patch      (the bug-report issue template's example placeholder)
+    3.14     dotted     (.python-version, requires-python, mypy, docs, badge)
+    py314    compact    (ruff target-version)
+    3.14.3   patch      (the bug-report issue template's example placeholder)
 
 This rewrites every one of those to the version you choose, keeping each file's
 surrounding syntax intact. It deliberately does **not** touch ``uv.lock`` -- that
@@ -34,7 +34,7 @@ import _common
 # version on the command line) to retarget the whole project.
 DEFAULT_VERSION = "3.14"
 
-# Accepts MAJOR.MINOR or MAJOR.MINOR.PATCH (e.g. "3.13" or "3.13.3").
+# Accepts MAJOR.MINOR or MAJOR.MINOR.PATCH (e.g. "3.14" or "3.14.3").
 _VERSION_RE = re.compile(r"^(\d+)\.(\d+)(?:\.\d+)*$")
 
 
@@ -64,7 +64,7 @@ def version_forms(version: str) -> tuple[str, str, str]:
         version: User-supplied version (``MAJOR.MINOR`` or ``MAJOR.MINOR.PATCH``).
 
     Returns:
-        A ``(full, dotted, compact)`` tuple, e.g. ``("3.13.3", "3.13", "py313")``.
+        A ``(full, dotted, compact)`` tuple, e.g. ``("3.14.3", "3.14", "py314")``.
         ``full`` is the version exactly as given (used for the ``.python-version``
         pin), ``dotted`` is ``MAJOR.MINOR``, and ``compact`` is ``pyMAJORMINOR``.
 
@@ -76,7 +76,7 @@ def version_forms(version: str) -> tuple[str, str, str]:
     if not match:
         raise ValueError(
             f"'{version}' is not a valid Python version. "
-            "Use MAJOR.MINOR or MAJOR.MINOR.PATCH, e.g. 3.13 or 3.13.3."
+            "Use MAJOR.MINOR or MAJOR.MINOR.PATCH, e.g. 3.14 or 3.14.3."
         )
     major, minor = match.group(1), match.group(2)
     return cleaned, f"{major}.{minor}", f"py{major}{minor}"
@@ -118,7 +118,7 @@ def _build_edits(full: str, dotted: str, compact: str) -> list[_Edit]:
             re.compile(r"(python:\s*python)\d+\.\d+(?:\.\d+)*"),
             rf"\g<1>{dotted}",
         ),
-        # CONTRIBUTING.md: "Requires Python 3.13+".
+        # CONTRIBUTING.md: "Requires Python 3.14+".
         _Edit(
             "CONTRIBUTING.md",
             re.compile(r"(Python\s+)\d+\.\d+(?:\.\d+)*\+"),

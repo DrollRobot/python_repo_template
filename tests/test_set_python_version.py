@@ -22,14 +22,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "tem
 import set_python_version  # type: ignore[import-not-found]
 
 # A representative slice of each file that declares the version, in every form.
+# These hold an older Python (3.12) as the "before" state the step upgrades from;
+# the tests below run the step to 3.14 and assert every form is rewritten.
 FILES = {
-    ".python-version": "3.13\n",
+    ".python-version": "3.12\n",
     "pyproject.toml": (
-        'requires-python = ">=3.13"\ntarget-version = "py313"\npython_version = "3.13"\n'
+        'requires-python = ">=3.12"\ntarget-version = "py312"\npython_version = "3.12"\n'
     ),
-    ".pre-commit-config.yaml": "default_language_version:\n  python: python3.13\n",
-    "CONTRIBUTING.md": "Requires Python 3.13+ and uv.\n",
-    "README.md": "[![Python](https://img.shields.io/badge/python-3.13%2B-blue)](x)\n",
+    ".pre-commit-config.yaml": "default_language_version:\n  python: python3.12\n",
+    "CONTRIBUTING.md": "Requires Python 3.12+ and uv.\n",
+    "README.md": "[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](x)\n",
     ".github/ISSUE_TEMPLATE/bug_report.yml": (
         "  - type: input\n"
         "    id: version\n"
@@ -39,10 +41,10 @@ FILES = {
         "    id: python-version\n"
         "    attributes:\n"
         "      label: Python version\n"
-        '      placeholder: "3.13.3"\n'
+        '      placeholder: "3.12.3"\n'
     ),
     # Generated; the script must never rewrite this one.
-    "uv.lock": 'requires-python = ">=3.13"\nurl = ".../py313-none-any.whl"\n',
+    "uv.lock": 'requires-python = ">=3.12"\nurl = ".../py312-none-any.whl"\n',
 }
 
 
@@ -61,7 +63,7 @@ def test_version_forms_two_part() -> None:
 
 def test_version_forms_three_part() -> None:
     """A MAJOR.MINOR.PATCH version keeps the patch only in the full form."""
-    assert set_python_version.version_forms("3.13.3") == ("3.13.3", "3.13", "py313")
+    assert set_python_version.version_forms("3.12.3") == ("3.12.3", "3.12", "py312")
 
 
 def test_version_forms_strips_whitespace() -> None:
@@ -69,7 +71,7 @@ def test_version_forms_strips_whitespace() -> None:
     assert set_python_version.version_forms("  3.14  ") == ("3.14", "3.14", "py314")
 
 
-@pytest.mark.parametrize("bad", ["3", "abc", "", "3.", "py313"])
+@pytest.mark.parametrize("bad", ["3", "abc", "", "3.", "py314"])
 def test_version_forms_rejects_invalid(bad: str) -> None:
     """Anything that is not MAJOR.MINOR[.PATCH] raises ValueError."""
     with pytest.raises(ValueError, match="not a valid Python version"):
