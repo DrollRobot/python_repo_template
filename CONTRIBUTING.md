@@ -18,7 +18,7 @@ Thank you for your interest in contributing!
 
 ## Setting up a development environment
 
-Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.14+ and [uv](https://docs.astral.sh/uv/).
 
 ```
 git clone https://github.com/FIXME/python-repo-template.git

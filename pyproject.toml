@@ -7,7 +7,7 @@ name = "python-repo-template"
 version = "1.4.0"
 description = "" # FIXME add a brief description of the project
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     # FIXME add depencencies
 ]
@@ -70,7 +70,7 @@ markers = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 # E/W = pycodestyle, D = pydocstyle, F = pyflakes, I = isort, B = bugbear,
@@ -86,7 +86,7 @@ extend-ignore = ["ANN401"]  # Any in **kwargs is a legitimate pass-through annot
 convention = "google"
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 
 # [[tool.mypy.overrides]] # FIXME add if imports don't provide type hints and throw mypy errors

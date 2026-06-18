@@ -2,7 +2,7 @@
 
 <!-- FIXME: replace badges below with your own CI/PyPI/coverage links -->
 [![CI](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml/badge.svg)](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) # FIXME replace with correct license link
 
 <!-- FIXME: one paragraph describing what this package does and who should use it -->

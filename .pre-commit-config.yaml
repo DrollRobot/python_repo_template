@@ -24,7 +24,7 @@
 # =============================================================================
 
 default_language_version:
-  python: python3.13
+  python: python3.14
 
 ci:
   autoupdate_schedule: monthly
