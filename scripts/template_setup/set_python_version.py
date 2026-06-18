@@ -32,7 +32,7 @@ import _common
 
 # The Python version a fresh clone targets. Bump this one line (or pass a
 # version on the command line) to retarget the whole project.
-DEFAULT_VERSION = "3.13"
+DEFAULT_VERSION = "3.14"
 
 # Accepts MAJOR.MINOR or MAJOR.MINOR.PATCH (e.g. "3.13" or "3.13.3").
 _VERSION_RE = re.compile(r"^(\d+)\.(\d+)(?:\.\d+)*$")
