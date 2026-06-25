@@ -126,7 +126,7 @@ def read_text(path: Path) -> str | None:
     try:
         with path.open("r", encoding="utf-8", newline="") as handle:
             return handle.read()
-    except (UnicodeDecodeError, OSError):
+    except UnicodeDecodeError, OSError:
         return None
 
 

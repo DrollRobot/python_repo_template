@@ -38,7 +38,7 @@ def main() -> int:
     """Block (exit 2) a Bash command that chains independent commands with && || or ;."""
     try:
         data = json.load(sys.stdin)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return 0  # never block on a parsing problem
 
     if data.get("tool_name", "") != "Bash":
