@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-06-25
+
+### Added
+
+- Cross-device PR handoff in `complete_worktree.py`, for when the device holding
+  the worktree has no authenticated `gh`. `--push-pr-to-notes` pushes the branch
+  and attaches `PR.md` (with the base and title) as a per-slug git note; on
+  another device, `--gh-from-notes` creates the PR with `gh`, or
+  `--web-from-notes` opens a prefilled PR form in the browser with no `gh` auth.
+  Either side fetches the note, creates the PR, and then removes the note from
+  origin.
+
+### Changed
+
+- `new_worktree.py` now syncs the base branch with origin before creating the
+  worktree: it offers to push a local base that is ahead of origin (so the new
+  worktree includes those commits), warns if the base has diverged, and warns
+  about uncommitted changes that can never transfer into a worktree.
+- `remove_worktree.py` now warns before work is lost -- before
+  `git worktree remove --force` discards uncommitted changes, and before
+  `git branch -D` deletes a branch with commits that were never pushed to origin.
+- The worktree scripts reject malformed slugs (leading, trailing, or doubled
+  slashes) instead of building an invalid branch name.
+
+### Removed
+
+- The `WT_HOME`, `WT_BASE`, and `WT_PREFIX` environment overrides from the
+  worktree scripts. The sibling `<repo>-wt` worktree directory and the `wt/`
+  branch prefix are now fixed; the base branch stays a positional argument
+  (default `develop`).
+
 ## [1.5.0] - 2026-06-17
 
 ### Added
@@ -176,7 +207,8 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.2.1...v1.3.0
