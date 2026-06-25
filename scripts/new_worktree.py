@@ -6,6 +6,11 @@ generated (copied from the repo's existing one where possible), forced to
 point only at its own worktree, and kept out of git via the shared
 .git/info/exclude.
 
+Before creating the worktree it syncs the base branch: if your local base is
+ahead of origin it offers to push (so the new worktree, forked from
+origin/<base>, includes those commits), warns if the base has diverged, and
+warns about uncommitted changes that can never transfer to a worktree.
+
 Walks through the steps one at a time. Before each action it shows what is
 about to happen and prompts for confirmation (y/n); answering 'n' aborts
 without taking the remaining steps (anything already created is left in
@@ -19,17 +24,14 @@ Usage:
     python scripts/new_worktree.py issue-42 --no-bootstrap
     python scripts/new_worktree.py issue-42 -y
 
-Env overrides:
-    WT_HOME   — parent dir for worktrees (default: sibling '<repo>-wt' folder)
-    WT_BASE   — default base branch (default: develop)
-    WT_PREFIX — branch prefix (default: 'wt/')
+Worktrees are created in a sibling '<repo>-wt' folder, on 'wt/<slug>' branches,
+forked from 'develop' (or the base branch given as the second argument).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import sys
@@ -41,7 +43,7 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.0.0"
+__version__ = "1.2.1"
 
 
 def slug_arg(value: str) -> str:
@@ -62,6 +64,10 @@ def slug_arg(value: str) -> str:
         )
     if ".." in value:
         raise argparse.ArgumentTypeError("slug may not contain '..'")
+    if value.startswith("/") or value.endswith("/"):
+        raise argparse.ArgumentTypeError("slug may not start or end with '/'")
+    if "//" in value:
+        raise argparse.ArgumentTypeError("slug may not contain '//'")
     return value
 
 
@@ -74,8 +80,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "base",
         nargs="?",
-        default=os.environ.get("WT_BASE") or "develop",
-        help="branch to fork from (default: $WT_BASE, then develop)",
+        default="develop",
+        help="branch to fork from (default: develop)",
     )
     parser.add_argument(
         "--no-bootstrap",
@@ -131,6 +137,25 @@ def link_or_copy(src: Path, dst: Path, label: str) -> None:
         cli.warn(f"  Symlink unavailable; copied {label} instead.")
 
 
+def push_base(base: str) -> None:
+    """Push the local base branch to ``origin``, handling a rejected push.
+
+    A worktree forks from ``origin/<base>``, so the local base must be on origin
+    for the new checkout to include its latest commits. The push streams its
+    output; if origin rejects it (branch protection, diverged history, no
+    network), the user is asked whether to create the worktree from origin as-is
+    rather than the script aborting outright.
+
+    Args:
+        base: The base branch name, pushed as ``<base>:<base>``.
+    """
+    code = cli.run_ok(["git", "push", "origin", f"{base}:{base}"])
+    if code != 0:
+        cli.warn("  Push to origin was rejected (branch protection, diverged history, or network).")
+        if not cli.confirm(f"Create the worktree from origin/{base} as-is anyway?"):
+            cli.die("Aborted: push to origin failed.")
+
+
 def main() -> None:
     """Run the interactive create-worktree flow."""
     args = parse_args()
@@ -148,10 +173,10 @@ def main() -> None:
     common_dir = Path(common) if Path(common).is_absolute() else (Path.cwd() / common).resolve()
     repo_name = repo_root.name
 
-    prefix = os.environ.get("WT_PREFIX") or "wt/"
+    prefix = "wt/"
     branch = f"{prefix}{args.slug}"
     dir_slug = args.slug.replace("/", "-")
-    wt_home = Path(os.environ.get("WT_HOME") or repo_root.parent / f"{repo_name}-wt")
+    wt_home = repo_root.parent / f"{repo_name}-wt"
     wt_path = wt_home / dir_slug
     ws_file = wt_path / f"{dir_slug}.code-workspace"
 
@@ -177,6 +202,49 @@ def main() -> None:
     cli.section("Step: fetch origin")
     cli.step("Fetch 'origin'?")
     cli.run(["git", "fetch", "origin"])
+
+    # --- step: sync base with origin ----------------------------------------------
+
+    # The worktree forks from origin/<base>, so anything only in your local
+    # checkout is missing from it. Uncommitted changes never transfer (a
+    # worktree forks from a commit), and local commits don't transfer unless
+    # pushed first. Surface both before creating the worktree.
+    cli.section("Step: sync base with origin")
+
+    if cli.capture(["git", "status", "--porcelain"]):
+        cli.warn("  You have uncommitted changes in this working tree.")
+        cli.warn("  They will NOT appear in the new worktree (it forks from a commit).")
+        if not cli.confirm("Continue anyway?"):
+            cli.die("Aborted: commit or stash your changes, then re-run.")
+
+    remote_ref = f"origin/{args.base}"
+    local_base = cli.capture_ok(["git", "rev-parse", "--verify", f"refs/heads/{args.base}"])
+    remote_base = cli.capture_ok(["git", "rev-parse", "--verify", f"refs/remotes/{remote_ref}"])
+
+    if local_base is None:
+        cli.info("Base sync", f"no local '{args.base}' branch; will fork from {remote_ref}")
+    elif remote_base is None:
+        cli.warn(f"  origin has no '{args.base}' branch yet.")
+        cli.step(f"Push local '{args.base}' to origin to create {remote_ref}?")
+        push_base(args.base)
+    else:
+        ahead = int(cli.capture(["git", "rev-list", "--count", f"{remote_ref}..{args.base}"]))
+        behind = int(cli.capture(["git", "rev-list", "--count", f"{args.base}..{remote_ref}"]))
+        if ahead == 0:
+            cli.info("Base sync", f"local '{args.base}' not ahead of {remote_ref}; nothing to push")
+        elif behind == 0:
+            cli.step(
+                f"Local '{args.base}' is {ahead} commit(s) ahead of {remote_ref}. Push to origin?"
+            )
+            push_base(args.base)
+        else:
+            cli.warn(
+                f"  Local '{args.base}' has diverged from {remote_ref} "
+                f"({ahead} ahead, {behind} behind); not pushing (would need a force-push)."
+            )
+            cli.warn(f"  Worktree forks from {remote_ref}, missing your {ahead} local commit(s).")
+            if not cli.confirm("Continue anyway?"):
+                cli.die("Aborted: reconcile your base branch with origin, then re-run.")
 
     # --- step: create the worktree ------------------------------------------------
 
@@ -312,6 +380,6 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except (KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt, EOFError:
         print()
         sys.exit(130)

@@ -19,6 +19,11 @@ Steps:
   3. Delete branch    - git branch -D wt/<slug>
   4. Prune stale refs - git fetch --prune
 
+Before each destructive step it warns about work that the force flags would
+otherwise discard silently: uncommitted changes in the worktree (step 2) and
+commits on the branch that were never pushed to origin (step 3). Each warning
+is its own y/n confirmation, so nothing is lost without an explicit yes.
+
 Paths and names are derived exactly as new_worktree.py derives them, so the
 same slug that created a worktree will clean it up. Every step runs against
 the main worktree, so this is safe to run even from inside the worktree
@@ -36,8 +41,8 @@ Usage:
     python scripts/remove_worktree.py issue-42 -y
     python scripts/remove_worktree.py
 
-Env overrides mirror new_worktree.py: WT_HOME (parent dir for worktrees),
-WT_PREFIX (branch prefix, default "wt/").
+Paths and names mirror new_worktree.py: the sibling '<repo>-wt' folder and
+'wt/<slug>' branches.
 """
 
 from __future__ import annotations
@@ -53,7 +58,7 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.0.0"
+__version__ = "1.2.1"
 
 
 def slug_arg(value: str) -> str:
@@ -74,6 +79,10 @@ def slug_arg(value: str) -> str:
         )
     if ".." in value:
         raise argparse.ArgumentTypeError("slug may not contain '..'")
+    if value.startswith("/") or value.endswith("/"):
+        raise argparse.ArgumentTypeError("slug may not start or end with '/'")
+    if "//" in value:
+        raise argparse.ArgumentTypeError("slug may not contain '//'")
     return value
 
 
@@ -92,9 +101,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "base",
         nargs="?",
-        default=os.environ.get("WT_BASE") or "develop",
-        help="integration branch to refresh, that the PR was merged into "
-        "(default: $WT_BASE, then develop)",
+        default="develop",
+        help="integration branch to refresh, that the PR was merged into (default: develop)",
     )
     parser.add_argument(
         "-y",
@@ -251,7 +259,7 @@ def main() -> None:
     main_repo = worktree_paths[0]
 
     repo_name = Path(main_repo).name
-    prefix = os.environ.get("WT_PREFIX") or "wt/"
+    prefix = "wt/"
 
     slug = args.slug
     if slug is None:
@@ -267,7 +275,7 @@ def main() -> None:
 
     branch = f"{prefix}{slug}"
     dir_slug = slug.replace("/", "-")
-    wt_home = Path(os.environ.get("WT_HOME") or Path(main_repo).parent / f"{repo_name}-wt")
+    wt_home = Path(main_repo).parent / f"{repo_name}-wt"
     wt_path = wt_home / dir_slug
 
     cli.info("Slug", slug)
@@ -313,9 +321,19 @@ def main() -> None:
 
     if wt_registered:
         cli.section("Step: remove worktree")
-        # --force: the worktree carries untracked/ignored files (generated
-        # .code-workspace, .vscode and .env links, .venv) that a plain remove
-        # would refuse to discard.
+        # --force discards untracked/ignored files (generated .code-workspace,
+        # .vscode and .env links, .venv) AND any uncommitted tracked changes.
+        # The latter is real work, so surface it before deleting. Tracked-file
+        # changes only; the generated/ignored noise above is expected.
+        dirty = cli.capture_ok(
+            ["git", "-C", str(wt_path), "status", "--porcelain", "--untracked-files=no"]
+        )
+        if dirty:
+            cli.warn("  This worktree has uncommitted changes that --force will discard:")
+            for line in dirty.splitlines():
+                print(f"  {cli.GRAY}{line}{cli.RESET}")
+            if not cli.confirm("  Discard these uncommitted changes and remove the worktree?"):
+                cli.die("Aborted: commit, push, or stash the changes first.")
         cli.step(f"DELETE the worktree directory at '{wt_path}'?")
         cli.run(["git", "worktree", "remove", "--force", str(wt_path)])
 
@@ -324,7 +342,27 @@ def main() -> None:
     if branch_exists:
         cli.section("Step: delete branch")
         # -D (force): a squash- or rebase-merged PR leaves the local branch
-        # looking unmerged to git, so -d would refuse to delete it.
+        # looking unmerged to git, so -d would refuse to delete it. That same
+        # force, though, will discard a branch whose commits never reached
+        # origin, so warn about unpushed work before deleting.
+        remote_ref = f"refs/remotes/origin/{branch}"
+        if cli.capture_ok(["git", "rev-parse", "--verify", "--quiet", remote_ref]):
+            rng = f"origin/{branch}..{branch}"
+            unpushed = int(cli.capture(["git", "rev-list", "--count", rng]))
+            if unpushed > 0:
+                cli.warn(
+                    f"  '{branch}' has {unpushed} commit(s) not pushed to origin/{branch}; "
+                    "force-deleting will lose them."
+                )
+                if not cli.confirm("  Force-delete anyway?"):
+                    cli.die("Aborted: push the branch first (e.g. via complete_worktree.py).")
+        else:
+            ahead = cli.capture_ok(["git", "rev-list", "--count", f"origin/{args.base}..{branch}"])
+            detail = f" ({ahead} commit(s) ahead of origin/{args.base})" if ahead else ""
+            cli.warn(f"  '{branch}' was never pushed to origin{detail}.")
+            cli.warn("  If this work was not merged via a PR, force-deleting will lose it.")
+            if not cli.confirm("  Force-delete anyway?"):
+                cli.die("Aborted: push or merge the branch first.")
         cli.step(f"Force-delete local branch '{branch}'?")
         cli.run(["git", "branch", "-D", branch])
 
@@ -345,6 +383,6 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except (KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt, EOFError:
         print()
         sys.exit(130)

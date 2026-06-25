@@ -34,7 +34,7 @@ def _enable_windows_ansi() -> None:
         if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
             # 0x0004 = ENABLE_VIRTUAL_TERMINAL_PROCESSING
             kernel32.SetConsoleMode(handle, mode.value | 0x0004)
-    except (OSError, AttributeError):
+    except OSError, AttributeError:
         pass
 
 
@@ -206,6 +206,25 @@ def run(args: Sequence[str], *, cwd: str | os.PathLike[str] | None = None) -> No
     result = subprocess.run(list(args), cwd=cwd)  # noqa: S603  (fixed argv list, no shell)
     if result.returncode != 0:
         die(f"{subprocess.list2cmdline(args)} failed (exit {result.returncode})")
+
+
+def run_ok(args: Sequence[str], *, cwd: str | os.PathLike[str] | None = None) -> int:
+    """Echo a command, stream its output, and return its exit code without exiting.
+
+    Like :func:`run`, but lets the caller decide what to do on a non-zero exit
+    (e.g. a ``git push`` that origin may reject) instead of stopping the script.
+    Output still streams to the terminal, keeping the house transparency rule.
+
+    Args:
+        args: Command and arguments.
+        cwd: Working directory for the command, if not the current one.
+
+    Returns:
+        The command's exit code.
+    """
+    echo(subprocess.list2cmdline(args))
+    result = subprocess.run(list(args), cwd=cwd)  # noqa: S603  (fixed argv list, no shell)
+    return result.returncode
 
 
 def exit_code(args: Sequence[str], *, cwd: str | os.PathLike[str] | None = None) -> int:

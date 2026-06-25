@@ -6,8 +6,11 @@ folder to sys.path, mirroring how the scripts import their shared _cli module.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -16,6 +19,7 @@ from remove_worktree import (  # type: ignore[import-not-found]
     open_worktree_slugs,
     parse_choice,
     parse_worktrees,
+    slug_arg,
 )
 
 MAIN = ("C:/dev/repo", "refs/heads/develop")
@@ -92,7 +96,7 @@ def test_open_worktree_slugs_keeps_slashes_in_slug() -> None:
 
 
 def test_open_worktree_slugs_honours_custom_prefix() -> None:
-    """A WT_PREFIX override changes which branches are offered."""
+    """A different branch prefix changes which branches are offered."""
     worktrees = [MAIN, ("C:/dev/repo-wt/issue-42", "refs/heads/wt/issue-42")]
     assert open_worktree_slugs(worktrees, "agent/") == []
 
@@ -115,3 +119,35 @@ def test_parse_choice_rejects_non_numbers() -> None:
     assert parse_choice("", 3) is None
     assert parse_choice("x", 3) is None
     assert parse_choice("1.5", 3) is None
+
+
+# slug_arg is duplicated byte-for-byte in new_worktree.py; these cover both.
+
+
+def test_slug_arg_accepts_plain_slug() -> None:
+    """A simple slug passes through unchanged."""
+    assert slug_arg("issue-42") == "issue-42"
+
+
+def test_slug_arg_accepts_internal_slash() -> None:
+    """An internal slash is allowed (becomes a nested branch like wt/fix/login)."""
+    assert slug_arg("fix/login") == "fix/login"
+
+
+def test_slug_arg_rejects_disallowed_characters() -> None:
+    """Characters outside the allowed set are rejected."""
+    with pytest.raises(argparse.ArgumentTypeError):
+        slug_arg("has space")
+
+
+def test_slug_arg_rejects_dotdot() -> None:
+    """A '..' sequence (path traversal) is rejected."""
+    with pytest.raises(argparse.ArgumentTypeError):
+        slug_arg("a..b")
+
+
+@pytest.mark.parametrize("bad", ["/login", "login/", "fix//login"])
+def test_slug_arg_rejects_edge_slashes(bad: str) -> None:
+    """Leading, trailing, or doubled slashes would build malformed branch names."""
+    with pytest.raises(argparse.ArgumentTypeError):
+        slug_arg(bad)
