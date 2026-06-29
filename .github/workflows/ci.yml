@@ -64,7 +64,7 @@ jobs:
       #     app-id: ${{ vars.GRAPH_AUTH_CLIENT_ID }}
       #     private-key: ${{ secrets.GRAPH_AUTH_APP_PRIVATE_KEY }}
       #     owner: ${{ github.repository_owner }}
-      #     repositories: graph-auth
+      #     repositories: repo1, repo2
 
       # - name: Authenticate git to private deps
       #   run: |
