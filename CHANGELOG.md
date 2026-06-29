@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-29
+
 ### Added
 
+- Optional GitHub App token authentication in the CI and audit workflows, letting
+  them install private dependencies. A commented `create-github-app-token` block
+  in `.github/workflows/ci.yml` and `audit.yml` (with a matching git-auth step)
+  can be uncommented and pointed at one or more private repos; README.md documents
+  creating the App and storing the `GRAPH_AUTH_CLIENT_ID` variable and
+  `GRAPH_AUTH_APP_PRIVATE_KEY` secret.
 - Opt-in auto-memory write guard: a `PreToolUse` hook
   (`.claude/hooks/protect-auto-memory.py`) that asks for approval before Claude
   writes to its auto-memory directory. Off by default; the new
@@ -217,7 +225,8 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.3.0...v1.4.0
