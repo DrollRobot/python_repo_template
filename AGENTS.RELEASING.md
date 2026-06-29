@@ -45,8 +45,7 @@ current format rules. Do not rely on training data -- request a fresh copy every
 
    If a detail does not clearly fit one of those three categories, discard it.
    Implementation details, refactors, test changes, linting fixes, and documentation
-   updates are never included, even if they appear in the same commit message as
-   something that is.
+   updates are not included, unless they're the only notes for that release.
 
    Collect all surviving details, grouped by category, then use them to build the
    changelog section.
@@ -58,3 +57,6 @@ current format rules. Do not rely on training data -- request a fresh copy every
 ## Commit any remaining files.
 
 ## Prompt user to push new tag
+- The user will update pyproject.toml with the new version and regenerate uv.lock.
+- The user will manage branches, merging, tagging and pushing. At this point, the agent's
+   job is complete.
