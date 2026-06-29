@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in auto-memory write guard: a `PreToolUse` hook
+  (`.claude/hooks/protect-auto-memory.py`) that asks for approval before Claude
+  writes to its auto-memory directory. Off by default; the new
+  `template_setup/protect_auto_memory.py` step (and the guided
+  `setup_new_project.py`) prompts whether to enable it, wiring it project-scoped
+  via `$CLAUDE_PROJECT_DIR`. Declining deletes the hook file; the hook header
+  documents how to run it globally instead.
+
 ## [1.5.1] - 2026-06-25
 
 ### Added

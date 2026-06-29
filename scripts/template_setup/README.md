@@ -20,6 +20,7 @@ python scripts/template_setup/setup_new_project.py
 | `strip_template_headers.py` | Remove the `TEMPLATE SETUP NOTES` banner from the top of every file. |
 | `set_github_user.py USER` | Replace `DrollRobot` with your GitHub username. |
 | `choose_shell.py` | Ask whether to install the Claude Code command hooks. Decline (or pass `--no-hooks`) and it deletes all four hook files; accept and it asks your primary shell (bash/powershell), wires that pair into `.claude/settings.json`, and deletes the other shell's files. |
+| `protect_auto_memory.py` | Ask whether to enable the auto-memory write guard (off by default). Accept and it wires `.claude/hooks/protect-auto-memory.py` into `.claude/settings.json` so Claude asks before writing to its memory directory; decline (or pass `--no-guard`) and it deletes the hook file. |
 | `set_python_version.py [VERSION]` | Retarget the project's Python version everywhere it is declared (`.python-version`, `pyproject.toml`, pre-commit, docs, README badge, issue template). |
 | `set_version.py [VERSION]` | Set the project's release version in `pyproject.toml` (default `0.1.0` for a fresh project). |
 | `reset_changelog.py` | Drop the template's own `CHANGELOG.md` history and put the blank `CHANGELOG.md.FIXME` skeleton in its place. |
@@ -34,8 +35,8 @@ Most scripts accept `--dry-run` (preview without writing) and `-y`/`--yes`
 it is applied.
 
 Suggested order: **strip headers → rename → set user → set python version →
-set version → reset changelog → choose shell → choose license → remove mkdocs
-(optional) → find FIXMEs → reinit git → cleanup.** (Strip before rename so the workspace
+set version → reset changelog → choose shell → protect auto-memory → choose
+license → remove mkdocs (optional) → find FIXMEs → reinit git → cleanup.** (Strip before rename so the workspace
 header is removed while the file still ends in `.jsonc`. Reset the changelog
 after rename and set-user so the skeleton's links pick up the new project name
 and username.) The whole

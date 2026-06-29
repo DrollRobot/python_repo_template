@@ -10,11 +10,12 @@ and GitHub username up front and confirming once before making content changes:
      5. set the project version    (resets to 0.1.0 for a new project)
      6. reset the changelog         (drops the template's history)
      7. install command hooks       (optional; wires Claude Code hooks to your shell)
-     8. choose a license            (optional)
-     9. remove mkdocs               (optional, if you don't want a docs site)
-    10. report remaining FIXMEs
-    11. re-initialize git           (optional, destructive -- confirms separately)
-    12. remove this scaffolding     (optional, destructive -- confirms separately)
+     8. protect auto-memory         (optional; gate Claude's memory writes)
+     9. choose a license            (optional)
+    10. remove mkdocs               (optional, if you don't want a docs site)
+    11. report remaining FIXMEs
+    12. re-initialize git           (optional, destructive -- confirms separately)
+    13. remove this scaffolding     (optional, destructive -- confirms separately)
 
 Each step is also runnable on its own; this just chains them. The destructive
 steps prompt for their own confirmation regardless of what you choose here.
@@ -32,6 +33,7 @@ import choose_license
 import choose_shell
 import cleanup
 import find_fixmes
+import protect_auto_memory
 import reinit_git
 import remove_mkdocs
 import rename_project
@@ -59,6 +61,7 @@ def main() -> None:
     version = _common.prompt_value("Project version", default=set_version.DEFAULT_VERSION)
     install_hooks = choose_shell._prompt_install()
     shell = choose_shell._prompt_choice() if install_hooks else None
+    protect_memory = _common.confirm("Protect Claude's auto-memory (prompt before memory writes)?")
     want_license = _common.confirm("Choose a license as part of setup?")
     want_remove_mkdocs = _common.confirm("Remove mkdocs (documentation site)?")
 
@@ -70,6 +73,7 @@ def main() -> None:
         f"set version {version}",
         "reset changelog",
         f"wire {shell} hooks" if install_hooks else "remove command hooks",
+        "enable auto-memory guard" if protect_memory else "remove auto-memory guard",
     ]
     if want_license:
         actions.append("choose license")
@@ -88,6 +92,7 @@ def main() -> None:
     set_version.run(root, version, assume_yes=True)
     reset_changelog.run(root, assume_yes=True)
     choose_shell.run(root, shell, install=install_hooks, assume_yes=True)
+    protect_auto_memory.run(root, install=protect_memory, assume_yes=True)
     if want_license:
         choose_license.run(root, assume_yes=True)
     if want_remove_mkdocs:
