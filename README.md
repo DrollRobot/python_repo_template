@@ -80,6 +80,19 @@ The GitHub Actions workflow in `.github/workflows/docs.yml` will keep the site u
 uvx detect-secrets scan > .secrets.baseline
 ```
 
+**If using Github App tokens to access private repos**
+Uncomment section in .github/workflows/audit.yml.
+
+```bash
+gh secret set GRAPH_AUTH_APP_PRIVATE_KEY < path/to/app.private-key.pem
+gh variable set GRAPH_AUTH_APP_ID --body "123456"
+```
+
+```powershell
+Get-Content -Raw path\to\app.private-key.pem | gh secret set GRAPH_AUTH_APP_PRIVATE_KEY
+gh variable set GRAPH_AUTH_APP_ID --body "123456"
+```
+
 **Write some code!**
 
 ## Optional features & how to remove them
