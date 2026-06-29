@@ -81,17 +81,25 @@ uvx detect-secrets scan > .secrets.baseline
 ```
 
 **If using Github App tokens to access private repos**
-Uncomment section in .github/workflows/audit.yml.
-
+1. Create the GitHub App (in the Github account → Settings → Developer settings → GitHub Apps → New):
+    - Permissions → Repository permissions → Contents: Read-only (Metadata: Read is added automatically). Nothing else.
+    - Webhook → uncheck Active (you don't need events).
+    - Where can this be installed → Only on this account.
+2. Mint a private key — on the App's page, "Generate a private key", download the .pem. Note the numeric App ID shown at the top.
+3. Install the App onto the repos it needs to touch.
+    - Org Settings → the App → Install → select repositories.
+4. Store the credentials in connectwise-tools (the repo whose CI runs):
 ```bash
-gh secret set GRAPH_AUTH_APP_PRIVATE_KEY < path/to/app.private-key.pem
-gh variable set GRAPH_AUTH_APP_ID --body "123456"
+    gh secret set GRAPH_AUTH_APP_PRIVATE_KEY < path/to/app.private-key.pem
+    gh variable set GRAPH_AUTH_CLIENT_ID --body "123456"
 ```
-
 ```powershell
-Get-Content -Raw path\to\app.private-key.pem | gh secret set GRAPH_AUTH_APP_PRIVATE_KEY
-gh variable set GRAPH_AUTH_APP_ID --body "123456"
+    Get-Content -Raw path\to\app.private-key.pem | gh secret set GRAPH_AUTH_APP_PRIVATE_KEY
+    gh variable set GRAPH_AUTH_CLIENT_ID --body "123456"
 ```
+6. Uncomment section in .github/workflows/ audit.yml and ci.yml.
+7. Update actions/create-github-app-token to latest trusted commit.
+
 
 **Write some code!**
 
