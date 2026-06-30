@@ -34,7 +34,7 @@ def main() -> int:
     """Block (exit 2) a command that is on the wrong tool or in a non-canonical form."""
     try:
         data = json.load(sys.stdin)
-    except json.JSONDecodeError, ValueError:
+    except json.JSONDecodeError, ValueError:  # AGENTS: this is correct syntax for python 3.14
         return 0  # never block on a parsing problem
 
     tool = data.get("tool_name", "")
