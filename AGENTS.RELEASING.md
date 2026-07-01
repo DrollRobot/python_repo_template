@@ -9,6 +9,19 @@
 uv run pre-commit autoupdate          # periodically update precommit dependencies
 ```
 
+## Review security audit
+```
+uv audit                              # audit dependencies for known vulnerabilities
+```
+- This mirrors the `Security audit` GitHub Actions workflow (`.github/workflows/audit.yml`),
+   which runs `uv audit` and fails the build on any advisory.
+- If a vulnerability is reported, bump the affected package in the lockfile and
+   re-run until clean:
+   ```
+   uv lock --upgrade-package <package>   # upgrade just the flagged package
+   uv audit                              # confirm no vulnerabilities remain
+   ```
+
 ## Update docs
 ```
 uv run mkdocs build --strict          # build docs, fail on warnings
