@@ -69,7 +69,7 @@ def main() -> None:
     """Read the hook payload from stdin and gate writes to auto-memory."""
     try:
         data = json.load(sys.stdin)
-    except json.JSONDecodeError, ValueError:
+    except (json.JSONDecodeError, ValueError):  # fmt: skip
         return  # Malformed payload: do not interfere with the tool call.
 
     file_path = (data.get("tool_input") or {}).get("file_path")
