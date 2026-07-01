@@ -58,7 +58,7 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 
 
 def slug_arg(value: str) -> str:
@@ -383,6 +383,6 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt, EOFError:
+    except (KeyboardInterrupt, EOFError):  # fmt: skip
         print()
         sys.exit(130)

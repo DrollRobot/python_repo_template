@@ -68,7 +68,7 @@ import _cli as cli
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change. 1.1.0 ports the --push-pr-to-notes/--gh-from-notes/
 # --web-from-notes cross-device handoff from Complete-WorkTree.ps1.
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 # The cross-device PR-body handoff stores one note per slug
 # (refs/notes/pr-body-<slug>) so concurrent PRs never share -- or force-push
@@ -598,6 +598,6 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt, EOFError:
+    except (KeyboardInterrupt, EOFError):  # fmt: skip
         print()
         sys.exit(130)

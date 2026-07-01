@@ -50,7 +50,7 @@ import _cli as cli
 # Version of this helper script itself (independent of the project version it
 # releases). Bump on every change so copies in other repos can be compared:
 # patch = bugfix, minor = new flag/behavior, major = breaking CLI change.
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -292,6 +292,6 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt, EOFError:
+    except (KeyboardInterrupt, EOFError):  # fmt: skip
         print()
         sys.exit(130)
