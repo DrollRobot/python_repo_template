@@ -58,5 +58,5 @@ current format rules. Do not rely on training data -- request a fresh copy every
 
 ## Prompt user to push new tag
 - The user will update pyproject.toml with the new version and regenerate uv.lock.
-- The user will manage branches, merging, tagging and pushing. At this point, the agent's
-   job is complete.
+- The user will manage worktrees, branches, merging, tagging and pushing. At this point,
+   the agent's job is complete.
