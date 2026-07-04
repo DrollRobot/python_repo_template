@@ -11,9 +11,6 @@ uv run pre-commit autoupdate          # periodically update precommit dependenci
 
 ## Refresh and audit dependencies
 
-Routine upgrades and security fixes happen in one pass over the lockfile; run
-the test suite once at the end, after the lockfile is final.
-
 1. **Refresh the lockfile** within existing pyproject.toml bounds:
    ```
    uv lock --upgrade                     # upgrade all deps within pyproject.toml bounds
