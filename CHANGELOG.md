@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/compare_to_template.py` (1.0.0), a dev helper that compares a
+  generated project's baseline files (GitHub config, dev scripts, AGENTS docs,
+  lint/format config, ...) against a template checkout and reports drift. It
+  replays the template-setup transformations (project/username rename, header
+  strip, Python-version pins, cleanup.py's pyproject trims) before diffing, so
+  only real drift is reported; files are classified strict/lenient and
+  required/optional, with `--diff` for unified diffs, `--all` for the full
+  list, and exit code 1 on drift for CI use. Before comparing it checks its
+  own `__version__` on both sides and offers to update the project's copy from
+  the template. Its unit tests also enforce that every tracked template file
+  is either in the comparison manifest or explicitly excluded, so new template
+  files force a comparison decision.
+
 ### Changed
 
 - `scripts/` is now type-checked and coverage-measured. Mypy targets moved into
