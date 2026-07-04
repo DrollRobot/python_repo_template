@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-04
+
 ### Added
 
 - `tests/test_mypy_stub_guard.py`, a guard test that fails when [tool.mypy]
@@ -29,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the template. Its unit tests also enforce that every tracked template file
   is either in the comparison manifest or explicitly excluded, so new template
   files force a comparison decision.
+- Committed `.claude/settings.json` with permission deny rules
+  (`Edit(uv.lock)`, `Edit(**/uv.lock)`) so Claude Code agents cannot hand-edit
+  the lockfile with the Edit/Write tools. Dependency pins belong in
+  `pyproject.toml` (e.g. `[tool.uv] constraint-dependencies`), followed by
+  `uv lock`; `uv lock`/`uv sync` themselves are unaffected.
 
 ### Changed
 
@@ -43,27 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tests are deleted alongside it) and narrows `mypy_path` to `["scripts"]`,
   aborting loudly before deleting anything if pyproject.toml has drifted from
   the template.
-
-### Fixed
-
-- Strict-mode typing gaps the mypy blind spot was hiding: bare `dict`
-  annotations in `template_setup/choose_shell.py` and
-  `template_setup/protect_auto_memory.py` are now `dict[str, Any]`, and
-  `remove_worktree.py`'s `open_worktree_slugs` accepts any sequence instead of
-  requiring an exact `list` element type (patch bump to 1.2.3).
-
-## [1.7.0] - 2026-07-04
-
-### Added
-
-- Committed `.claude/settings.json` with permission deny rules
-  (`Edit(uv.lock)`, `Edit(**/uv.lock)`) so Claude Code agents cannot hand-edit
-  the lockfile with the Edit/Write tools. Dependency pins belong in
-  `pyproject.toml` (e.g. `[tool.uv] constraint-dependencies`), followed by
-  `uv lock`; `uv lock`/`uv sync` themselves are unaffected.
-
-### Changed
-
 - `template_setup/choose_shell.py` and `template_setup/protect_auto_memory.py`
   now refuse to run when an existing `.claude/settings.json` is unreadable,
   invalid JSON, or not a JSON object, exiting with an error instead of
@@ -72,6 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Strict-mode typing gaps the mypy blind spot was hiding: bare `dict`
+  annotations in `template_setup/choose_shell.py` and
+  `template_setup/protect_auto_memory.py` are now `dict[str, Any]`, and
+  `remove_worktree.py`'s `open_worktree_slugs` accepts any sequence instead of
+  requiring an exact `list` element type (patch bump to 1.2.3).
 - Restored parenthesized `except (A, B):` handlers in the `scripts/` helpers.
   Ruff's py314 formatter had rewritten them to the PEP 758 unparenthesized
   form, a syntax error on Python 3.13 that broke the ruff pre-commit hook in
