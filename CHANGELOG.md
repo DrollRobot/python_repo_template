@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-04
+
 ### Added
 
 - Committed `.claude/settings.json` with permission deny rules
@@ -22,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   invalid JSON, or not a JSON object, exiting with an error instead of
   "starting fresh" and silently discarding its contents (such as the new
   permission deny rules).
+
+### Fixed
+
+- Restored parenthesized `except (A, B):` handlers in the `scripts/` helpers.
+  Ruff's py314 formatter had rewritten them to the PEP 758 unparenthesized
+  form, a syntax error on Python 3.13 that broke the ruff pre-commit hook in
+  projects that copied these helpers. Each site is now guarded with
+  `# fmt: skip`, and the four versioned scripts got a patch bump.
+- The same Python 3.13 syntax fix for the tracked `.claude/hooks/` scripts,
+  which run under the system `python` and would silently fail to parse (and so
+  never enforce their checks) on a 3.13 interpreter.
 
 ## [1.6.0] - 2026-06-29
 
@@ -241,7 +254,8 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.4.0...v1.5.0
