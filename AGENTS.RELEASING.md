@@ -9,34 +9,60 @@
 uv run pre-commit autoupdate          # periodically update precommit dependencies
 ```
 
-## Refresh dependencies
-```
-uv lock --upgrade                     # upgrade all deps within pyproject.toml bounds
-uv sync --all-groups                  # install the refreshed lockfile
-```
-- Re-run the test suite as described in [AGENTS.TESTING.md](AGENTS.TESTING.md)
-   before continuing.
-- Then surface upgrades still blocked by version bounds:
+## Refresh and audit dependencies
+
+Routine upgrades and security fixes happen in one pass over the lockfile; run
+the test suite once at the end, after the lockfile is final.
+
+1. **Refresh the lockfile** within existing pyproject.toml bounds:
+   ```
+   uv lock --upgrade                     # upgrade all deps within pyproject.toml bounds
+   ```
+
+2. **Surface upgrades still blocked by version bounds:**
    ```
    uv tree --outdated --depth 1 --all-groups   # direct deps only
    ```
-- Any package still annotated with a newer `(latest: ...)` version is held back
+   Any package still annotated with a newer `(latest: ...)` version is held back
    by an upper bound in pyproject.toml (usually a new major release). Report
    these to the user for a decision. Do not raise version bounds without
    consulting the user.
 
-## Review security audit
-```
-uv audit                              # audit dependencies for known vulnerabilities
-```
-- This mirrors the `Security audit` GitHub Actions workflow (`.github/workflows/audit.yml`),
-   which runs `uv audit` and fails the build on any advisory.
-- If a vulnerability is reported, bump the affected package in the lockfile and
-   re-run until clean:
+3. **Audit for known vulnerabilities:**
    ```
-   uv lock --upgrade-package <package>   # upgrade just the flagged package
-   uv audit                              # confirm no vulnerabilities remain
+   uv audit                              # audit dependencies for known vulnerabilities
    ```
+   - This mirrors the `Security audit` GitHub Actions workflow
+     (`.github/workflows/audit.yml`), which runs `uv audit` and fails the build
+     on any advisory. The refresh in step 1 often clears advisories on its own;
+     this step handles whatever remains.
+   - If a vulnerability is reported, fix it at the resolver-input layer:
+     - Direct dependency: raise its version floor in `[project.dependencies]`
+       (or its dependency group) to the patched version.
+     - Transitive dependency: add a floor to `[tool.uv] constraint-dependencies`,
+       with the advisory ID in a comment:
+       ```toml
+       [tool.uv]
+       constraint-dependencies = [
+           "somepkg>=1.2.3",  # GHSA-xxxx/CVE-2026-xxxx; prune when upstream requires it
+       ]
+       ```
+     Then re-lock and re-run until clean:
+     ```
+     uv lock                               # re-resolve with the new floor
+     uv audit                              # confirm no vulnerabilities remain
+     ```
+   - If the new floor makes `uv lock` fail, another dependency still pins the
+     vulnerable range. Upgrade that dependency if possible; otherwise stop and
+     consult the user before considering `[tool.uv] override-dependencies`,
+     which forces past the conflicting pin at the cost of ignoring it.
+
+4. **Install the final lockfile and test:**
+   ```
+   uv sync --all-groups                  # install the refreshed lockfile
+   ```
+   Re-run the test suite as described in [AGENTS.TESTING.md](AGENTS.TESTING.md)
+   before continuing.
 
 ## Update docs
 ```
