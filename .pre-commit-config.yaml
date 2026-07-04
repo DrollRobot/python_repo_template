@@ -18,6 +18,10 @@
 #                        large file guard, line-ending normalization
 #   ruff              -- lint (with --fix) and format
 #   mypy              -- static type checking across src/ and tests/
+#   mypy-stub-guard   -- blocks [tool.mypy] overrides that silence imports
+#                        whose type stubs are published on PyPI (install the
+#                        types-* package instead); runs when pyproject.toml
+#                        is staged
 #   detect-secrets    -- prevents secrets from being committed; requires a
 #                        baseline file (.secrets.baseline). Create it once with:
 #                          uv run detect-secrets scan > .secrets.baseline
@@ -58,6 +62,14 @@ repos:
         entry: uv run mypy
         language: system
         types: [python]
+        pass_filenames: false
+
+      # Block mypy overrides that silence imports with published type stubs
+      - id: mypy-stub-guard
+        name: mypy stub guard
+        entry: uv run pytest tests/test_mypy_stub_guard.py --no-cov -q
+        language: system
+        files: ^pyproject\.toml$
         pass_filenames: false
 
   # detect-secrets

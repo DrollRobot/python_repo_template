@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tests/test_mypy_stub_guard.py`, a guard test that fails when [tool.mypy]
+  config silences an import (`ignore_missing_imports`,
+  `follow_untyped_imports`, or disabled import error codes) for a module whose
+  type stubs are published on PyPI, using mypy's own stub registry
+  (`mypy.stubinfo`) as the source of truth. A canary test detects if a mypy
+  upgrade changes that internal API. Also wired into pre-commit as
+  `mypy-stub-guard`, which runs whenever pyproject.toml is staged; CI picks it
+  up automatically via the normal pytest run.
 - `scripts/compare_to_template.py` (1.0.0), a dev helper that compares a
   generated project's baseline files (GitHub config, dev scripts, AGENTS docs,
   lint/format config, ...) against a template checkout and reports drift. It
