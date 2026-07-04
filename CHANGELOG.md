@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Committed `.claude/settings.json` with permission deny rules
+  (`Edit(uv.lock)`, `Edit(**/uv.lock)`) so Claude Code agents cannot hand-edit
+  the lockfile with the Edit/Write tools. Dependency pins belong in
+  `pyproject.toml` (e.g. `[tool.uv] constraint-dependencies`), followed by
+  `uv lock`; `uv lock`/`uv sync` themselves are unaffected.
+
+### Changed
+
+- `template_setup/choose_shell.py` and `template_setup/protect_auto_memory.py`
+  now refuse to run when an existing `.claude/settings.json` is unreadable,
+  invalid JSON, or not a JSON object, exiting with an error instead of
+  "starting fresh" and silently discarding its contents (such as the new
+  permission deny rules).
+
 ## [1.6.0] - 2026-06-29
 
 ### Added

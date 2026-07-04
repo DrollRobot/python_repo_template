@@ -113,18 +113,32 @@ def test_read_settings_missing_returns_empty(tmp_path: Path) -> None:
     assert protect_auto_memory._read_settings(tmp_path / "settings.json") == {}
 
 
-def test_read_settings_invalid_json_returns_empty(tmp_path: Path) -> None:
-    """Invalid JSON reads as empty rather than raising."""
+def test_read_settings_empty_file_returns_empty(tmp_path: Path) -> None:
+    """An empty settings file reads as an empty mapping."""
+    path = tmp_path / "settings.json"
+    path.write_text("", encoding="utf-8")
+    assert protect_auto_memory._read_settings(path) == {}
+
+
+def test_read_settings_invalid_json_returns_none(tmp_path: Path) -> None:
+    """Invalid JSON is refused rather than silently discarded."""
     path = tmp_path / "settings.json"
     path.write_text("{not json", encoding="utf-8")
-    assert protect_auto_memory._read_settings(path) == {}
+    assert protect_auto_memory._read_settings(path) is None
 
 
-def test_read_settings_non_object_returns_empty(tmp_path: Path) -> None:
-    """A JSON array (not an object) reads as empty."""
+def test_read_settings_non_object_returns_none(tmp_path: Path) -> None:
+    """A JSON array (not an object) is refused."""
     path = tmp_path / "settings.json"
     path.write_text("[1, 2, 3]", encoding="utf-8")
-    assert protect_auto_memory._read_settings(path) == {}
+    assert protect_auto_memory._read_settings(path) is None
+
+
+def test_read_settings_unreadable_returns_none(tmp_path: Path) -> None:
+    """A file that is not UTF-8 text is refused."""
+    path = tmp_path / "settings.json"
+    path.write_bytes(b"\x80\x81")
+    assert protect_auto_memory._read_settings(path) is None
 
 
 def test_write_settings_deletes_file_when_empty(tmp_path: Path) -> None:
@@ -151,6 +165,27 @@ def test_run_enable_missing_hook_returns_one(tmp_path: Path) -> None:
     (tmp_path / protect_auto_memory.HOOKS_DIR).mkdir(parents=True)
     assert protect_auto_memory.run(tmp_path, install=True, assume_yes=True) == 1
     assert not (tmp_path / protect_auto_memory.SETTINGS_PATH).exists()
+
+
+def test_run_enable_invalid_settings_aborts_without_changes(tmp_path: Path) -> None:
+    """Enabling against an unparseable settings.json aborts and changes nothing."""
+    root = _make_project(tmp_path)
+    settings_path = root / protect_auto_memory.SETTINGS_PATH
+    settings_path.write_text("{not json", encoding="utf-8")
+
+    assert protect_auto_memory.run(root, install=True, assume_yes=True) == 1
+    assert settings_path.read_text(encoding="utf-8") == "{not json"
+
+
+def test_run_disable_invalid_settings_aborts_without_changes(tmp_path: Path) -> None:
+    """Declining against an unparseable settings.json keeps the hook file too."""
+    root = _make_project(tmp_path)
+    settings_path = root / protect_auto_memory.SETTINGS_PATH
+    settings_path.write_text("{not json", encoding="utf-8")
+
+    assert protect_auto_memory.run(root, install=False, assume_yes=True) == 1
+    assert settings_path.read_text(encoding="utf-8") == "{not json"
+    assert (root / protect_auto_memory.HOOKS_DIR / protect_auto_memory.HOOK_FILE).exists()
 
 
 def test_run_enable_dry_run_changes_nothing(tmp_path: Path) -> None:

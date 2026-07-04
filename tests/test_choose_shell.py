@@ -109,18 +109,32 @@ def test_read_settings_missing_returns_empty(tmp_path: Path) -> None:
     assert choose_shell._read_settings(tmp_path / "settings.json") == {}
 
 
-def test_read_settings_invalid_json_returns_empty(tmp_path: Path) -> None:
-    """Invalid JSON reads as empty rather than raising."""
+def test_read_settings_empty_file_returns_empty(tmp_path: Path) -> None:
+    """An empty settings file reads as an empty mapping."""
+    path = tmp_path / "settings.json"
+    path.write_text("", encoding="utf-8")
+    assert choose_shell._read_settings(path) == {}
+
+
+def test_read_settings_invalid_json_returns_none(tmp_path: Path) -> None:
+    """Invalid JSON is refused rather than silently discarded."""
     path = tmp_path / "settings.json"
     path.write_text("{not json", encoding="utf-8")
-    assert choose_shell._read_settings(path) == {}
+    assert choose_shell._read_settings(path) is None
 
 
-def test_read_settings_non_object_returns_empty(tmp_path: Path) -> None:
-    """A JSON array (not an object) reads as empty."""
+def test_read_settings_non_object_returns_none(tmp_path: Path) -> None:
+    """A JSON array (not an object) is refused."""
     path = tmp_path / "settings.json"
     path.write_text("[1, 2, 3]", encoding="utf-8")
-    assert choose_shell._read_settings(path) == {}
+    assert choose_shell._read_settings(path) is None
+
+
+def test_read_settings_unreadable_returns_none(tmp_path: Path) -> None:
+    """A file that is not UTF-8 text is refused."""
+    path = tmp_path / "settings.json"
+    path.write_bytes(b"\x80\x81")
+    assert choose_shell._read_settings(path) is None
 
 
 def test_run_invalid_shell_returns_one(tmp_path: Path) -> None:
@@ -135,6 +149,20 @@ def test_run_missing_hook_files_returns_one(tmp_path: Path) -> None:
     root = tmp_path
     (root / choose_shell.HOOKS_DIR).mkdir(parents=True)
     assert choose_shell.run(root, "bash", install=True, assume_yes=True) == 1
+
+
+def test_run_invalid_settings_aborts_without_changes(tmp_path: Path) -> None:
+    """An unparseable settings.json aborts the step before any file changes."""
+    root = _make_project(tmp_path)
+    settings_path = root / choose_shell.SETTINGS_PATH
+    settings_path.write_text("{not json", encoding="utf-8")
+
+    assert choose_shell.run(root, "powershell", install=True, assume_yes=True) == 1
+
+    assert settings_path.read_text(encoding="utf-8") == "{not json"
+    hooks = root / choose_shell.HOOKS_DIR
+    for name in choose_shell._ALL_HOOK_FILES:
+        assert (hooks / name).exists()
 
 
 def test_run_dry_run_changes_nothing(tmp_path: Path) -> None:

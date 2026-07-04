@@ -136,25 +136,42 @@ def _is_wired(settings: dict) -> bool:
     )
 
 
-def _read_settings(path: Path) -> dict:
-    """Read and parse ``settings.json``, returning ``{}`` if absent or invalid.
+def _read_settings(path: Path) -> dict | None:
+    """Read and parse ``settings.json``, refusing to proceed on invalid content.
+
+    A missing or empty file reads as ``{}`` (a fresh start). A file that exists
+    but cannot be parsed returns ``None`` so callers abort instead of rewriting
+    the file and silently discarding whatever it held (permission rules, other
+    hooks, and so on).
 
     Args:
         path: Path to the settings file.
 
     Returns:
-        The parsed mapping, or an empty mapping when the file is missing, empty,
-        or not a JSON object.
+        The parsed mapping, ``{}`` when the file is missing or empty, or
+        ``None`` when the file exists but is unreadable, not valid JSON, or not
+        a JSON object.
     """
+    if not path.exists():
+        return {}
     text = _common.read_text(path)
-    if not text or not text.strip():
+    if text is None:
+        print(f"  ERROR: {path} is not readable as UTF-8 text.")
+        print("  Fix or delete it, then re-run this step.")
+        return None
+    if not text.strip():
         return {}
     try:
         data = json.loads(text)
-    except json.JSONDecodeError:
-        print(f"  WARNING: {path.name} is not valid JSON; starting fresh.")
-        return {}
-    return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError as exc:
+        print(f"  ERROR: {path} is not valid JSON ({exc}).")
+        print("  Fix or delete it, then re-run this step.")
+        return None
+    if not isinstance(data, dict):
+        print(f"  ERROR: {path} does not contain a JSON object.")
+        print("  Fix or delete it, then re-run this step.")
+        return None
+    return data
 
 
 def _write_settings(path: Path, settings: dict) -> None:
@@ -180,9 +197,12 @@ def _disable(hook_path: Path, settings_path: Path, *, dry_run: bool = False) -> 
         dry_run: Show what would be removed without changing anything.
 
     Returns:
-        Process exit code (always 0).
+        Process exit code (0 on success, 1 when an existing ``settings.json``
+        cannot be parsed).
     """
     settings = _read_settings(settings_path)
+    if settings is None:
+        return 1
     present = hook_path.exists()
     wired = _is_wired(settings)
 
@@ -226,7 +246,8 @@ def run(
         dry_run: Show the plan without changing anything.
 
     Returns:
-        Process exit code (0 on success, 1 if aborted or the hook is missing).
+        Process exit code (0 on success, 1 if aborted, the hook is missing, or
+        an existing ``settings.json`` cannot be parsed).
     """
     _common.section("Claude Code auto-memory guard")
 
@@ -242,6 +263,10 @@ def run(
         print(f"  Missing hook file: {HOOK_FILE}. Has setup already run?")
         return 1
 
+    settings = _read_settings(settings_path)
+    if settings is None:
+        return 1
+
     _common.info("Wire into", str(SETTINGS_PATH))
     print(f"  Keep: {HOOK_FILE}")
     print("  Prompts before Claude writes to its auto-memory directory.")
@@ -255,7 +280,7 @@ def run(
         print("  Aborted; nothing changed.")
         return 1
 
-    _write_settings(settings_path, _merge_settings(_read_settings(settings_path)))
+    _write_settings(settings_path, _merge_settings(settings))
     print(f"\n  Wrote {SETTINGS_PATH}.")
     print("  Restart Claude Code (or run /hooks) so it picks up the new hook.")
     return 0

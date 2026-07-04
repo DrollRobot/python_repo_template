@@ -194,7 +194,8 @@ def run(
         dry_run: Show the plan without changing anything.
 
     Returns:
-        Process exit code (0 on success, 1 if aborted or invalid).
+        Process exit code (0 on success, 1 if aborted, the shell is invalid, or
+        an existing ``settings.json`` cannot be parsed).
     """
     _common.section("Claude Code command hooks")
 
@@ -219,6 +220,9 @@ def run(
         return 1
 
     settings_path = root / SETTINGS_PATH
+    existing = _read_settings(settings_path)
+    if existing is None:
+        return 1
     drop = [name for name in spec["drop"] if (hooks_dir / name).exists()]
 
     _common.info("Shell", shell)
@@ -236,7 +240,6 @@ def run(
         print("  Aborted; nothing changed.")
         return 1
 
-    existing = _read_settings(settings_path)
     settings = _merge_settings(existing, _build_entry(spec))
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
@@ -248,25 +251,42 @@ def run(
     return 0
 
 
-def _read_settings(path: Path) -> dict:
-    """Read and parse ``settings.json``, returning ``{}`` if absent or invalid.
+def _read_settings(path: Path) -> dict | None:
+    """Read and parse ``settings.json``, refusing to proceed on invalid content.
+
+    A missing or empty file reads as ``{}`` (a fresh start). A file that exists
+    but cannot be parsed returns ``None`` so callers abort instead of rewriting
+    the file and silently discarding whatever it held (permission rules, other
+    hooks, and so on).
 
     Args:
         path: Path to the settings file.
 
     Returns:
-        The parsed mapping, or an empty mapping when the file is missing, empty,
-        or not a JSON object.
+        The parsed mapping, ``{}`` when the file is missing or empty, or
+        ``None`` when the file exists but is unreadable, not valid JSON, or not
+        a JSON object.
     """
+    if not path.exists():
+        return {}
     text = _common.read_text(path)
-    if not text or not text.strip():
+    if text is None:
+        print(f"  ERROR: {path} is not readable as UTF-8 text.")
+        print("  Fix or delete it, then re-run this step.")
+        return None
+    if not text.strip():
         return {}
     try:
         data = json.loads(text)
-    except json.JSONDecodeError:
-        print(f"  WARNING: {path.name} is not valid JSON; starting fresh.")
-        return {}
-    return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError as exc:
+        print(f"  ERROR: {path} is not valid JSON ({exc}).")
+        print("  Fix or delete it, then re-run this step.")
+        return None
+    if not isinstance(data, dict):
+        print(f"  ERROR: {path} does not contain a JSON object.")
+        print("  Fix or delete it, then re-run this step.")
+        return None
+    return data
 
 
 def _prompt_install() -> bool:
