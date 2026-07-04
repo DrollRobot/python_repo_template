@@ -9,6 +9,22 @@
 uv run pre-commit autoupdate          # periodically update precommit dependencies
 ```
 
+## Refresh dependencies
+```
+uv lock --upgrade                     # upgrade all deps within pyproject.toml bounds
+uv sync --all-groups                  # install the refreshed lockfile
+```
+- Re-run the test suite as described in [AGENTS.TESTING.md](AGENTS.TESTING.md)
+   before continuing.
+- Then surface upgrades still blocked by version bounds:
+   ```
+   uv tree --outdated --depth 1 --all-groups   # direct deps only
+   ```
+- Any package still annotated with a newer `(latest: ...)` version is held back
+   by an upper bound in pyproject.toml (usually a new major release). Report
+   these to the user for a decision. Do not raise version bounds without
+   consulting the user.
+
 ## Review security audit
 ```
 uv audit                              # audit dependencies for known vulnerabilities
