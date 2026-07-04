@@ -14,10 +14,25 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
-# mypy cannot see the sys.path insertion above, so it cannot resolve the module.
-from cleanup import dev_script_tests  # type: ignore[import-not-found]
+from cleanup import dev_script_tests, strip_template_config
+
+# A pyproject.toml slice holding both template-only lines cleanup removes,
+# surrounded by neighbors that must survive untouched.
+PYPROJECT = (
+    "addopts = [\n"
+    '    "--cov=python_repo_template",\n'
+    '    "--cov=scripts",\n'
+    '    "--cov-report=term-missing",\n'
+    "]\n"
+    "\n"
+    "[tool.mypy]\n"
+    'files = ["src", "tests", "scripts"]\n'
+    'mypy_path = ["scripts", "scripts/template_setup"]\n'
+)
 
 
 def touch(root: Path, relative: str) -> Path:
@@ -70,3 +85,31 @@ def test_missing_tests_folder_yields_nothing(tmp_path: Path) -> None:
     """A project without a tests/ folder has nothing to select."""
     touch(tmp_path, "scripts/remove_worktree.py")
     assert dev_script_tests(tmp_path) == []
+
+
+def test_strip_removes_scripts_coverage_line() -> None:
+    """The --cov=scripts line vanishes without leaving a blank line behind."""
+    result = strip_template_config(PYPROJECT)
+    assert "--cov=scripts" not in result
+    assert '    "--cov=python_repo_template",\n    "--cov-report=term-missing",\n' in result
+
+
+def test_strip_narrows_mypy_path() -> None:
+    """The template_setup entry is dropped; scripts stays on the search path."""
+    result = strip_template_config(PYPROJECT)
+    assert 'mypy_path = ["scripts"]\n' in result
+    assert "template_setup" not in result
+
+
+def test_strip_keeps_unrelated_lines() -> None:
+    """Neighboring config lines survive the edit byte-for-byte."""
+    result = strip_template_config(PYPROJECT)
+    assert 'files = ["src", "tests", "scripts"]\n' in result
+    assert "[tool.mypy]\n" in result
+
+
+def test_strip_rejects_drifted_pyproject() -> None:
+    """A missing snippet aborts loudly instead of silently skipping the edit."""
+    drifted = PYPROJECT.replace('    "--cov=scripts",\n', "")
+    with pytest.raises(ValueError, match="drifted"):
+        strip_template_config(drifted)

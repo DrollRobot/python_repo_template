@@ -59,7 +59,6 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-        args: [src, tests]
 
   # detect-secrets
   - repo: https://github.com/Yelp/detect-secrets

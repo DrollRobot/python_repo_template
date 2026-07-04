@@ -18,8 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
-# mypy cannot see the sys.path insertion above, so it cannot resolve the module.
-import set_version  # type: ignore[import-not-found]
+import set_version
 
 # A pyproject.toml slice that includes the two trap lines also containing the
 # word "version": ruff's target-version and mypy's python_version.

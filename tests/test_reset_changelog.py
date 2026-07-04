@@ -16,8 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
-# mypy cannot see the sys.path insertion above, so it cannot resolve the module.
-import reset_changelog  # type: ignore[import-not-found]
+import reset_changelog
 
 SKELETON = "# Changelog\n\n## [Unreleased]\n"
 OLD_HISTORY = "# Changelog\n\n## [9.9.9] - 2000-01-01\n"

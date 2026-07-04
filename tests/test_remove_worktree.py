@@ -14,8 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-# mypy cannot see the sys.path insertion above, so it cannot resolve the module.
-from remove_worktree import (  # type: ignore[import-not-found]
+from remove_worktree import (
     open_worktree_slugs,
     parse_choice,
     parse_worktrees,

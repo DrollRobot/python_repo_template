@@ -11,8 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-# mypy cannot see the sys.path insertion above, so it cannot resolve the module.
-from complete_worktree import (  # type: ignore[import-not-found]
+from complete_worktree import (
     dirty_status_lines,
     notes_ref,
     parse_pr_note,

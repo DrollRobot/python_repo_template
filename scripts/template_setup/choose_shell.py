@@ -26,6 +26,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import _common
 
@@ -73,7 +74,7 @@ def _hook_command(python: str, hook_file: str) -> str:
     return f'{python} "{target}"'
 
 
-def _references_our_hook(entry: dict) -> bool:
+def _references_our_hook(entry: dict[str, Any]) -> bool:
     """Return whether a ``PreToolUse`` entry points at one of our hook files.
 
     Args:
@@ -89,7 +90,7 @@ def _references_our_hook(entry: dict) -> bool:
     return False
 
 
-def _build_entry(spec: dict) -> dict:
+def _build_entry(spec: dict[str, Any]) -> dict[str, Any]:
     """Build the ``PreToolUse`` matcher entry for the chosen shell.
 
     Args:
@@ -107,7 +108,7 @@ def _build_entry(spec: dict) -> dict:
     }
 
 
-def _merge_settings(existing: dict, entry: dict) -> dict:
+def _merge_settings(existing: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
     """Merge our hook entry into an existing settings mapping.
 
     Preserves unrelated keys and any ``PreToolUse`` entries that do not point at
@@ -251,7 +252,7 @@ def run(
     return 0
 
 
-def _read_settings(path: Path) -> dict | None:
+def _read_settings(path: Path) -> dict[str, Any] | None:
     """Read and parse ``settings.json``, refusing to proceed on invalid content.
 
     A missing or empty file reads as ``{}`` (a fresh start). A file that exists

@@ -51,6 +51,7 @@ import argparse
 import os
 import re
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import _cli as cli
@@ -58,7 +59,7 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.2.2"
+__version__ = "1.2.3"
 
 
 def slug_arg(value: str) -> str:
@@ -160,7 +161,7 @@ def parse_worktrees(porcelain: str) -> list[tuple[str, str | None]]:
 
 
 def open_worktree_slugs(
-    worktrees: list[tuple[str, str | None]], prefix: str
+    worktrees: Sequence[tuple[str, str | None]], prefix: str
 ) -> list[tuple[str, str]]:
     """Find the open worktrees that look like they were made by new_worktree.py.
 

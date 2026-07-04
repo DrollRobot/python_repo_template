@@ -16,8 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
-# mypy cannot see the sys.path insertion above, so it cannot resolve the module.
-import remove_mkdocs  # type: ignore[import-not-found]
+import remove_mkdocs
 
 PYPROJECT = (
     "[dependency-groups]\n"

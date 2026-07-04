@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `scripts/` is now type-checked and coverage-measured. Mypy targets moved into
+  `pyproject.toml` (`files = ["src", "tests", "scripts"]` plus `mypy_path`), so
+  AGENTS.TESTING.md, CI, and the pre-commit hook all run a bare `uv run mypy`
+  and can no longer drift apart. The nine `# type: ignore[import-not-found]`
+  workarounds in the dev-script tests are gone, and pytest coverage now
+  includes `scripts/` (`--cov=scripts`).
+- `template_setup/cleanup.py` also trims the template-only pyproject.toml lines
+  when the scaffolding is removed: it drops `--cov=scripts` (the dev-script
+  tests are deleted alongside it) and narrows `mypy_path` to `["scripts"]`,
+  aborting loudly before deleting anything if pyproject.toml has drifted from
+  the template.
+
+### Fixed
+
+- Strict-mode typing gaps the mypy blind spot was hiding: bare `dict`
+  annotations in `template_setup/choose_shell.py` and
+  `template_setup/protect_auto_memory.py` are now `dict[str, Any]`, and
+  `remove_worktree.py`'s `open_worktree_slugs` accepts any sequence instead of
+  requiring an exact `list` element type (patch bump to 1.2.3).
+
 ## [1.7.0] - 2026-07-04
 
 ### Added

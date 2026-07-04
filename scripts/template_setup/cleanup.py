@@ -8,6 +8,12 @@ their tests only matter while developing the template), and any leftover
 ``LICENSE.*.FIXME`` candidates -- but only once a real ``LICENSE`` file
 exists, so you are never left with no license.
 
+It also trims the pyproject.toml lines that only matter while developing the
+template itself: the ``--cov=scripts`` coverage flag (the dev-script tests are
+deleted here, so scripts coverage would read as untested) and the
+``scripts/template_setup`` entry in mypy's search path (that folder is gone).
+The scripts that remain in ``scripts/`` stay type-checked via mypy's ``files``.
+
 It does NOT edit prose for you; it prints reminders for the manual bits (such as
 removing the template instructions from README.md).
 
@@ -30,6 +36,39 @@ REMINDERS = [
     "Remove the 'Making a new repo from this template' section from README.md.",
     "Run find_fixmes (before deleting) to confirm no FIXMEs remain.",
 ]
+
+# pyproject.toml snippets that only matter while developing the template
+# itself. Each (old, new) pair is an exact-string replacement; a missing
+# snippet means pyproject.toml drifted from the template, so cleanup stops
+# instead of guessing (fail early, fail loudly).
+PYPROJECT_EDITS = [
+    # Dev-script coverage: the tests covering scripts/ are deleted below, so
+    # keeping the flag would only drag the project's coverage number down.
+    ('    "--cov=scripts",\n', ""),
+    # scripts/template_setup/ is deleted below; the remaining scripts/ stays
+    # in mypy's files and search path so it stays type-checked.
+    ('mypy_path = ["scripts", "scripts/template_setup"]', 'mypy_path = ["scripts"]'),
+]
+
+
+def strip_template_config(text: str) -> str:
+    """Remove the template-only lines from pyproject.toml content.
+
+    Args:
+        text: Current pyproject.toml content.
+
+    Returns:
+        The content with every :data:`PYPROJECT_EDITS` replacement applied.
+
+    Raises:
+        ValueError: If an expected snippet is missing, meaning pyproject.toml
+            has drifted from the template and needs manual attention.
+    """
+    for old, new in PYPROJECT_EDITS:
+        if old not in text:
+            raise ValueError(f"pyproject.toml has drifted from the template: {old!r} not found")
+        text = text.replace(old, new)
+    return text
 
 
 def dev_script_tests(root: Path) -> list[Path]:
@@ -75,17 +114,31 @@ def _gather_targets(root: Path) -> list[Path]:
 
 
 def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
-    """Delete the template-setup scaffolding.
+    """Delete the template-setup scaffolding and trim template-only config.
 
     Args:
         root: Project root directory.
         assume_yes: Skip the confirmation prompt.
-        dry_run: Show the plan without deleting anything.
+        dry_run: Show the plan without changing anything.
 
     Returns:
-        Process exit code (0 on success, 1 if aborted).
+        Process exit code (0 on success, 1 if aborted or pyproject.toml has
+        drifted from the template).
     """
     _common.section("Clean up template scaffolding")
+
+    # Validate the pyproject.toml edit up front so a drifted file aborts the
+    # whole cleanup before any tests are deleted.
+    pyproject_path = root / "pyproject.toml"
+    pyproject_text = _common.read_text(pyproject_path)
+    if pyproject_text is None:
+        print("  ERROR: pyproject.toml is not readable as UTF-8 text.")
+        return 1
+    try:
+        stripped_pyproject = strip_template_config(pyproject_text)
+    except ValueError as error:
+        print(f"  ERROR: {error}")
+        return 1
 
     targets = _gather_targets(root)
     print("  Will delete:")
@@ -95,6 +148,9 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
 
     if (root / "LICENSE").exists() is False and any(root.glob("LICENSE.*.FIXME")):
         print("  (Keeping LICENSE.*.FIXME: no LICENSE chosen yet -- run choose_license first.)")
+
+    print("\n  Will edit:")
+    print("    pyproject.toml (drop --cov=scripts; drop scripts/template_setup from mypy_path)")
 
     print("\n  Reminders (not done automatically):")
     for reminder in REMINDERS:
@@ -117,6 +173,9 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
             continue
         path.unlink()
         print(f"  Deleted {path.relative_to(root)}")
+
+    _common.write_text(pyproject_path, stripped_pyproject)
+    print("  Edited pyproject.toml")
 
     try:
         shutil.rmtree(setup_dir, onexc=_common.force_remove)

@@ -18,8 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
-# mypy cannot see the sys.path insertion above, so it cannot resolve the module.
-import set_python_version  # type: ignore[import-not-found]
+import set_python_version
 
 # A representative slice of each file that declares the version, in every form.
 # These hold an older Python (3.12) as the "before" state the step upgrades from;

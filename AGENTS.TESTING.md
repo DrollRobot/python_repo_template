@@ -8,7 +8,7 @@ uv lock --check                       # verify lockfile in sync
 # code checks and formatting
 uv run ruff check .                   # lint
 uv run ruff format .                  # apply ruff formatting
-uv run mypy src tests                 # type check
+uv run mypy                           # type check (targets set in pyproject.toml)
 
 # tests
 uv run pytest -m "not integration"    # offline tests

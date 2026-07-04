@@ -17,8 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
-# mypy cannot see the sys.path insertion above, so it cannot resolve the module.
-import protect_auto_memory  # type: ignore[import-not-found]
+import protect_auto_memory
 
 
 def _make_project(tmp_path: Path) -> Path:

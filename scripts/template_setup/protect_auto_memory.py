@@ -26,6 +26,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import _common
 
@@ -50,7 +51,7 @@ def _hook_command() -> str:
     return f'{PYTHON} "{target}"'
 
 
-def _references_our_hook(entry: dict) -> bool:
+def _references_our_hook(entry: dict[str, Any]) -> bool:
     """Return whether a ``PreToolUse`` entry points at the memory-guard hook.
 
     Args:
@@ -62,7 +63,7 @@ def _references_our_hook(entry: dict) -> bool:
     return any(HOOK_FILE in hook.get("command", "") for hook in entry.get("hooks", []))
 
 
-def _build_entry() -> dict:
+def _build_entry() -> dict[str, Any]:
     """Build the ``PreToolUse`` matcher entry that wires the memory-guard hook.
 
     Returns:
@@ -74,7 +75,7 @@ def _build_entry() -> dict:
     }
 
 
-def _without_our_entry(existing: dict) -> dict:
+def _without_our_entry(existing: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of settings with any memory-guard entry removed.
 
     Preserves unrelated keys and any ``PreToolUse`` entries that do not
@@ -101,7 +102,7 @@ def _without_our_entry(existing: dict) -> dict:
     return settings
 
 
-def _merge_settings(existing: dict) -> dict:
+def _merge_settings(existing: dict[str, Any]) -> dict[str, Any]:
     """Merge the memory-guard entry into an existing settings mapping.
 
     Preserves unrelated keys and ``PreToolUse`` entries; replaces any prior
@@ -122,7 +123,7 @@ def _merge_settings(existing: dict) -> dict:
     return settings
 
 
-def _is_wired(settings: dict) -> bool:
+def _is_wired(settings: dict[str, Any]) -> bool:
     """Return whether the parsed settings already wire the memory-guard hook.
 
     Args:
@@ -136,7 +137,7 @@ def _is_wired(settings: dict) -> bool:
     )
 
 
-def _read_settings(path: Path) -> dict | None:
+def _read_settings(path: Path) -> dict[str, Any] | None:
     """Read and parse ``settings.json``, refusing to proceed on invalid content.
 
     A missing or empty file reads as ``{}`` (a fresh start). A file that exists
@@ -174,7 +175,7 @@ def _read_settings(path: Path) -> dict | None:
     return data
 
 
-def _write_settings(path: Path, settings: dict) -> None:
+def _write_settings(path: Path, settings: dict[str, Any]) -> None:
     """Write settings as pretty JSON, or delete the file when it would be empty.
 
     Args:
