@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-06
+
+### Added
+
+- `scripts/compare_to_template.py`: a `--diff-tool` option to choose which
+  editor opens the diffs (defaults to `code`; e.g. `codium` or `cursor`).
+
+### Changed
+
+- `scripts/compare_to_template.py`: `--diff` now opens each differing baseline
+  file as a side-by-side diff in VS Code (`code --diff`) instead of printing
+  unified diffs to the terminal. The normalized template and project texts are
+  written to a temp directory so only real drift shows, and it falls back to
+  the terminal unified diffs when the `code` CLI is not on `PATH` (script
+  bumped to 1.1.0).
+- `scripts/compare_to_template.py`: `README.md` is now compared for existence
+  only -- the drift check still alerts when it is missing but no longer flags
+  its contents, which each project rewrites (via a new `compare_content` flag
+  on `BaselineFile`).
+
+## [1.8.1] - 2026-07-06
+
+### Fixed
+
+- `open_claude_settings.py` and `open_gitignore.py` now guard the Windows-only
+  `os.startfile` call on `sys.platform`, so their `open_with_os_default` helper
+  type-checks cleanly under `uv run mypy` on Linux and macOS instead of failing
+  the cross-platform check off Windows.
+
 ## [1.8.0] - 2026-07-06
 
 ### Added
@@ -321,7 +350,9 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.8.1...v1.9.0
+[1.8.1]: https://github.com/DrollRobot/python_repo_template/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.1...v1.6.0
