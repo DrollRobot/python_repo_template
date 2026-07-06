@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-06
+
+### Added
+
+- `scripts/open_claude_settings.py` (1.0.0), a dev helper that walks up to the
+  nearest `.claude/` folder and opens its `settings.json` / `settings.local.json`
+  alongside the global `~/.claude/settings.json`. Resolves an editor via
+  `--editor` -> `$VISUAL` -> `$EDITOR` -> `code` -> the OS default opener
+  (routing Windows `.cmd`/`.bat` editors through `cmd /c`), and supports
+  `--create`, `--path`, and `--dry-run`. Stdlib-only and cross-platform.
+- `scripts/open_gitignore.py` (1.0.0), a companion helper that opens the
+  committed `.gitignore`, the local `.git/info/exclude`, and the global excludes
+  file (`core.excludesfile` or `~/.config/git/ignore`). Resolves repo-level paths
+  via `git rev-parse` so worktrees and custom `GIT_DIR` layouts work, and mirrors
+  `open_claude_settings.py`'s `--path`, `--create`, `--editor`, and `--dry-run`
+  flags.
+
+### Changed
+
+- The CI `check` job now runs as a `[ubuntu-latest, macos-latest, windows-latest]`
+  matrix (`fail-fast: false`), so the cross-platform helper scripts are exercised
+  on Linux, macOS, and Windows on every push and pull request instead of Linux
+  only. Branch protection now expects the per-OS status checks
+  (`check (ubuntu-latest)`, `check (macos-latest)`, `check (windows-latest)`).
+
+### Fixed
+
+- `_cli.py`'s Windows ANSI console setup (`_enable_windows_ansi`) now guards on
+  `sys.platform`, so `ctypes.windll` type-checks cleanly under `uv run mypy` on
+  Linux and macOS instead of raising an `attr-defined` error off Windows.
+
 ## [1.7.0] - 2026-07-04
 
 ### Added
@@ -290,7 +321,8 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/DrollRobot/python_repo_template/compare/v1.5.0...v1.5.1
