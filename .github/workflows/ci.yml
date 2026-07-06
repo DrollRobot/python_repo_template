@@ -13,7 +13,8 @@
 #   2. Go to Settings -> Branches -> Add branch protection rule.
 #   3. Set the pattern to: main
 #   4. Enable "Require status checks to pass before merging".
-#   5. Search for and add the "check" job (the job name from this file).
+#   5. Search for and add each matrix "check" status (one per OS, e.g.
+#      "check (ubuntu-latest)", "check (macos-latest)", "check (windows-latest)").
 #   6. Optionally enable "Require branches to be up to date before merging".
 #   7. Save the rule.
 #
@@ -43,7 +44,11 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 

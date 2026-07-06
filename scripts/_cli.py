@@ -25,6 +25,8 @@ def _enable_windows_ansi() -> None:
 
     Windows Terminal and VS Code handle ANSI already; this is a no-op there.
     """
+    if sys.platform != "win32":  # also narrows ctypes.windll for type checkers
+        return
     import ctypes
 
     try:
