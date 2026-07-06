@@ -39,7 +39,7 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # Written into any settings file created with --create: a valid, empty JSON
 # object that Claude Code accepts as-is.
