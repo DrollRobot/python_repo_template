@@ -48,7 +48,6 @@ import shlex
 import shutil
 import sys
 import tempfile
-import tomllib
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from os.path import normcase, normpath
@@ -56,10 +55,15 @@ from pathlib import Path
 
 import _cli as cli
 
+if sys.version_info >= (3, 11):  # noqa: UP036 # allows compatibility back to 3.10
+    import tomllib
+else:
+    import tomli as tomllib
+
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.1.0"
+__version__ = "1.1.2"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -636,7 +640,7 @@ def pyproject_name(root: Path) -> str | None:
     try:
         with path.open("rb") as handle:
             data = tomllib.load(handle)
-    except OSError, tomllib.TOMLDecodeError:
+    except (OSError, tomllib.TOMLDecodeError):  # fmt: skip
         return None
     project = data.get("project")
     if not isinstance(project, dict):
@@ -925,7 +929,7 @@ def build_context(template_root: Path, project_root: Path, names: ProjectNames) 
             _full, dotted, compact = python_version_forms(
                 version_file.read_text(encoding="utf-8").strip()
             )
-        except OSError, ValueError:
+        except (OSError, ValueError):  # fmt: skip
             cli.warn("  Could not parse the project's .python-version; not normalizing it.")
     return CompareContext(
         template_root=template_root,
