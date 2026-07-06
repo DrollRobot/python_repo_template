@@ -12,111 +12,111 @@
 			"path": "."
 		}
 	],
-	"settings": {
-    // -- GENERAL ----------------------------------------------
-    "explorer.confirmDelete": false,
-    "terminal.integrated.scrollback": 100000,
-    "workbench.colorTheme": "Dark Modern",
+        "settings": {
+        // -- GENERAL ----------------------------------------------
+        "explorer.confirmDelete": false,
+        "terminal.integrated.scrollback": 100000,
+        "workbench.colorTheme": "Dark Modern",
 
-    // -- FILES ------------------------------------------------
-    "files.exclude": {
-        "**/__pycache__": true,
-        "**/.cache": true,
-        "**/.coverage.*": true,
-        "**/.coverage": true,
-        "**/.env": true,
-        "**/.hypothesis": true,
-        "**/.mypy_cache": true,
-        "**/.nox": true,
-        "**/.pytest_cache": true,
-        "**/.ruff_cache": true,
-        "**/.tox": true,
-        "**/secrets/**": true,
-    },
+        // -- FILES ------------------------------------------------
+        "files.exclude": {
+            "**/__pycache__": true,
+            "**/.cache": true,
+            "**/.coverage.*": true,
+            "**/.coverage": true,
+            "**/.env": true,
+            "**/.hypothesis": true,
+            "**/.mypy_cache": true,
+            "**/.nox": true,
+            "**/.pytest_cache": true,
+            "**/.ruff_cache": true,
+            "**/.tox": true,
+            "**/secrets/**": true,
+        },
 
-    // -- GIT --------------------------------------------------
-    "git.autofetch": true,
+        // -- GIT --------------------------------------------------
+        "git.autofetch": true,
 
-    // -- PYTHON -----------------------------------------------
-    // always activate the virtual environment if present
-    "python.terminal.activateEnvironment": true,
-    "python.createEnvironment.trigger": "off",
-    // ensure pylance (pyright) is the language server
-    "python.languageServer": "Pylance",
-    "[python]": {
-        // use ruff for formatting
-        "editor.defaultFormatter": "charliermarsh.ruff",
-        "editor.formatOnSave": true,
-        // use ruff for fixes + import sorting on save
-        "editor.codeActionsOnSave": {
-            "source.fixAll.ruff": "explicit",
-            "source.organizeImports.ruff": "explicit",
-            // prevent Pylance or other extensions from also running these
-            "source.fixAll": "never",
-            "source.organizeImports": "never"
-        }
-    },
+        // -- PYTHON -----------------------------------------------
+        // always activate the virtual environment if present
+        "python.terminal.activateEnvironment": true,
+        "python.createEnvironment.trigger": "off",
+        // ensure pylance (pyright) is the language server
+        "python.languageServer": "Pylance",
+        "[python]": {
+            // use ruff for formatting
+            "editor.defaultFormatter": "charliermarsh.ruff",
+            "editor.formatOnSave": true,
+            // use ruff for fixes + import sorting on save
+            "editor.codeActionsOnSave": {
+                "source.fixAll.ruff": "explicit",
+                "source.organizeImports.ruff": "explicit",
+                // prevent Pylance or other extensions from also running these
+                "source.fixAll": "never",
+                "source.organizeImports": "never"
+            }
+        },
 
-    // -- PYLANCE ----------------------------------------------
-    "python.analysis.autoImportCompletions": true,
-    // tell pylance to use its own node.js executable, allowing higher memory cap
-    "python.analysis.nodeExecutable": "auto",
-    // pyright type checking level
-    "python.analysis.typeCheckingMode": "standard",
-    "python.analysis.inlayHints.functionReturnTypes": true,
-    // disable pylance diagnostics that overlap with ruff
-    "python.analysis.diagnosticSeverityOverrides": {
-        "reportDuplicateImport": "none",
-        "reportUnusedExpression": "none",
-        "reportUnusedImport": "none",
-        "reportUnusedVariable": "none",
-        "reportWildcardImportFromLibrary": "none"
-    },
-    "python.analysis.exclude": [
-        "**/__pycache__",
-        "**/.*",
-        "**/*.egg-info",
-        "**/build",
-        "**/data",
-        "**/dist",
-        "**/node_modules",
-    ],
+        // -- PYLANCE ----------------------------------------------
+        "python.analysis.autoImportCompletions": true,
+        // tell pylance to use its own node.js executable, allowing higher memory cap
+        "python.analysis.nodeExecutable": "auto",
+        // pyright type checking level
+        "python.analysis.typeCheckingMode": "standard",
+        "python.analysis.inlayHints.functionReturnTypes": true,
+        // disable pylance diagnostics that overlap with ruff
+        "python.analysis.diagnosticSeverityOverrides": {
+            "reportDuplicateImport": "none",
+            "reportUnusedExpression": "none",
+            "reportUnusedImport": "none",
+            "reportUnusedVariable": "none",
+            "reportWildcardImportFromLibrary": "none"
+        },
+        "python.analysis.exclude": [
+            "**/__pycache__",
+            "**/.*",
+            "**/*.egg-info",
+            "**/build",
+            "**/data",
+            "**/dist",
+            "**/node_modules",
+        ],
 
-    // -- FORMATTERS (non-Python) ------------------------------
-    "[json]": {
-        "editor.defaultFormatter": "vscode.json-language-features"
-    },
-    "[jsonc]": {
-        "editor.defaultFormatter": "vscode.json-language-features"
-    },
-    "[html]": {
-        "editor.defaultFormatter": "vscode.html-language-features"
-    },
-    "[csv]": {
-        "editor.inlayHints.maximumLength": 0
-    },
+        // -- FORMATTERS (non-Python) ------------------------------
+        "[json]": {
+            "editor.defaultFormatter": "vscode.json-language-features"
+        },
+        "[jsonc]": {
+            "editor.defaultFormatter": "vscode.json-language-features"
+        },
+        "[html]": {
+            "editor.defaultFormatter": "vscode.html-language-features"
+        },
+        "[csv]": {
+            "editor.inlayHints.maximumLength": 0
+        },
 
-    // -- AI ---------------------------------------------------
-    "chat.disableAIFeatures": true, // FIXME AI disabled by default, just in case you're not a fan
-    "github.copilot.nextEditSuggestions.enabled": true,
-    "github.copilot.enable": { // FIXME in case you want to restrict what file types AI can see
-        "*": false, // all file types disabled by default. enable types only as needed.
-        "plaintext": true,
-        "markdown": true,
-        "python": true,
-        "toml": true,
-    },
-    // "chat.tools.urls.autoApprove": { // FIXME a set of tool related websites to automatically allow
-    //     "https://code.visualstudio.com": true,
-    //     "https://github.com/microsoft/vscode/wiki/*": true,
-    //     "https://docs.astral.sh": true,
-    //     "https://docs.github.com": {
-    //         "approveRequest": true,
-    //         "approveResponse": true
-    //     }
-    // },
-    // "chat.tools.terminal.autoApprove": { # FIXME preapprove specific tools for agents to run in the terminal
-    //     "uv": true
-    // }
-}
+        // -- AI ---------------------------------------------------
+        "chat.disableAIFeatures": true, // FIXME AI disabled by default, just in case you're not a fan
+        "github.copilot.nextEditSuggestions.enabled": true,
+        "github.copilot.enable": { // FIXME in case you want to restrict what file types AI can see
+            "*": false, // all file types disabled by default. enable types only as needed.
+            "plaintext": true,
+            "markdown": true,
+            "python": true,
+            "toml": true,
+        },
+        // "chat.tools.urls.autoApprove": { // FIXME a set of tool related websites to automatically allow
+        //     "https://code.visualstudio.com": true,
+        //     "https://github.com/microsoft/vscode/wiki/*": true,
+        //     "https://docs.astral.sh": true,
+        //     "https://docs.github.com": {
+        //         "approveRequest": true,
+        //         "approveResponse": true
+        //     }
+        // },
+        // "chat.tools.terminal.autoApprove": { # FIXME preapprove specific tools for agents to run in the terminal
+        //     "uv": true
+        // }
+    }
 }
