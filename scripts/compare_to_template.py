@@ -141,6 +141,8 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(SELF_REL),
     BaselineFile("scripts/complete_worktree.py"),
     BaselineFile("scripts/new_worktree.py"),
+    BaselineFile("scripts/open_claude_settings.py"),
+    BaselineFile("scripts/open_gitignore.py"),
     BaselineFile("scripts/push_new_tag_to_main.py"),
     BaselineFile("scripts/remove_worktree.py"),
     BaselineFile("scripts/setup_credentials.py", required=False),  # credentials feature
