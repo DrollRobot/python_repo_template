@@ -26,8 +26,10 @@ from compare_to_template import (
     TEMPLATE_USER,
     BaselineFile,
     CompareContext,
+    Comparison,
     ProjectNames,
     compare_one,
+    diff_files_for,
     effective_strict,
     github_user_from_url,
     is_excluded,
@@ -39,6 +41,7 @@ from compare_to_template import (
     replace_case_insensitive,
     replay_cleanup_pyproject,
     replay_python_version,
+    resolve_code,
     script_version,
     script_version_note,
     self_check_action,
@@ -377,6 +380,32 @@ def test_compare_one_no_template(tmp_path: Path) -> None:
     assert compare_one(BaselineFile("notes.md"), ctx).status == "no-template"
 
 
+def test_compare_one_existence_only_ignores_content(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "README.md", "template readme\n")
+    write(ctx.project_root, "README.md", "a completely different project readme\n")
+    result = compare_one(BaselineFile("README.md", compare_content=False), ctx)
+    assert result.status == "match"
+    assert "contents not compared" in result.note
+    # The contents are never read, so no normalized text is stored for --diff.
+    assert result.template_norm is None
+    assert result.project_norm is None
+
+
+def test_compare_one_existence_only_missing_required_is_drift(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "README.md", "template readme\n")
+    result = compare_one(BaselineFile("README.md", compare_content=False), ctx)
+    assert result.status == "missing"
+
+
+def test_compare_one_existence_only_absent_when_optional(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "extra.md", "template extra\n")
+    result = compare_one(BaselineFile("extra.md", required=False, compare_content=False), ctx)
+    assert result.status == "absent"
+
+
 def test_compare_one_binary_files(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     (ctx.template_root / "blob.bin").write_bytes(b"\xff\xfe\x00\x01")
@@ -424,6 +453,12 @@ def test_manifest_has_no_duplicates() -> None:
     assert len(paths) == len(set(paths))
 
 
+def test_manifest_readme_is_required_but_existence_only() -> None:
+    (readme,) = [entry for entry in MANIFEST if entry.path == "README.md"]
+    assert readme.required is True
+    assert readme.compare_content is False
+
+
 def test_manifest_covers_all_tracked_template_files() -> None:
     """Every tracked template file must be in the manifest or excluded.
 
@@ -450,3 +485,65 @@ def test_manifest_covers_all_tracked_template_files() -> None:
     assert uncovered == [], f"add to MANIFEST or EXCLUDED_*: {uncovered}"
     missing = [p for p in sorted(manifest_paths) if not (root / p).is_file()]
     assert missing == [], f"manifest entries not in template: {missing}"
+
+
+# --- diff output (VS Code) --------------------------------------------------------------
+
+
+def test_diff_files_for_writes_pairs_and_skips_match_and_binary(tmp_path: Path) -> None:
+    results = [
+        Comparison(
+            BaselineFile("a.md"), "a.md", "modified", template_norm="T-A\n", project_norm="P-A\n"
+        ),
+        Comparison(
+            BaselineFile("b.md", strict=False),
+            "b.md",
+            "review",
+            template_norm="T-B\n",
+            project_norm="P-B\n",
+        ),
+        Comparison(
+            BaselineFile("blob.bin"), "blob.bin", "modified", note=" (binary)"
+        ),  # no norm texts
+        Comparison(BaselineFile("c.md"), "c.md", "match"),  # unchanged; nothing to diff
+    ]
+    base = tmp_path / "out"
+    pairs = diff_files_for(results, base)
+
+    assert len(pairs) == 2
+    (left_a, right_a), (_left_b, right_b) = pairs
+    assert (left_a, right_a) == (base / "template" / "a.md", base / "project" / "a.md")
+    assert left_a.read_text(encoding="utf-8") == "T-A\n"
+    assert right_a.read_text(encoding="utf-8") == "P-A\n"
+    assert right_b.read_text(encoding="utf-8") == "P-B\n"
+    # The binary and matching entries produce no files.
+    assert not (base / "template" / "blob.bin").exists()
+    assert not (base / "template" / "c.md").exists()
+
+
+def test_diff_files_for_uses_project_rel_for_the_project_side(tmp_path: Path) -> None:
+    rel = f"docs/reference/{TEMPLATE_SNAKE}.md"
+    results = [
+        Comparison(
+            BaselineFile(rel, required=False, strict=False),
+            "docs/reference/my_proj.md",
+            "review",
+            template_norm="t\n",
+            project_norm="p\n",
+        ),
+    ]
+    ((left, right),) = diff_files_for(results, tmp_path)
+    assert left == tmp_path / "template" / rel
+    assert right == tmp_path / "project" / "docs/reference/my_proj.md"
+
+
+def test_resolve_code_splits_an_explicit_tool() -> None:
+    assert resolve_code("codium") == ["codium"]
+    assert resolve_code("code --new-window") == ["code", "--new-window"]
+
+
+def test_resolve_code_ignores_a_blank_override() -> None:
+    # A blank override falls through to auto-detection of the 'code' CLI, which
+    # is present or not depending on the environment.
+    expected = ["code"] if shutil.which("code") else None
+    assert resolve_code("   ") == expected
