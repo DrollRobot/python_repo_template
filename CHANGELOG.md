@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `scripts/complete_worktree.py`: the PR title now comes from fenced `title:`
+  front-matter at the top of `PR.md` instead of the last commit subject. The
+  same fenced format (`---` / `key: value` / `---` / body) is used for the
+  cross-device pr-body note, so a single parser handles both, and the fence is
+  stripped before the body is sent to GitHub. There is no commit-message
+  fallback: a `PR.md` with no `title:` aborts the script (bumped to 1.3.0).
+
 ## [1.9.0] - 2026-07-06
 
 ### Added

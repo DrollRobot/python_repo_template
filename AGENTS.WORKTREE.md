@@ -31,13 +31,27 @@ leave it in this state:
 
 **1. Commit everything**
 Nothing uncommitted, nothing untracked. Commit all work in logical units with
-conventional-commit messages. Make the most recent commit subject a clean
-`type(scope): summary` — it stands in for the PR title.
+conventional-commit messages.
 
 **2. Write the PR description to `PR.md`**
-- Write a real description to `PR.md` at the worktree root, using
-  `.github/PULL_REQUEST_TEMPLATE.md` as a template, but write it in the style
-  of a human summarizing the work, not a checklist for the contributor.
+- **`PR.md` must open with fenced front-matter that sets the PR title.**
+  `complete_worktree.py` reads the title from there; there is no fallback, so a
+  missing `title:` aborts the script. The format is a `---` fence, a
+  `title:` line, a closing `---` fence, then the body:
+
+  ```
+  ---
+  title: type(scope): summary
+  ---
+  <PR body...>
+  ```
+
+  Use a clean `type(scope): summary` for the title. The fence lines are metadata
+  and are stripped before the body is sent to GitHub, so they never appear in
+  the PR.
+- For the body, write a real description using
+  `.github/PULL_REQUEST_TEMPLATE.md` as a template, but in the style of a human
+  summarizing the work, not a checklist for the contributor.
 - Add `Closes #N` if the slug encodes an issue. Do not commit `PR.md`.
 
 **3. Stop and tell the user**

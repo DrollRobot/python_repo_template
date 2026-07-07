@@ -14,7 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from complete_worktree import (
     dirty_status_lines,
     notes_ref,
-    parse_pr_note,
+    parse_front_matter,
+    render_note,
 )
 
 
@@ -61,32 +62,61 @@ def test_quoted_porcelain_path_matches_exempt() -> None:
     assert dirty_status_lines(['?? "PR.md"'], "PR.md") == []
 
 
-def test_parse_pr_note_with_front_matter() -> None:
-    """base/title front-matter is recovered and the body excludes the separator."""
-    note = "base: develop\ntitle: feat: add SSO\n---\nBody line 1\nBody line 2"
-    assert parse_pr_note(note) == ("develop", "feat: add SSO", "Body line 1\nBody line 2")
+def test_parse_front_matter_pr_body_title_only() -> None:
+    """A PR.md with a title-only fence yields the title and the trailing body."""
+    content = "---\ntitle: feat(auth): add SSO\n---\nBody line 1\nBody line 2"
+    assert parse_front_matter(content) == (None, "feat(auth): add SSO", "Body line 1\nBody line 2")
 
 
-def test_parse_pr_note_without_separator_is_all_body() -> None:
-    """A note with no '---' separator is treated entirely as the body."""
-    note = "just a plain body\nwith two lines"
-    assert parse_pr_note(note) == (None, None, note)
+def test_parse_front_matter_note_base_and_title() -> None:
+    """A note fence carries both base and title; the body excludes the fences."""
+    note = "---\nbase: develop\ntitle: feat: add SSO\n---\nBody line 1\nBody line 2"
+    assert parse_front_matter(note) == ("develop", "feat: add SSO", "Body line 1\nBody line 2")
 
 
-def test_parse_pr_note_missing_fields_default_to_none() -> None:
-    """Front-matter present but partial: absent fields come back as None."""
-    assert parse_pr_note("base: develop\n---\nbody") == ("develop", None, "body")
-    assert parse_pr_note("title: just a title\n---\nbody") == (None, "just a title", "body")
+def test_parse_front_matter_no_leading_fence_is_all_body() -> None:
+    """Content that does not open with a '---' fence has no front-matter."""
+    content = "just a plain body\nwith two lines"
+    assert parse_front_matter(content) == (None, None, content)
 
 
-def test_parse_pr_note_empty_body_after_separator() -> None:
-    """A separator with nothing after it yields an empty body, not an error."""
-    assert parse_pr_note("base: develop\ntitle: x\n---") == ("develop", "x", "")
+def test_parse_front_matter_thematic_break_in_body_is_not_front_matter() -> None:
+    """A body '---' rule is not mistaken for front-matter without a leading fence."""
+    content = "Adds SSO support.\n\n---\n\nSee #42"
+    assert parse_front_matter(content) == (None, None, content)
 
 
-def test_parse_pr_note_strips_field_whitespace() -> None:
+def test_parse_front_matter_unterminated_fence_is_all_body() -> None:
+    """A leading fence with no closing fence is treated as having no front-matter."""
+    content = "---\ntitle: x\nnever closed"
+    assert parse_front_matter(content) == (None, None, content)
+
+
+def test_parse_front_matter_missing_title_defaults_to_none() -> None:
+    """Front-matter present but without a title returns title None."""
+    assert parse_front_matter("---\nbase: develop\n---\nbody") == ("develop", None, "body")
+
+
+def test_parse_front_matter_empty_body_after_fence() -> None:
+    """A closing fence with nothing after it yields an empty body, not an error."""
+    assert parse_front_matter("---\ntitle: x\n---") == (None, "x", "")
+
+
+def test_parse_front_matter_strips_field_whitespace() -> None:
     """Extra spaces after the field colon are trimmed."""
-    assert parse_pr_note("base:   develop  \n---\nbody") == ("develop", None, "body")
+    assert parse_front_matter("---\nbase:   develop  \n---\nbody") == ("develop", None, "body")
+
+
+def test_parse_front_matter_trims_leading_blank_body_lines() -> None:
+    """A blank line between the closing fence and the body is trimmed off."""
+    assert parse_front_matter("---\ntitle: x\n---\n\nBody") == (None, "x", "Body")
+
+
+def test_render_note_round_trips_through_parse() -> None:
+    """render_note output parses back to the same base, title, and body."""
+    note = render_note("develop", "feat: add SSO", "Body line 1\nBody line 2")
+    assert note.startswith("---\n")
+    assert parse_front_matter(note) == ("develop", "feat: add SSO", "Body line 1\nBody line 2")
 
 
 def test_notes_ref_uses_per_slug_suffix() -> None:

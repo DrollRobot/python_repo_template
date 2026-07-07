@@ -67,8 +67,11 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change. 1.1.0 ports the --push-pr-to-notes/--gh-from-notes/
-# --web-from-notes cross-device handoff from Complete-WorkTree.ps1.
-__version__ = "1.2.0"
+# --web-from-notes cross-device handoff from Complete-WorkTree.ps1. 1.3.0
+# reads the PR title from fenced 'title:' front-matter in the PR body file (was
+# the subject of the last commit); the same fenced format is used for the note,
+# so one parser handles both. Errors out if no title is present (no fallback).
+__version__ = "1.3.0"
 
 # The cross-device PR-body handoff stores one note per slug
 # (refs/notes/pr-body-<slug>) so concurrent PRs never share -- or force-push
@@ -100,27 +103,41 @@ def dirty_status_lines(status_lines: list[str], exempt_path: str | None) -> list
     return dirty
 
 
-def parse_pr_note(content: str) -> tuple[str | None, str | None, str]:
-    """Parse a pr-body note into its base, title, and body.
+def parse_front_matter(content: str) -> tuple[str | None, str | None, str]:
+    """Parse fenced front-matter (``base``/``title``) from a PR body or note.
 
-    The note is optional front-matter (``base:`` / ``title:`` lines) followed by
-    a ``---`` separator and then the body. A note with no ``---`` is treated as
-    all body.
+    Both ``PR.md`` and the cross-device note use the same fenced YAML-style
+    front-matter: the content opens with a ``---`` fence line, followed by
+    ``key: value`` lines (``base:`` and/or ``title:``), a closing ``---`` fence
+    line, then the body. ``PR.md`` carries only ``title:``; the note adds
+    ``base:``.
+
+    Requiring a *leading* fence (not just a trailing separator) is what makes
+    this safe for hand-authored ``PR.md``: a body that merely contains a ``---``
+    thematic break is not mistaken for front-matter. Content that does not open
+    with a fence, or whose fence is never closed, is treated as having no
+    front-matter and returned whole as the body.
 
     Args:
-        content: The raw note text.
+        content: The raw PR body or note text.
 
     Returns:
-        ``(base, title, body)``; ``base`` and ``title`` are ``None`` when absent.
+        ``(base, title, body)``; ``base`` and ``title`` are ``None`` when
+        absent, and ``body`` has any leading blank lines trimmed.
     """
     lines = content.splitlines()
-    try:
-        sep = lines.index("---")
-    except ValueError:
+    if not lines or lines[0].strip() != "---":
+        return None, None, content
+    close: int | None = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            close = i
+            break
+    if close is None:
         return None, None, content
     base: str | None = None
     title: str | None = None
-    for line in lines[:sep]:
+    for line in lines[1:close]:
         base_match = re.match(r"base:\s*(.*)$", line)
         if base_match:
             base = base_match.group(1).strip()
@@ -128,7 +145,26 @@ def parse_pr_note(content: str) -> tuple[str | None, str | None, str]:
         title_match = re.match(r"title:\s*(.*)$", line)
         if title_match:
             title = title_match.group(1).strip()
-    return base, title, "\n".join(lines[sep + 1 :])
+    body = "\n".join(lines[close + 1 :]).lstrip("\n")
+    return base, title, body
+
+
+def render_note(base: str, title: str, body: str) -> str:
+    """Render fenced front-matter (base + title) plus body for a pr-body note.
+
+    The inverse of :func:`parse_front_matter` for the note case: emits a leading
+    ``---`` fence, the ``base:`` and ``title:`` lines, a closing ``---`` fence,
+    then the body.
+
+    Args:
+        base: Resolved PR base branch.
+        title: Confirmed PR title.
+        body: PR body (already front-matter-stripped).
+
+    Returns:
+        The note text to attach with ``git notes add``.
+    """
+    return f"---\nbase: {base}\ntitle: {title}\n---\n{body}"
 
 
 def origin_slug() -> str:
@@ -262,7 +298,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--title",
-        help="PR title (default: subject of the last commit; always confirmed interactively)",
+        help="PR title (default: the 'title:' front-matter in the PR body file; "
+        "always confirmed interactively)",
     )
     parser.add_argument(
         "--base",
@@ -338,7 +375,7 @@ def create_from_notes(args: argparse.Namespace) -> None:
             f"No '{ref}' note found on origin/{branch}. "
             "Run --push-pr-to-notes on the device that has the worktree first."
         )
-    note_base, note_title, note_body = parse_pr_note(note_raw)
+    note_base, note_title, note_body = parse_front_matter(note_raw)
 
     base = args.base or note_base or "develop"
     if base in ("main", "master"):
@@ -349,7 +386,10 @@ def create_from_notes(args: argparse.Namespace) -> None:
 
     title = args.title or note_title
     if not title:
-        title = cli.capture(["git", "log", "-1", "--pretty=%s", f"origin/{branch}"])
+        cli.die(
+            f"No PR title in the '{ref}' note (missing 'title:' front-matter). "
+            "Re-run --push-pr-to-notes with a PR.md whose front-matter sets the title."
+        )
 
     cli.info("Slug", slug)
     cli.info("Branch", branch)
@@ -392,23 +432,23 @@ def create_from_notes(args: argparse.Namespace) -> None:
     cli.info("Base", base)
 
 
-def push_pr_note(base: str, title: str, body_text: str, body_name: str, branch: str) -> None:
+def push_pr_note(base: str, title: str, body: str, body_name: str, branch: str) -> None:
     """Device A: attach the PR body as a pr-body note and push it to origin.
 
-    The note carries the resolved base and title as front-matter so the other
-    device can recover them without any out-of-band communication.
+    The note carries the resolved base and title as fenced front-matter so the
+    other device can recover them without any out-of-band communication.
 
     Args:
         base: Resolved PR base branch.
         title: Confirmed PR title.
-        body_text: Raw PR body (PR.md contents).
+        body: PR body (front-matter-stripped, as sent to ``gh``).
         body_name: PR body file name, for the prompt.
         branch: The wt/ branch the note rides on.
     """
     slug = branch.removeprefix("wt/")
     ref = notes_ref(slug)
     cli.section("Step: attach PR body note")
-    note_body = f"base: {base}\ntitle: {title}\n---\n{body_text}"
+    note_body = render_note(base, title, body)
     cli.step(f"Attach {body_name} (with base/title) as a '{ref}' note and push it to origin?")
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as handle:
         handle.write(note_body)
@@ -508,16 +548,25 @@ def main() -> None:
             f"PR body file not found: {body_path}. "
             "Have the agent write the PR description to PR.md first."
         )
-    body_text = body_path.read_text(encoding="utf-8-sig")
-    if not body_text.strip():
+    raw_body = body_path.read_text(encoding="utf-8-sig")
+    if not raw_body.strip():
         cli.die(f"PR body file is empty: {body_path}.")
+    # PR.md carries the title in fenced front-matter; the body sent to gh is
+    # everything after the closing fence.
+    _, fm_title, body_text = parse_front_matter(raw_body)
     cli.info("Body file", str(body_path))
     print()
     print(f"{cli.GRAY}{body_text.rstrip()}{cli.RESET}")
 
     # --- title -----------------------------------------------------------------
 
-    title = args.title or cli.capture(["git", "log", "-1", "--pretty=%s"])
+    title = args.title or fm_title
+    if not title:
+        cli.die(
+            f"No PR title in {body_path.name}. Its first lines must be fenced "
+            "front-matter setting the title, e.g.:\n"
+            "  ---\n  title: feat(scope): summary\n  ---\n  <body...>"
+        )
     cli.section("PR title")
     cli.info("PR title", title)
     if not cli.confirm("  Use this title?"):
@@ -601,12 +650,20 @@ def main() -> None:
     draft_note = " (draft)" if args.draft else ""
     cli.step(f"Open a PR from '{branch}' into '{base}'?{draft_note}")
 
-    create_args = ["gh", "pr", "create", "--base", base, "--title", title]
-    create_args += ["--body-file", str(body_path)]
-    if args.draft:
-        create_args.append("--draft")
-    # Capture stdout for the URL; gh's progress messages stream on stderr.
-    output = cli.capture(create_args, echo_cmd=True)
+    # Deliver the front-matter-stripped body via a temp file so the title/fence
+    # lines never leak into the PR body (mirrors the --gh-from-notes path).
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as handle:
+        handle.write(body_text)
+        body_file = handle.name
+    try:
+        create_args = ["gh", "pr", "create", "--base", base, "--title", title]
+        create_args += ["--body-file", body_file]
+        if args.draft:
+            create_args.append("--draft")
+        # Capture stdout for the URL; gh's progress messages stream on stderr.
+        output = cli.capture(create_args, echo_cmd=True)
+    finally:
+        Path(body_file).unlink(missing_ok=True)
     print(output)
     pr_url = output.splitlines()[-1].strip() if output else "(unknown)"
 
