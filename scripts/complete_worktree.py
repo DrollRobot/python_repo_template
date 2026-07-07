@@ -68,7 +68,7 @@ import _cli as cli
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change. 1.1.0 ports the --push-pr-to-notes/--gh-from-notes/
 # --web-from-notes cross-device handoff from Complete-WorkTree.ps1.
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 # The cross-device PR-body handoff stores one note per slug
 # (refs/notes/pr-body-<slug>) so concurrent PRs never share -- or force-push
@@ -471,11 +471,21 @@ def main() -> None:
     base = args.base
     if not base:
         merge = cli.capture_ok(["git", "config", f"branch.{branch}.merge"])
-        if not merge:
+        tracked_base = merge.removeprefix("refs/heads/") if merge else None
+        if tracked_base == branch:
+            # A prior `complete_worktree.py` run already pushed this branch
+            # with `-u`, which repoints tracking to origin/<branch> itself
+            # (e.g. completing a second PR from the same worktree). The
+            # original base is gone; ask instead of targeting the branch
+            # against itself.
+            cli.warn(f"  '{branch}' tracks itself (already pushed by a prior run);")
+            cli.warn("  original base is lost.")
+            base = cli.prompt_value("  Enter the PR base branch", default="develop")
+        elif not tracked_base:
             cli.warn(f"  No upstream configured for '{branch}'.")
             base = cli.prompt_value("  Enter the PR base branch", default="develop")
         else:
-            base = merge.removeprefix("refs/heads/")
+            base = tracked_base
         if base in ("main", "master"):
             cli.die(
                 f"Refusing to target '{base}'. This project uses git flow; PRs go to "
@@ -509,7 +519,9 @@ def main() -> None:
 
     title = args.title or cli.capture(["git", "log", "-1", "--pretty=%s"])
     cli.section("PR title")
-    title = cli.prompt_value("Confirm or edit the PR title", default=title)
+    cli.info("PR title", title)
+    if not cli.confirm("  Use this title?"):
+        title = cli.prompt_value("  Enter the PR title")
     if not title.strip():
         cli.die("PR title cannot be empty.")
 
@@ -540,13 +552,27 @@ def main() -> None:
     existing_url = None
     if not args.push_pr_to_notes:
         cli.section("Existing PR check")
-        existing_url = cli.capture_ok(["gh", "pr", "view", branch, "--json", "url", "--jq", ".url"])
+        # gh matches any PR ever associated with the branch (open, closed, or
+        # merged); filter to OPEN so a past merged/closed PR doesn't block
+        # opening a new one for the same branch name.
+        existing_url = cli.capture_ok(
+            [
+                "gh",
+                "pr",
+                "view",
+                branch,
+                "--json",
+                "url,state",
+                "--jq",
+                'select(.state == "OPEN") | .url',
+            ]
+        )
         if existing_url:
             cli.warn(f"  A pull request already exists for '{branch}':")
             print(f"  {existing_url}")
             cli.warn("  Pushing will update it; a new PR will not be created.")
         else:
-            cli.success("  No existing PR for this branch.")
+            cli.success("  No existing open PR for this branch.")
 
     # --- push ------------------------------------------------------------------
 
