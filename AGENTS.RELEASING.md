@@ -11,12 +11,21 @@ uv run pre-commit autoupdate          # periodically update precommit dependenci
 
 ## Refresh and audit dependencies
 
-1. **Refresh the lockfile** within existing pyproject.toml bounds:
+
+
+1. **Audit dependency floors for known-vulnerable versions:**
+   ```
+   uv audit --resolution lowest-direct   # audit direct deps at their pyproject.toml floors
+   ```
+   For any advisory reported, raise that dependency's floor in
+   `[project.dependencies]` (or its dependency group) to the fixed version.
+
+2. **Refresh the lockfile** within existing pyproject.toml bounds:
    ```
    uv lock --upgrade                     # upgrade all deps within pyproject.toml bounds
    ```
 
-2. **Surface upgrades still blocked by version bounds:**
+3. **Surface upgrades still blocked by version bounds:**
    ```
    uv tree --outdated --depth 1 --all-groups   # direct deps only
    ```
@@ -25,36 +34,32 @@ uv run pre-commit autoupdate          # periodically update precommit dependenci
    these to the user for a decision. Do not raise version bounds without
    consulting the user.
 
-3. **Audit for known vulnerabilities:**
+4. **Audit for known vulnerabilities:**
    ```
    uv audit                              # audit dependencies for known vulnerabilities
    ```
-   - This mirrors the `Security audit` GitHub Actions workflow
-     (`.github/workflows/audit.yml`), which runs `uv audit` and fails the build
-     on any advisory. The refresh in step 1 often clears advisories on its own;
-     this step handles whatever remains.
-   - If a vulnerability is reported, fix it at the resolver-input layer:
-     - Direct dependency: raise its version floor in `[project.dependencies]`
-       (or its dependency group) to the patched version.
-     - Transitive dependency: add a floor to `[tool.uv] constraint-dependencies`,
-       with the advisory ID in a comment:
-       ```toml
-       [tool.uv]
-       constraint-dependencies = [
-           "somepkg>=1.2.3",  # GHSA-xxxx/CVE-2026-xxxx; prune when upstream requires it
-       ]
-       ```
-     Then re-lock and re-run until clean:
-     ```
-     uv lock                               # re-resolve with the new floor
-     uv audit                              # confirm no vulnerabilities remain
-     ```
-   - If the new floor makes `uv lock` fail, another dependency still pins the
-     vulnerable range. Upgrade that dependency if possible; otherwise stop and
-     consult the user before considering `[tool.uv] override-dependencies`,
-     which forces past the conflicting pin at the cost of ignoring it.
+   If a vulnerability is reported, fix it at the resolver-input layer:
+   - Direct dependency: raise its version floor in `[project.dependencies]`
+      (or its dependency group) to the patched version.
+   - Transitive dependency: add a floor to `[tool.uv] constraint-dependencies`,
+      with the advisory ID in a comment:
+      ```toml
+      [tool.uv]
+      constraint-dependencies = [
+         "somepkg>=1.2.3",  # GHSA-xxxx/CVE-2026-xxxx; prune when upstream requires it
+      ]
+      ```
+   - Then re-lock and re-run until clean:
+      ```
+      uv lock                               # re-resolve with the new floor
+      uv audit                              # confirm no vulnerabilities remain
+      ```
+   If the new floor makes `uv lock` fail, another dependency still pins the
+   vulnerable range. Upgrade that dependency if possible; otherwise stop and
+   consult the user before considering `[tool.uv] override-dependencies`,
+   which forces past the conflicting pin at the cost of ignoring it.
 
-4. **Install the final lockfile and test:**
+5. **Install the final lockfile and test:**
    ```
    uv sync --all-groups                  # install the refreshed lockfile
    ```
