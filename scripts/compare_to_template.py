@@ -20,11 +20,11 @@ project). A few files (e.g. the README) are checked for existence only, as
 the project rewrites their contents wholesale. Files the project adds on top
 of the template are ignored.
 
-Before comparing, the script checks the version of every dev helper script
-(``scripts/*.py``) on both sides and offers to copy over any that are out of
-date or missing in the project, so the helper scripts -- and the manifest and
-replay logic this script compares against -- match the template's current
-ones.
+Before comparing, the script checks the version of every versioned file (the
+dev helper scripts ``scripts/*.py`` and the ``mypy`` stub-guard test) on both
+sides and offers to copy over any that are out of date or missing in the
+project, so those files -- and the manifest and replay logic this script
+compares against -- match the template's current ones.
 
 Run it from either repository; the other repository is given as the
 positional path (default: a sibling folder with the template's name):
@@ -65,7 +65,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.2.0"
+__version__ = "1.4.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -107,12 +107,17 @@ class BaselineFile:
             a match whatever its contents, and a missing required one is drift;
             the ``strict`` flag is then irrelevant. Used for files the project
             is meant to rewrite wholesale, such as the README.
+        versioned: Whether the file declares its own ``__version__`` that the
+            version pre-flight and drift note should track. Implied for the
+            ``scripts/*.py`` helpers (see :func:`carries_version`); set it
+            explicitly for any other versioned file.
     """
 
     path: str
     required: bool = True
     strict: bool = True
     compare_content: bool = True
+    versioned: bool = False
 
 
 # Every tracked template file is either listed here or matched by the
@@ -174,6 +179,10 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("tests/conftest.py", required=False, strict=False),
     BaselineFile("tests/_bootstrap.py", required=False),
     BaselineFile("tests/_keyvault.py", required=False),
+    # The mypy stub-guard test ships to projects (cleanup.py keeps it: no
+    # matching script) and must track the template, so it is compared here
+    # despite the blanket tests/test_*.py exclusion, and carries a __version__.
+    BaselineFile("tests/test_mypy_stub_guard.py", versioned=True),
 )
 
 # Tracked template paths deliberately not compared. Prefixes cover the
@@ -271,12 +280,19 @@ class Comparison:
 def is_excluded(rel: str) -> bool:
     """Return whether a tracked template path is deliberately not compared.
 
+    The manifest is authoritative: a path listed there is always compared, even
+    when an exclusion pattern would otherwise match it (e.g. the stub-guard test
+    under the blanket ``tests/test_*.py`` glob).
+
     Args:
         rel: Template-relative POSIX path.
 
     Returns:
-        ``True`` if the path is covered by the exclusion lists.
+        ``True`` if the path is covered by the exclusion lists and not in the
+        manifest.
     """
+    if any(entry.path == rel for entry in MANIFEST):
+        return False
     if rel.startswith(EXCLUDED_PREFIXES):
         return True
     return any(fnmatch(rel, pattern) for pattern in EXCLUDED_GLOBS)
@@ -651,6 +667,24 @@ def pyproject_name(root: Path) -> str | None:
     return name if isinstance(name, str) else None
 
 
+def carries_version(entry: BaselineFile) -> bool:
+    """Whether an entry declares a ``__version__`` the comparison tracks.
+
+    True for the dev helper scripts (``scripts/*.py``, by path) and for any
+    entry explicitly flagged ``versioned``.
+
+    Args:
+        entry: The manifest entry.
+
+    Returns:
+        ``True`` when the file participates in the version pre-flight and the
+        drift note.
+    """
+    if entry.versioned:
+        return True
+    return entry.path.startswith("scripts/") and entry.path.endswith(".py")
+
+
 def compare_one(entry: BaselineFile, ctx: CompareContext) -> Comparison:
     """Compare one baseline file between the template and the project.
 
@@ -698,7 +732,7 @@ def compare_one(entry: BaselineFile, ctx: CompareContext) -> Comparison:
         return Comparison(entry, project_rel, "match")
 
     note = ""
-    if entry.path.startswith("scripts/") and entry.path.endswith(".py"):
+    if carries_version(entry):
         note = script_version_note(template_text, project_text)
     if entry.strict and not strict:
         note += " (compared leniently: mkdocs removed)"
@@ -850,27 +884,25 @@ def resolve_names(project_root: Path, github_user_override: str | None) -> Proje
     return ProjectNames(snake=snake, kebab=kebab, github_user=github_user)
 
 
-def dev_script_entries() -> tuple[BaselineFile, ...]:
-    """Return the manifest entries for the dev helper scripts (``scripts/*.py``).
+def versioned_entries() -> tuple[BaselineFile, ...]:
+    """Return the manifest entries that carry their own ``__version__``.
 
     Returns:
-        The subset of :data:`MANIFEST` covering helper scripts, in manifest
-        order. Each carries its own ``__version__``.
+        The subset of :data:`MANIFEST` for which :func:`carries_version` holds
+        (the ``scripts/*.py`` helpers and any ``versioned`` entry), in manifest
+        order.
     """
-    return tuple(
-        entry
-        for entry in MANIFEST
-        if entry.path.startswith("scripts/") and entry.path.endswith(".py")
-    )
+    return tuple(entry for entry in MANIFEST if carries_version(entry))
 
 
-def check_dev_script(
+def check_versioned_file(
     entry: BaselineFile, template_root: Path, project_root: Path, *, allow_update: bool
 ) -> bool:
-    """Compare one dev helper script and offer to update the project's copy.
+    """Compare one versioned file and offer to update the project's copy.
 
     Args:
-        entry: The manifest entry for a ``scripts/*.py`` helper.
+        entry: The manifest entry for a versioned file (see
+            :func:`carries_version`).
         template_root: Root of the template checkout.
         project_root: Root of the project checkout.
         allow_update: Whether updating may be offered (``False`` under
@@ -890,7 +922,7 @@ def check_dev_script(
     template_version = script_version(template_text)
 
     if not project_path.is_file():
-        # An absent optional script is a deliberately removed feature, not
+        # An absent optional file is a deliberately removed feature, not
         # drift; leave it out. The main comparison still reports it as absent.
         if not entry.required:
             return False
@@ -932,8 +964,8 @@ def check_dev_script(
     return True
 
 
-def run_scripts_check(template_root: Path, project_root: Path, *, allow_update: bool) -> None:
-    """Compare every dev helper script and offer to update the project's copies.
+def check_versioned_files(template_root: Path, project_root: Path, *, allow_update: bool) -> None:
+    """Compare every versioned file and offer to update the project's copies.
 
     Runs before the main comparison so outdated copies (whose manifest and
     replay logic may lag the template) are refreshed first. When a script this
@@ -947,22 +979,22 @@ def run_scripts_check(template_root: Path, project_root: Path, *, allow_update: 
         allow_update: Whether updating may be offered (``False`` under
             ``--no-update``).
     """
-    cli.section("Dev script versions")
+    cli.section("Versioned files")
     running_files = {
         normcase(normpath(str(Path(__file__).resolve()))),
         normcase(normpath(str(Path(cli.__file__).resolve()))),
     }
     updated = 0
     replaced_running = False
-    for entry in dev_script_entries():
-        if not check_dev_script(entry, template_root, project_root, allow_update=allow_update):
+    for entry in versioned_entries():
+        if not check_versioned_file(entry, template_root, project_root, allow_update=allow_update):
             continue
         updated += 1
         project_path = normcase(normpath(str((project_root / entry.path).resolve())))
         if project_path in running_files:
             replaced_running = True
     if updated == 0:
-        cli.success("  All dev scripts are up to date with the template.")
+        cli.success("  All versioned files are up to date with the template.")
     if replaced_running:
         print("  A script this program runs from was updated; re-run it to use the new version.")
         sys.exit(0)
@@ -1105,18 +1137,21 @@ def launch_argv(argv: list[str]) -> list[str]:
     return argv
 
 
-def diff_files_for(results: list[Comparison], base: Path) -> list[tuple[Path, Path]]:
-    """Write the normalized texts of each differing text file under ``base``.
+def diff_files_for(
+    results: list[Comparison], base: Path, project_root: Path
+) -> list[tuple[Path, Path]]:
+    """Write each differing file's normalized template text under ``base``.
 
-    The normalized texts are the same ones the terminal diff compares, so
-    expected renames do not appear. Binary differences are skipped (they have no
-    normalized text). The template copy is written under ``base/template/`` and
-    the project copy under ``base/project/`` so the two sides stay
-    distinguishable when a diff tool shows their paths.
+    The project side is opened directly from its live path in the project
+    checkout, so edits made in the diff view apply straight to the real file.
+    Only the template side needs a temp copy: its normalized text (banner
+    stripped, names/version/cleanup replayed) exists nowhere on disk. Binary
+    differences are skipped (they have no normalized text).
 
     Args:
         results: Comparison results in manifest order.
-        base: Directory to write the temporary copies into.
+        base: Directory to write the temporary template copies into.
+        project_root: Root of the project checkout.
 
     Returns:
         One ``(template_path, project_path)`` pair per differing text file, in
@@ -1128,26 +1163,28 @@ def diff_files_for(results: list[Comparison], base: Path) -> list[tuple[Path, Pa
             continue
         if result.template_norm is None or result.project_norm is None:
             continue
-        left = base / "template" / result.entry.path
-        right = base / "project" / result.project_rel
+        left = base / result.entry.path
+        right = project_root / result.project_rel
         left.parent.mkdir(parents=True, exist_ok=True)
-        right.parent.mkdir(parents=True, exist_ok=True)
         left.write_text(result.template_norm, encoding="utf-8")
-        right.write_text(result.project_norm, encoding="utf-8")
         pairs.append((left, right))
     return pairs
 
 
-def open_diffs_in_vscode(results: list[Comparison], code_argv: list[str]) -> None:
+def open_diffs_in_vscode(
+    results: list[Comparison], code_argv: list[str], project_root: Path
+) -> None:
     """Open each differing text file as a side-by-side diff in VS Code.
 
-    Writes the normalized texts to a temporary directory and opens each pair
-    with ``<tool> --diff``. The temp files are deliberately left in place: the
-    editor reads them asynchronously, well after this process returns.
+    Writes the template's normalized text to a temporary directory and diffs
+    it against the project's live file, so edits on the project side land
+    directly in the real file. The temp files are deliberately left in place:
+    the editor reads them asynchronously, well after this process returns.
 
     Args:
         results: Comparison results in manifest order.
         code_argv: The resolved diff-tool command (see :func:`resolve_code`).
+        project_root: Root of the project checkout.
     """
     binaries = [
         result.entry.path
@@ -1159,7 +1196,7 @@ def open_diffs_in_vscode(results: list[Comparison], code_argv: list[str]) -> Non
         cli.warn(f"  Skipping binary file (no diff): {name}")
 
     base = Path(tempfile.mkdtemp(prefix="compare_to_template_"))
-    pairs = diff_files_for(results, base)
+    pairs = diff_files_for(results, base, project_root)
     if not pairs:
         if not binaries:
             cli.warn("  No text differences to open.")
@@ -1175,13 +1212,14 @@ def open_diffs_in_vscode(results: list[Comparison], code_argv: list[str]) -> Non
     cli.success(f"  Opened {len(pairs) - failures} diff(s) with {code_argv[0]}.")
 
 
-def show_diffs(results: list[Comparison], diff_tool: str | None) -> None:
+def show_diffs(results: list[Comparison], diff_tool: str | None, project_root: Path) -> None:
     """Present the diffs: open them in VS Code, or print them if it is absent.
 
     Args:
         results: Comparison results in manifest order.
         diff_tool: The ``--diff-tool`` override, or ``None`` to auto-detect
             ``code``.
+        project_root: Root of the project checkout.
     """
     code_argv = resolve_code(diff_tool)
     if code_argv is None:
@@ -1191,7 +1229,7 @@ def show_diffs(results: list[Comparison], diff_tool: str | None) -> None:
         print_diffs(results)
         return
     cli.section("Diffs (VS Code)")
-    open_diffs_in_vscode(results, code_argv)
+    open_diffs_in_vscode(results, code_argv, project_root)
 
 
 def main() -> None:
@@ -1217,7 +1255,7 @@ def main() -> None:
     else:
         cli.info("GitHub user", names.github_user)
 
-    run_scripts_check(template_root, project_root, allow_update=not args.no_update)
+    check_versioned_files(template_root, project_root, allow_update=not args.no_update)
 
     ctx = build_context(template_root, project_root, names)
     results = [compare_one(entry, ctx) for entry in MANIFEST]
@@ -1225,7 +1263,7 @@ def main() -> None:
     cli.section("Comparison")
     print_results(results, show_all=args.all)
     if args.diff:
-        show_diffs(results, args.diff_tool)
+        show_diffs(results, args.diff_tool, project_root)
 
     counts = {status: sum(1 for r in results if r.status == status) for status in _STATUS_COLORS}
     cli.section("Summary")

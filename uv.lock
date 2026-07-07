@@ -981,6 +981,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.1,<8" },
     { name = "python-dotenv", specifier = ">=1.2,<2" },
     { name = "ruff", specifier = ">=0.15,<1" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.1" },
 ]
 docs = [
     { name = "mkdocs", specifier = ">=1.6,<2" },
@@ -995,6 +996,7 @@ test = [
     { name = "pytest", specifier = ">=9.0,<10" },
     { name = "pytest-cov", specifier = ">=7.1,<8" },
     { name = "python-dotenv", specifier = ">=1.2,<2" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.1" },
 ]
 
 [[package]]

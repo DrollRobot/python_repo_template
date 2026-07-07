@@ -28,6 +28,7 @@ from compare_to_template import (
     CompareContext,
     Comparison,
     ProjectNames,
+    carries_version,
     compare_one,
     diff_files_for,
     effective_strict,
@@ -426,6 +427,15 @@ def test_compare_one_notes_script_versions(tmp_path: Path) -> None:
     assert "project 1.1.0 < template 1.2.0" in result.note
 
 
+def test_compare_one_notes_versioned_non_script(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "tests/test_guard.py", '__version__ = "1.2.0"\nnew = True\n')
+    write(ctx.project_root, "tests/test_guard.py", '__version__ = "1.1.0"\n')
+    result = compare_one(BaselineFile("tests/test_guard.py", versioned=True), ctx)
+    assert result.status == "modified"
+    assert "project 1.1.0 < template 1.2.0" in result.note
+
+
 def test_compare_one_demotes_mkdocs_edited_file(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path, has_mkdocs=False)
     write(ctx.template_root, "CONTRIBUTING.md", "with docs section\n")
@@ -451,6 +461,34 @@ def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
 def test_manifest_has_no_duplicates() -> None:
     paths = [entry.path for entry in MANIFEST]
     assert len(paths) == len(set(paths))
+
+
+def test_carries_version_true_for_scripts_by_path() -> None:
+    assert carries_version(BaselineFile("scripts/helper.py")) is True
+
+
+def test_carries_version_true_for_flagged_entries() -> None:
+    assert carries_version(BaselineFile("tests/test_guard.py", versioned=True)) is True
+
+
+def test_carries_version_false_for_plain_files() -> None:
+    assert carries_version(BaselineFile("tests/test_guard.py")) is False
+    assert carries_version(BaselineFile("scripts/notes.md")) is False
+
+
+def test_manifest_tracks_versioned_stub_guard() -> None:
+    (guard,) = [e for e in MANIFEST if e.path == "tests/test_mypy_stub_guard.py"]
+    assert guard.required is True
+    assert guard.strict is True
+    assert guard.versioned is True
+
+
+def test_is_excluded_manifest_entry_beats_glob() -> None:
+    # The stub-guard test matches the blanket tests/test_*.py glob but is
+    # manifested, so it must not be reported as excluded.
+    assert is_excluded("tests/test_mypy_stub_guard.py") is False
+    # A dev-script test with no manifest entry stays excluded by the glob.
+    assert is_excluded("tests/test_cleanup.py") is True
 
 
 def test_manifest_readme_is_required_but_existence_only() -> None:
@@ -508,17 +546,19 @@ def test_diff_files_for_writes_pairs_and_skips_match_and_binary(tmp_path: Path) 
         Comparison(BaselineFile("c.md"), "c.md", "match"),  # unchanged; nothing to diff
     ]
     base = tmp_path / "out"
-    pairs = diff_files_for(results, base)
+    project_root = tmp_path / "project"
+    pairs = diff_files_for(results, base, project_root)
 
     assert len(pairs) == 2
     (left_a, right_a), (_left_b, right_b) = pairs
-    assert (left_a, right_a) == (base / "template" / "a.md", base / "project" / "a.md")
+    # The template side is a temp copy of the normalized text; the project side
+    # is the live file path so edits in the diff view land on the real file.
+    assert (left_a, right_a) == (base / "a.md", project_root / "a.md")
     assert left_a.read_text(encoding="utf-8") == "T-A\n"
-    assert right_a.read_text(encoding="utf-8") == "P-A\n"
-    assert right_b.read_text(encoding="utf-8") == "P-B\n"
+    assert right_b == project_root / "b.md"
     # The binary and matching entries produce no files.
-    assert not (base / "template" / "blob.bin").exists()
-    assert not (base / "template" / "c.md").exists()
+    assert not (base / "blob.bin").exists()
+    assert not (base / "c.md").exists()
 
 
 def test_diff_files_for_uses_project_rel_for_the_project_side(tmp_path: Path) -> None:
@@ -532,9 +572,10 @@ def test_diff_files_for_uses_project_rel_for_the_project_side(tmp_path: Path) ->
             project_norm="p\n",
         ),
     ]
-    ((left, right),) = diff_files_for(results, tmp_path)
-    assert left == tmp_path / "template" / rel
-    assert right == tmp_path / "project" / "docs/reference/my_proj.md"
+    project_root = tmp_path / "project"
+    ((left, right),) = diff_files_for(results, tmp_path, project_root)
+    assert left == tmp_path / rel
+    assert right == project_root / "docs/reference/my_proj.md"
 
 
 def test_resolve_code_splits_an_explicit_tool() -> None:
