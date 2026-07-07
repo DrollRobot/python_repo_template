@@ -19,6 +19,13 @@ import sys
 from collections.abc import Sequence
 from typing import NoReturn
 
+# Version of this shared helper module. Bump on every change so copies in other
+# repos can be compared by version (like the runnable helpers): patch = bugfix,
+# minor = new/changed helper, major = breaking API change. Unlike the runnable
+# scripts this module is imported, not executed, so it prints no version of its
+# own; each importing script prints theirs.
+__version__ = "1.0.0"
+
 
 def _enable_windows_ansi() -> None:
     """Turn on ANSI escape processing in the legacy Windows console.

@@ -20,9 +20,11 @@ project). A few files (e.g. the README) are checked for existence only, as
 the project rewrites their contents wholesale. Files the project adds on top
 of the template are ignored.
 
-Before comparing, the script checks its own version on both sides and offers
-to update the project's copy from the template when they differ, so the
-manifest it compares against is the template's current one.
+Before comparing, the script checks the version of every dev helper script
+(``scripts/*.py``) on both sides and offers to copy over any that are out of
+date or missing in the project, so the helper scripts -- and the manifest and
+replay logic this script compares against -- match the template's current
+ones.
 
 Run it from either repository; the other repository is given as the
 positional path (default: a sibling folder with the template's name):
@@ -63,7 +65,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.1.2"
+__version__ = "1.2.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -848,12 +850,96 @@ def resolve_names(project_root: Path, github_user_override: str | None) -> Proje
     return ProjectNames(snake=snake, kebab=kebab, github_user=github_user)
 
 
-def run_self_check(template_root: Path, project_root: Path, *, allow_update: bool) -> None:
-    """Compare the two copies of this script and offer to update the project's.
+def dev_script_entries() -> tuple[BaselineFile, ...]:
+    """Return the manifest entries for the dev helper scripts (``scripts/*.py``).
 
-    Runs before the main comparison so an outdated copy (with an outdated
-    manifest) is caught first. When the running copy itself is replaced, the
-    script exits so the user re-runs the updated version.
+    Returns:
+        The subset of :data:`MANIFEST` covering helper scripts, in manifest
+        order. Each carries its own ``__version__``.
+    """
+    return tuple(
+        entry
+        for entry in MANIFEST
+        if entry.path.startswith("scripts/") and entry.path.endswith(".py")
+    )
+
+
+def check_dev_script(
+    entry: BaselineFile, template_root: Path, project_root: Path, *, allow_update: bool
+) -> bool:
+    """Compare one dev helper script and offer to update the project's copy.
+
+    Args:
+        entry: The manifest entry for a ``scripts/*.py`` helper.
+        template_root: Root of the template checkout.
+        project_root: Root of the project checkout.
+        allow_update: Whether updating may be offered (``False`` under
+            ``--no-update``).
+
+    Returns:
+        ``True`` when the project's copy was written (installed or updated).
+    """
+    rel = entry.path
+    template_path = template_root / rel
+    project_path = project_root / rel
+
+    if not template_path.is_file():
+        cli.warn(f"  The template has no {rel}; skipping.")
+        return False
+    template_text = decode_text(template_path.read_bytes()) or ""
+    template_version = script_version(template_text)
+
+    if not project_path.is_file():
+        # An absent optional script is a deliberately removed feature, not
+        # drift; leave it out. The main comparison still reports it as absent.
+        if not entry.required:
+            return False
+        cli.warn(f"  The project is missing {rel} (template {template_version or 'unversioned'}).")
+        if allow_update and cli.confirm(f"  Copy {rel} from the template into the project?"):
+            project_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(template_path, project_path)
+            cli.success(f"  Installed {rel}.")
+            return True
+        return False
+
+    project_text = decode_text(project_path.read_bytes()) or ""
+    project_version = script_version(project_text)
+    same = normalize_eol(template_text) == normalize_eol(project_text)
+    action = self_check_action(template_version, project_version, same_content=same)
+    if action == "ok":
+        return False
+
+    cli.info(
+        rel,
+        f"template {template_version or 'unversioned'}, project {project_version or 'unversioned'}",
+    )
+    if action == "ahead":
+        cli.warn(f"  The project's copy of {rel} is NEWER than the template's.")
+        cli.warn("  Consider upstreaming the change to the template; not overwriting it.")
+        return False
+    if action == "update":
+        cli.warn("  The project's copy is outdated.")
+    else:  # "refresh": same version, different content
+        cli.warn("  The copies share a version but their contents differ (missing bump?).")
+    if not allow_update:
+        cli.warn("  Skipping the update offer (--no-update).")
+        return False
+    if not cli.confirm(f"  Update the project's copy of {rel} from the template?"):
+        cli.warn("  Continuing with the current copy; it will be flagged in the comparison.")
+        return False
+    shutil.copyfile(template_path, project_path)
+    cli.success(f"  Updated {rel}.")
+    return True
+
+
+def run_scripts_check(template_root: Path, project_root: Path, *, allow_update: bool) -> None:
+    """Compare every dev helper script and offer to update the project's copies.
+
+    Runs before the main comparison so outdated copies (whose manifest and
+    replay logic may lag the template) are refreshed first. When a script this
+    program is running from -- this file or the ``_cli`` module it imports -- is
+    itself replaced, the script exits afterwards so the user re-runs the updated
+    version (with its current manifest).
 
     Args:
         template_root: Root of the template checkout.
@@ -861,52 +947,24 @@ def run_self_check(template_root: Path, project_root: Path, *, allow_update: boo
         allow_update: Whether updating may be offered (``False`` under
             ``--no-update``).
     """
-    cli.section("Self-check")
-    template_path = template_root / SELF_REL
-    project_path = project_root / SELF_REL
-
-    if not template_path.is_file():
-        cli.warn(f"  The template has no {SELF_REL}; skipping the self-check.")
-        return
-    template_text = decode_text(template_path.read_bytes()) or ""
-    template_version = script_version(template_text)
-    cli.info("Template copy", template_version or "(no __version__)")
-
-    if not project_path.is_file():
-        cli.warn(f"  The project has no {SELF_REL}.")
-        if allow_update and cli.confirm("  Copy the template's script into the project?"):
-            shutil.copyfile(template_path, project_path)
-            cli.success(f"  Installed {SELF_REL} into the project.")
-        return
-
-    project_text = decode_text(project_path.read_bytes()) or ""
-    project_version = script_version(project_text)
-    cli.info("Project copy", project_version or "(no __version__)")
-
-    same = normalize_eol(template_text) == normalize_eol(project_text)
-    action = self_check_action(template_version, project_version, same_content=same)
-    if action == "ok":
-        cli.success("  The project's copy matches the template.")
-        return
-    if action == "ahead":
-        cli.warn("  The project's copy is NEWER than the template's.")
-        cli.warn("  Consider upstreaming the change to the template; not overwriting it.")
-        return
-
-    if action == "update":
-        cli.warn("  The project's copy is outdated (so is the file manifest it compares).")
-    else:  # "refresh": same version, different content
-        cli.warn("  The copies share a version but their contents differ (missing bump?).")
-    if not allow_update:
-        cli.warn("  Skipping the update offer (--no-update).")
-        return
-    if not cli.confirm("  Update the project's copy from the template before comparing?"):
-        cli.warn("  Continuing with the current copy; it will be flagged in the comparison.")
-        return
-    shutil.copyfile(template_path, project_path)
-    cli.success(f"  Updated {SELF_REL}.")
-    if same_path(str(project_path), str(Path(__file__).resolve())):
-        print("  The running copy was replaced; re-run the script to compare with it.")
+    cli.section("Dev script versions")
+    running_files = {
+        normcase(normpath(str(Path(__file__).resolve()))),
+        normcase(normpath(str(Path(cli.__file__).resolve()))),
+    }
+    updated = 0
+    replaced_running = False
+    for entry in dev_script_entries():
+        if not check_dev_script(entry, template_root, project_root, allow_update=allow_update):
+            continue
+        updated += 1
+        project_path = normcase(normpath(str((project_root / entry.path).resolve())))
+        if project_path in running_files:
+            replaced_running = True
+    if updated == 0:
+        cli.success("  All dev scripts are up to date with the template.")
+    if replaced_running:
+        print("  A script this program runs from was updated; re-run it to use the new version.")
         sys.exit(0)
 
 
@@ -1159,7 +1217,7 @@ def main() -> None:
     else:
         cli.info("GitHub user", names.github_user)
 
-    run_self_check(template_root, project_root, allow_update=not args.no_update)
+    run_scripts_check(template_root, project_root, allow_update=not args.no_update)
 
     ctx = build_context(template_root, project_root, names)
     results = [compare_one(entry, ctx) for entry in MANIFEST]
