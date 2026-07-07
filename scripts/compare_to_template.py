@@ -168,6 +168,7 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("scripts/open_gitignore.py"),
     BaselineFile("scripts/push_new_tag_to_main.py"),
     BaselineFile("scripts/remove_worktree.py"),
+    BaselineFile("scripts/update_floors.py"),
     BaselineFile("scripts/setup_credentials.py", required=False),  # credentials feature
     # Documentation site (mkdocs feature; content is the project's own).
     BaselineFile("mkdocs.yml", required=False, strict=False),
