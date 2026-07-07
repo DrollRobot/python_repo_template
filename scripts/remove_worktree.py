@@ -24,6 +24,14 @@ otherwise discard silently: uncommitted changes in the worktree (step 2) and
 commits on the branch that were never pushed to origin (step 3). Each warning
 is its own y/n confirmation, so nothing is lost without an explicit yes.
 
+As a preflight (before any step), it also guards the config files that
+new_worktree.py copies into the worktree when symlinks are unavailable: the
+.env / .env.* files and .vscode/launch.json / settings.json. A copied file
+edited only in the worktree is untracked/gitignored, so it never appears in the
+step-2 check; if such a copy differs from the main repo, this aborts up front
+(listing the file names, never their secret contents) so the edits can be
+copied back first.
+
 Paths and names are derived exactly as new_worktree.py derives them, so the
 same slug that created a worktree will clean it up. Every step runs against
 the main worktree, so this is safe to run even from inside the worktree
@@ -58,8 +66,11 @@ import _cli as cli
 
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
-# breaking CLI change.
-__version__ = "1.2.3"
+# breaking CLI change. 1.3.0 adds a preflight guard that aborts when a copied
+# (not symlinked) config file in the worktree - .env / .env.* or a linked
+# .vscode file - differs from the main repo, so force-removal never silently
+# discards those untracked/gitignored edits.
+__version__ = "1.3.0"
 
 
 def slug_arg(value: str) -> str:
@@ -131,6 +142,84 @@ def same_path(a: str, b: str) -> bool:
         ``True`` if the paths refer to the same location.
     """
     return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
+# The non-.env config files new_worktree.py links/copies into a worktree. Kept
+# in sync with new_worktree.py's link list (relative POSIX paths).
+CONFIG_LINK_PATHS = (".vscode/launch.json", ".vscode/settings.json")
+
+
+def is_env_name(name: str) -> bool:
+    """Return ``True`` for a ``.env`` / ``.env.*`` file (excluding ``.example``).
+
+    Mirrors the selection rule in new_worktree.py, so the same files it links
+    are the ones this guard checks.
+
+    Args:
+        name: A bare file name (no directory part).
+    """
+    if name.endswith(".example"):
+        return False
+    return name == ".env" or name.startswith(".env.")
+
+
+def copied_config_candidates(wt_path: Path) -> list[str]:
+    """Relative paths new_worktree.py copies that are real (non-symlink) files here.
+
+    new_worktree.py symlinks each ``.env`` / ``.env.*`` file and the local
+    ``.vscode/launch.json`` / ``.vscode/settings.json`` into the worktree, but
+    *copies* them when symlinks are unavailable (Windows without Developer Mode).
+    A symlink shares the main repo's single copy, so edits made through it are
+    already saved; only real copies can hold unsaved edits, so symlinks (and
+    dangling links) are excluded here.
+
+    Args:
+        wt_path: The worktree being removed.
+
+    Returns:
+        Relative POSIX paths (``.env``, ``.vscode/settings.json``, ...) present
+        as real files in the worktree, in a stable order.
+    """
+    if not wt_path.is_dir():
+        return []
+    candidates = [
+        entry.name
+        for entry in sorted(wt_path.iterdir())
+        if is_env_name(entry.name) and entry.is_file() and not entry.is_symlink()
+    ]
+    candidates += [
+        rel
+        for rel in CONFIG_LINK_PATHS
+        if (target := wt_path / rel).is_file() and not target.is_symlink()
+    ]
+    return candidates
+
+
+def diverged_copies(main_repo: Path, wt_path: Path, rels: Sequence[str]) -> list[tuple[str, str]]:
+    """Compare each relative path's worktree copy against the main repo.
+
+    File *contents* are never read out or shown (``.env`` files hold secrets) -
+    only whether each path diverges.
+
+    Args:
+        main_repo: The main worktree (the copy source, and where edits belong).
+        wt_path: The worktree being removed.
+        rels: Relative paths to compare (from :func:`copied_config_candidates`,
+            already filtered to files git does not track).
+
+    Returns:
+        ``(rel, reason)`` pairs for each divergent copy, where ``reason`` is
+        ``"differs from main repo"`` or ``"absent from main repo"``. Empty when
+        every copy matches.
+    """
+    diverged: list[tuple[str, str]] = []
+    for rel in rels:
+        src = main_repo / rel
+        if not src.is_file():
+            diverged.append((rel, "absent from main repo"))
+        elif src.read_bytes() != (wt_path / rel).read_bytes():
+            diverged.append((rel, "differs from main repo"))
+    return diverged
 
 
 def parse_worktrees(porcelain: str) -> list[tuple[str, str | None]]:
@@ -299,6 +388,39 @@ def main() -> None:
         print()
         cli.success(f"Nothing to clean up for slug '{slug}'.")
         sys.exit(0)
+
+    # --- guard: copied config files with unsaved edits --------------------------
+
+    # Only meaningful when the worktree directory will actually be deleted (the
+    # remove step). If it is not registered, the directory is left in place and
+    # nothing is lost, so there is nothing to guard.
+    if wt_registered:
+        copied = copied_config_candidates(wt_path)
+        # Restrict to paths git does NOT track in the worktree. A tracked file's
+        # changes are either committed (safe on the branch) or shown by the
+        # step-2 dirty check, so git already covers them; only untracked/ignored
+        # copies (the ones new_worktree.py drops in) can vanish silently. This
+        # also keeps the guard correct for repos that commit their .vscode files.
+        if copied:
+            tracked_out = cli.capture_ok(["git", "-C", str(wt_path), "ls-files", "--", *copied])
+            tracked = set(tracked_out.splitlines()) if tracked_out else set()
+            copied = [rel for rel in copied if rel not in tracked]
+
+        diverged = diverged_copies(Path(main_repo), wt_path, copied)
+        if diverged:
+            cli.section("Guard: copied config files differ")
+            cli.warn("  These files were COPIED into the worktree (not symlinked) and")
+            cli.warn("  differ from the main repo. Force-removing the worktree would")
+            cli.warn("  discard these edits, and being untracked/gitignored they never")
+            cli.warn("  show up in the uncommitted-changes check below:")
+            for rel, reason in diverged:
+                print(f"  {cli.GRAY}- {rel} ({reason}){cli.RESET}")
+            print()
+            print(f"  {cli.GRAY}Main repo:  {main_repo}{cli.RESET}")
+            print(f"  {cli.GRAY}Worktree:   {wt_path}{cli.RESET}")
+            print()
+            cli.warn("  Copy the changes back into the main repo's copy, then re-run.")
+            cli.die("Aborted: worktree has copied config changes not present in the main repo.")
 
     # Operate from the main worktree for every step. This guarantees the
     # worktree being removed is never the "current" one (git refuses to remove

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/remove_worktree.py`: a preflight guard that aborts when a config
+  file copied into the worktree (rather than symlinked, as happens on Windows
+  without Developer Mode) differs from the main repo. It covers the same files
+  new_worktree.py links - `.env` / `.env.*` and `.vscode/launch.json` /
+  `settings.json` - restricted to paths git does not track, since those are the
+  ones invisible to the uncommitted-changes check and thus silently discarded on
+  force-removal. The guard lists the diverging file names (never their secret
+  contents) and stops so the changes can be copied back first (bumped to 1.3.0).
+
 ### Changed
 
 - `scripts/complete_worktree.py`: the PR title now comes from fenced `title:`

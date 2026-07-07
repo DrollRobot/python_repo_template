@@ -15,6 +15,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from remove_worktree import (
+    copied_config_candidates,
+    diverged_copies,
+    is_env_name,
     open_worktree_slugs,
     parse_choice,
     parse_worktrees,
@@ -150,3 +153,131 @@ def test_slug_arg_rejects_edge_slashes(bad: str) -> None:
     """Leading, trailing, or doubled slashes would build malformed branch names."""
     with pytest.raises(argparse.ArgumentTypeError):
         slug_arg(bad)
+
+
+# --- is_env_name -------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", [".env", ".env.local", ".env.production"])
+def test_is_env_name_accepts_env_files(name: str) -> None:
+    """.env and .env.* names are recognized."""
+    assert is_env_name(name) is True
+
+
+@pytest.mark.parametrize("name", [".env.example", ".env.local.example", ".envrc", "env", "config"])
+def test_is_env_name_rejects_others(name: str) -> None:
+    """.example templates, .envrc, and non-.env names are rejected."""
+    assert is_env_name(name) is False
+
+
+# --- copied_config_candidates ------------------------------------------------
+
+
+def _make_repos(tmp_path: Path) -> tuple[Path, Path]:
+    """Create empty main-repo and worktree directories under ``tmp_path``."""
+    main_repo = tmp_path / "repo"
+    wt_path = tmp_path / "repo-wt" / "issue-42"
+    main_repo.mkdir()
+    wt_path.mkdir(parents=True)
+    return main_repo, wt_path
+
+
+def test_candidates_missing_worktree_is_empty(tmp_path: Path) -> None:
+    """A worktree directory that does not exist yields no candidates."""
+    assert copied_config_candidates(tmp_path / "gone") == []
+
+
+def test_candidates_collect_env_and_vscode(tmp_path: Path) -> None:
+    """Env files and linked .vscode files are collected; env first, then .vscode."""
+    _, wt_path = _make_repos(tmp_path)
+    (wt_path / ".env").write_text("A=1\n", encoding="utf-8")
+    (wt_path / ".env.prod").write_text("P=1\n", encoding="utf-8")
+    (wt_path / ".vscode").mkdir()
+    (wt_path / ".vscode" / "settings.json").write_text("{}\n", encoding="utf-8")
+    (wt_path / ".vscode" / "launch.json").write_text("{}\n", encoding="utf-8")
+    assert copied_config_candidates(wt_path) == [
+        ".env",
+        ".env.prod",
+        ".vscode/launch.json",
+        ".vscode/settings.json",
+    ]
+
+
+def test_candidates_ignore_example_and_non_env(tmp_path: Path) -> None:
+    """.env.example templates and unrelated files are not candidates."""
+    _, wt_path = _make_repos(tmp_path)
+    (wt_path / ".env.example").write_text("A=\n", encoding="utf-8")
+    (wt_path / "config.txt").write_text("x\n", encoding="utf-8")
+    assert copied_config_candidates(wt_path) == []
+
+
+def test_candidates_skip_unlinked_vscode(tmp_path: Path) -> None:
+    """A .vscode file new_worktree never links (e.g. tasks.json) is not a candidate."""
+    _, wt_path = _make_repos(tmp_path)
+    (wt_path / ".vscode").mkdir()
+    (wt_path / ".vscode" / "tasks.json").write_text("{}\n", encoding="utf-8")
+    assert copied_config_candidates(wt_path) == []
+
+
+def test_candidates_skip_symlinks(tmp_path: Path) -> None:
+    """A symlinked copy shares the main repo file, so it is not a candidate."""
+    main_repo, wt_path = _make_repos(tmp_path)
+    src = main_repo / ".env"
+    src.write_text("A=1\n", encoding="utf-8")
+    try:
+        (wt_path / ".env").symlink_to(src)
+    except OSError:
+        pytest.skip("symlinks not available on this platform/privilege level")
+    assert copied_config_candidates(wt_path) == []
+
+
+# --- diverged_copies ---------------------------------------------------------
+
+
+def test_diverged_identical_copy_is_clean(tmp_path: Path) -> None:
+    """A copy matching the main repo is not flagged."""
+    main_repo, wt_path = _make_repos(tmp_path)
+    (main_repo / ".env").write_text("A=1\n", encoding="utf-8")
+    (wt_path / ".env").write_text("A=1\n", encoding="utf-8")
+    assert diverged_copies(main_repo, wt_path, [".env"]) == []
+
+
+def test_diverged_modified_copy_is_flagged(tmp_path: Path) -> None:
+    """A copy edited in the worktree is reported as differing."""
+    main_repo, wt_path = _make_repos(tmp_path)
+    (main_repo / ".env").write_text("A=1\n", encoding="utf-8")
+    (wt_path / ".env").write_text("A=2\n", encoding="utf-8")
+    assert diverged_copies(main_repo, wt_path, [".env"]) == [(".env", "differs from main repo")]
+
+
+def test_diverged_absent_in_main_is_flagged(tmp_path: Path) -> None:
+    """A worktree-only copy (none in the main repo) is reported as absent."""
+    main_repo, wt_path = _make_repos(tmp_path)
+    (wt_path / ".env.local").write_text("SECRET=x\n", encoding="utf-8")
+    assert diverged_copies(main_repo, wt_path, [".env.local"]) == [
+        (".env.local", "absent from main repo")
+    ]
+
+
+def test_diverged_vscode_subpath_is_compared(tmp_path: Path) -> None:
+    """A .vscode/ subpath is compared against the matching main-repo file."""
+    main_repo, wt_path = _make_repos(tmp_path)
+    (main_repo / ".vscode").mkdir()
+    (main_repo / ".vscode" / "settings.json").write_text("{}\n", encoding="utf-8")
+    (wt_path / ".vscode").mkdir()
+    (wt_path / ".vscode" / "settings.json").write_text('{"changed": true}\n', encoding="utf-8")
+    assert diverged_copies(main_repo, wt_path, [".vscode/settings.json"]) == [
+        (".vscode/settings.json", "differs from main repo")
+    ]
+
+
+def test_diverged_preserves_input_order(tmp_path: Path) -> None:
+    """Divergent copies are reported in the order of the input paths."""
+    main_repo, wt_path = _make_repos(tmp_path)
+    (main_repo / ".env").write_text("A=1\n", encoding="utf-8")
+    (wt_path / ".env").write_text("A=2\n", encoding="utf-8")
+    (wt_path / ".env.prod").write_text("P=1\n", encoding="utf-8")
+    assert diverged_copies(main_repo, wt_path, [".env", ".env.prod"]) == [
+        (".env", "differs from main repo"),
+        (".env.prod", "absent from main repo"),
+    ]
