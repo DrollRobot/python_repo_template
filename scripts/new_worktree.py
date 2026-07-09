@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
@@ -43,7 +44,7 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.2.2"
+__version__ = "1.3.0"
 
 
 def slug_arg(value: str) -> str:
@@ -160,6 +161,14 @@ def main() -> None:
     """Run the interactive create-worktree flow."""
     args = parse_args()
     cli.set_assume_yes(args.yes)
+
+    # Any dev tool this script spawns (the 'uv sync' below, and the VS Code
+    # launch) should target the worktree, not a venv the caller happened to
+    # have activated. Drop an inherited VIRTUAL_ENV so it can't leak into the
+    # worktree's 'uv sync' or, on a cold VS Code start, into the new window's
+    # integrated terminals. (An already-running VS Code is covered separately
+    # by the generated workspace's terminal.integrated.env settings below.)
+    os.environ.pop("VIRTUAL_ENV", None)
 
     cli.info("Script version", __version__)
     print("")
@@ -289,6 +298,20 @@ def main() -> None:
 
     # Guard: the workspace must point only at this worktree.
     ws["folders"] = [{"path": "."}]
+
+    # Guard: the worktree must not inherit the parent repo's activated venv.
+    # VS Code integrated terminals inherit VIRTUAL_ENV from whatever shell
+    # launched the editor (typically the main repo's activated .venv), and uv
+    # then warns it does not match this worktree's own .venv. Clear it in the
+    # terminal so each worktree's own environment is authoritative; the Python
+    # extension re-activates this worktree's .venv when a terminal opens.
+    if not isinstance(ws.get("settings"), dict):
+        ws["settings"] = {}
+    for platform_key in ("windows", "osx", "linux"):
+        term_env = ws["settings"].setdefault(f"terminal.integrated.env.{platform_key}", {})
+        if isinstance(term_env, dict):
+            term_env["VIRTUAL_ENV"] = None
+
     cli.echo(f"write {ws_file}")
     ws_file.write_text(json.dumps(ws, indent=2) + "\n", encoding="utf-8")
 
