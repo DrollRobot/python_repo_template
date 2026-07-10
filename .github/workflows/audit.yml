@@ -63,6 +63,5 @@ jobs:
       - name: Sync dependencies
         run: uv sync --locked --all-groups
 
-
       - name: Audit dependencies
         run: uv audit
