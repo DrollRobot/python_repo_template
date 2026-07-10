@@ -20,9 +20,6 @@ uv run mypy --platform linux          # type check as Linux
 uv run pytest -m "not integration"    # offline tests
 uv run pytest                         # online and offline tests (when credentialed)
 
-# dependency CVE audit (network; OSV database) -- also gated in CI via audit.yml
-uv audit
-
 # docs build catches broken refs/nav and docstring import errors
 uv run mkdocs build --strict
 
