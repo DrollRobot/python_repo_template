@@ -2,6 +2,9 @@
 
 ## Commit
 - Commit any untracked files.
+- Commit messages should follow Chris Beam's guidance:
+  https://chris.beams.io/posts/git-commit/
+  Fetch the page at least once every session. Do not rely on memory for this.
 
 ## Update precommit
 ```
