@@ -97,7 +97,7 @@ uvx detect-secrets scan > .secrets.baseline
     Get-Content -Raw path\to\app.private-key.pem | gh secret set GRAPH_AUTH_APP_PRIVATE_KEY
     gh variable set GRAPH_AUTH_CLIENT_ID --body "123456"
 ```
-6. Uncomment section in .github/workflows/ audit.yml and ci.yml.
+6. Uncomment section in .github/workflows/ audit.yml, ci.yml, and docs.yml.
 7. Update actions/create-github-app-token to latest trusted commit.
 
 

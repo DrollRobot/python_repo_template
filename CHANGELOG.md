@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-12
+
 ### Added
 
+- `scripts/update_floors.py` (1.0.0), an interactive helper that raises each
+  direct dependency's `>=` floor to the newest version its existing upper bound
+  permits, read from `uv.lock` after `uv lock --upgrade`. It rewrites
+  `pyproject.toml` in place, preserving upper bounds, extras, markers, and
+  comments; skips deps with no floor, deps absent from the lockfile
+  (marker-gated backports, git/path sources), and
+  `[tool.uv] constraint-dependencies`; and reports majors held back by a cap via
+  `uv tree --outdated` rather than crossing the bound. Supports `--dry-run`,
+  `--no-lock`, and `-y`, is registered in the compare_to_template manifest, and
+  is covered by unit tests over the pure logic.
 - `scripts/remove_worktree.py`: a preflight guard that aborts when a config
   file copied into the worktree (rather than symlinked, as happens on Windows
   without Developer Mode) differs from the main repo. It covers the same files
@@ -17,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ones invisible to the uncommitted-changes check and thus silently discarded on
   force-removal. The guard lists the diverging file names (never their secret
   contents) and stops so the changes can be copied back first (bumped to 1.3.0).
+- Optional GitHub App token authentication is now also wired into the docs
+  (Pages) workflow (`.github/workflows/docs.yml`), matching the existing
+  `ci.yml` and `audit.yml` blocks, so a docs build can install private
+  dependencies when the commented `create-github-app-token` step is enabled.
 
 ### Changed
 
@@ -25,7 +41,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same fenced format (`---` / `key: value` / `---` / body) is used for the
   cross-device pr-body note, so a single parser handles both, and the fence is
   stripped before the body is sent to GitHub. There is no commit-message
-  fallback: a `PR.md` with no `title:` aborts the script (bumped to 1.3.0).
+  fallback: a `PR.md` with no `title:` aborts the script. It also now uses the
+  same interactive y/n confirmation workflow as the other helper scripts
+  (bumped to 1.3.0).
+- `scripts/compare_to_template.py`: the pre-comparison self-check now
+  version-checks every dev helper script (`scripts/*.py`) against the template,
+  offering to copy over any that are out of date or missing, instead of only
+  checking itself. It also tracks the versioned
+  `tests/test_mypy_stub_guard.py`, and `--diff` now diffs against the live
+  project file rather than a temp copy (bumped to 1.4.0).
+- The commented private-dependency git-auth example in the `ci.yml`, `audit.yml`,
+  and `docs.yml` workflows now runs under `shell: bash`, so its heredoc executes
+  correctly on Windows runners when uncommented.
+
+### Fixed
+
+- `scripts/new_worktree.py`: a worktree opened from a main repo with an active
+  venv no longer inherits the parent `.venv`. `VIRTUAL_ENV` is cleared in the
+  generated workspace's `terminal.integrated.env` and dropped before spawning
+  `uv sync`/`code`, so uv no longer warns and ignores the mismatched value
+  (bumped to 1.3.0).
+- The commented `create-github-app-token` example was missing a closing quote on
+  the `gh` command that finds the action's latest commit; fixed so the block
+  works as written when uncommented.
+- Restored Python 3.10 compatibility: the mypy stub-guard test and dev scripts
+  fall back to the `tomli` backport when the standard-library `tomllib` is
+  unavailable.
+
+### Security
+
+- Raised the `pytest` floor to `>=9.0.3` (GHSA-6w46-j5rx-g56g / CVE-2025-71176,
+  tmpdir handling) and the `python-dotenv` floor to `>=1.2.2`
+  (GHSA-mf9w-mj56-hr94 / CVE-2026-28684, symlink following in `set_key`), so a
+  lowest-direct resolve no longer installs a known-vulnerable version.
 
 ## [1.9.0] - 2026-07-06
 
@@ -370,7 +418,8 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/DrollRobot/python_repo_template/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.7.0...v1.8.0
