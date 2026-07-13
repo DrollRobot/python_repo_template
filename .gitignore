@@ -211,3 +211,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Claude Code hook debug log (opt-in via the CLAUDE_HOOK_DEBUG_LOG env var).
+# Also covered by the broad *.log rule above; listed explicitly for intent.
+.claude/hooks/hook-debug.log
