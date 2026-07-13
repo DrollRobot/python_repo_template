@@ -7,7 +7,7 @@ package-data = { python_repo_template = ["py.typed"] }
 
 [project]
 name = "python-repo-template"
-version = "1.10.0"
+version = "1.11.0"
 description = "" # FIXME add a brief description of the project
 readme = "README.md"
 requires-python = ">=3.14"
