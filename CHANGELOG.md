@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-07-13
+
+### Added
+
+- The bash canonical-commands hook (`.claude/hooks/canonical-commands-bash.py`)
+  gained two checks it was missing relative to its PowerShell counterpart: it
+  now flags a redundant `git -C <cwd>` for the directory the shell is already
+  in, and it blocks running a `.ps1` from the Bash tool (via `pwsh`/`powershell`
+  or `./script.ps1`), steering to the PowerShell tool instead.
+- Opt-in debug logging for both canonical-commands hooks, enabled by setting the
+  `CLAUDE_HOOK_DEBUG_LOG` environment variable. When on, each invocation is
+  appended to a self-rotating `.claude/hooks/hook-debug.log` (gitignored); when
+  off (the default) the logger short-circuits before any filesystem access, so
+  there is no overhead in normal operation.
+
+### Changed
+
+- Both canonical-commands hooks now block a leading `cd` on either tool -- the
+  working directory is already the project root -- instead of the PowerShell
+  hook rerouting a bare `cd` to the other tool, which contradicted the no-`cd`
+  rule.
+- The bash canonical-commands hook now enforces `bash script.sh` as the single
+  allowed script-invocation form, blocking `sh script.sh` and `./script.sh`.
+  `bash <script>` is the one form that always works: it needs no execute bit on
+  the file and always uses bash rather than whatever `sh` points at.
+
 ## [1.10.0] - 2026-07-12
 
 ### Added
@@ -418,7 +444,8 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/DrollRobot/python_repo_template/compare/v1.8.0...v1.8.1
