@@ -42,12 +42,15 @@ automate the tedious parts. Run the whole transition in one guided pass:
 uv run scripts/template_setup/setup_new_project.py
 ```
 
-…or run any step on its own — see `scripts/template_setup/README.md` for the
-full list of steps and what each one does.
+The orchestrator shows a checklist of every step, all checked by default;
+toggle off what you don't want, then type `run` — that is the confirmation,
+and the checked steps prompt for their inputs and apply without asking again.
 
-Each script previews its changes and asks before applying; most accept
-`--dry-run` and `-y`/`--yes`. After choosing a license, update the license badge
-near the top of this README to match.
+…or run any step on its own — see `scripts/template_setup/README.md` for the
+full list of steps and what each one does. Run standalone, each script
+previews its changes and asks before applying; most accept `--dry-run` and
+`-y`/`--yes`. After choosing a license, update the license badge near the top
+of this README to match.
 
 ** Create venv and install basic dev/test dependencies**
 

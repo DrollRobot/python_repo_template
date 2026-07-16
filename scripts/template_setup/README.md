@@ -12,6 +12,14 @@ uv run scripts/template_setup/setup_new_project.py
 python scripts/template_setup/setup_new_project.py
 ```
 
+The orchestrator shows a numbered checklist of every step below, all checked
+by default. Toggle steps by number (`3`, `1 4`, `5-8`, commas ok) or with
+`all`/`none`, then type `run` to execute — that is the single confirmation:
+each checked step prompts for its inputs right before it runs and applies its
+changes without asking again. Type `q` to quit without changing anything.
+Steps always execute in the order listed below regardless of how they were
+toggled, with `cleanup.py` last.
+
 …or run any step on its own:
 
 | Script | What it does |
@@ -31,14 +39,16 @@ python scripts/template_setup/setup_new_project.py
 | `cleanup.py` | **Destructive.** Delete this `template_setup/` folder and the unit tests for the dev scripts (the scripts stay) once you're done. |
 
 Most scripts accept `--dry-run` (preview without writing) and `-y`/`--yes`
-(skip the confirmation prompt). Every change is previewed and confirmed before
-it is applied.
+(skip the confirmation prompt). Run standalone, every change is previewed and
+confirmed before it is applied; under the orchestrator, typing `run` is the
+confirmation and the steps apply without asking again.
 
-Suggested order: **strip headers → rename → set user → set python version →
-set version → reset changelog → choose shell → protect auto-memory → choose
-license → remove mkdocs (optional) → find FIXMEs → reinit git → cleanup.** (Strip before rename so the workspace
-header is removed while the file still ends in `.jsonc`. Reset the changelog
-after rename and set-user so the skeleton's links pick up the new project name
-and username.) The whole
-`template_setup/` folder is
-disposable — `cleanup.py` (or the orchestrator) removes it when you're finished.
+The orchestrator's fixed order — **strip headers → rename → set user → set
+python version → set version → reset changelog → choose shell → protect
+auto-memory → choose license → remove mkdocs → find FIXMEs → reinit git →
+cleanup** — is also the suggested order when running steps by hand. (Strip
+before rename so the workspace header is removed while the file still ends in
+`.jsonc`. Reset the changelog after rename and set-user so the skeleton's
+links pick up the new project name and username.) The whole `template_setup/`
+folder is disposable — `cleanup.py` (or the orchestrator) removes it when
+you're finished.
