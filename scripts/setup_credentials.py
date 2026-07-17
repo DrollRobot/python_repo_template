@@ -38,7 +38,7 @@ PACKAGE_NAME = "python_repo_template"
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 
 def load_settings(env_file: Path = _ENV_FILE) -> dict[str, str]:
@@ -67,8 +67,8 @@ def _store_user_pass(settings: dict[str, str]) -> None:
 
     print()
     print(f"  Keyring service : {_KEYRING_SERVICE}")
-    username = getpass.getpass(f"Enter value for {username_key}: ")
-    password = getpass.getpass(f"Enter value for {password_key}: ")
+    username = input(f"Enter value for {username_key}: ")
+    password = getpass.getpass(f"Enter value for {password_key} (hidden, no echo): ")
 
     keyring.set_password(_KEYRING_SERVICE, username_key, username)
     keyring.set_password(_KEYRING_SERVICE, password_key, password)
@@ -87,7 +87,7 @@ def _store_cert_thumbprint(settings: dict[str, str]) -> None:
 
     print()
     print(f"  Keyring service : {_KEYRING_SERVICE}")
-    thumbprint = getpass.getpass(f"Enter value for {thumbprint_key}: ")
+    thumbprint = input(f"Enter value for {thumbprint_key}: ")
 
     keyring.set_password(_KEYRING_SERVICE, thumbprint_key, thumbprint)
 
@@ -109,9 +109,9 @@ def _store_service_principal(settings: dict[str, str]) -> None:
 
     print()
     print(f"  Keyring service : {_KEYRING_SERVICE}")
-    tenant_id = getpass.getpass(f"Enter value for {tenant_id_key}: ")
-    client_id = getpass.getpass(f"Enter value for {client_id_key}: ")
-    client_secret = getpass.getpass(f"Enter value for {client_secret_key}: ")
+    tenant_id = input(f"Enter value for {tenant_id_key}: ")
+    client_id = input(f"Enter value for {client_id_key}: ")
+    client_secret = getpass.getpass(f"Enter value for {client_secret_key} (hidden, no echo): ")
 
     keyring.set_password(_KEYRING_SERVICE, tenant_id_key, tenant_id)
     keyring.set_password(_KEYRING_SERVICE, client_id_key, client_id)
