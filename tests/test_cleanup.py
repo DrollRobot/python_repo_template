@@ -87,6 +87,33 @@ def test_missing_tests_folder_yields_nothing(tmp_path: Path) -> None:
     assert dev_script_tests(tmp_path) == []
 
 
+def test_test_matching_hook_is_selected(tmp_path: Path) -> None:
+    """A test named after a hyphenated hook in .claude/hooks/ is selected too."""
+    touch(tmp_path, ".claude/hooks/no-chained-commands-bash.py")
+    test_file = touch(tmp_path, "tests/test_no_chained_commands_bash.py")
+    assert dev_script_tests(tmp_path) == [test_file]
+
+
+def test_test_matching_hook_with_hook_suffix_is_selected(tmp_path: Path) -> None:
+    """A ``_hook``-suffixed test name still matches its hyphenated hook.
+
+    This disambiguates a hook's test from a same-named script's test, e.g.
+    test_protect_auto_memory_hook.py (hook) alongside test_protect_auto_memory.py
+    (setup script).
+    """
+    touch(tmp_path, ".claude/hooks/protect-auto-memory.py")
+    test_file = touch(tmp_path, "tests/test_protect_auto_memory_hook.py")
+    assert dev_script_tests(tmp_path) == [test_file]
+
+
+def test_hook_test_does_not_also_require_a_script(tmp_path: Path) -> None:
+    """A hook-only test is selected even when no matching script exists."""
+    touch(tmp_path, ".claude/hooks/canonical-commands-pwsh.py")
+    touch(tmp_path, "tests/test_unwanted_strings.py")
+    test_file = touch(tmp_path, "tests/test_canonical_commands_pwsh.py")
+    assert dev_script_tests(tmp_path) == [test_file]
+
+
 def test_strip_removes_scripts_coverage_line() -> None:
     """The --cov=scripts line vanishes without leaving a blank line behind."""
     result = strip_template_config(PYPROJECT)

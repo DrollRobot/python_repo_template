@@ -3,8 +3,9 @@
 After you have renamed the project, stripped the headers, chosen a license, and
 worked through the FIXMEs, these setup scripts have served their purpose. This
 script deletes them (the whole ``scripts/template_setup/`` folder, including
-itself), the unit tests for the dev scripts (the scripts themselves stay --
-their tests only matter while developing the template), and any leftover
+itself), the unit tests for the dev scripts and Claude Code hooks (the
+scripts and hooks themselves stay -- their tests only matter while developing
+the template), and any leftover
 ``LICENSE.*.FIXME`` candidates -- but only once a real ``LICENSE`` file
 exists, so you are never left with no license.
 
@@ -72,26 +73,37 @@ def strip_template_config(text: str) -> str:
 
 
 def dev_script_tests(root: Path) -> list[Path]:
-    """Find the unit tests that cover the dev and setup scripts.
+    """Find the unit tests that cover the dev scripts, setup scripts, and hooks.
 
-    The dev scripts in ``scripts/`` stay useful in the new project, but their
-    unit tests only matter while developing the template itself. A test file
-    is matched to its script by name: ``tests/test_<name>.py`` covers
-    ``scripts/<name>.py`` or ``scripts/template_setup/<name>.py``. Tests with
-    no matching script (the project's own tests) are kept.
+    The dev scripts in ``scripts/`` and the Claude Code hooks in
+    ``.claude/hooks/`` stay useful in the new project, but their unit tests
+    only matter while developing the template itself. A test file is matched
+    to its script by name: ``tests/test_<name>.py`` covers ``scripts/<name>.py``
+    or ``scripts/template_setup/<name>.py``. Hook filenames use hyphens, not a
+    valid module name, so ``tests/test_<name>.py`` is matched to
+    ``.claude/hooks/<name-with-hyphens>.py`` too; a ``_hook`` suffix on the test
+    name is dropped first so it can be stripped before conversion (used when a
+    hook's test would otherwise collide with a same-named script's test, e.g.
+    ``test_protect_auto_memory_hook.py`` alongside ``test_protect_auto_memory.py``).
+    Tests with no matching script or hook (the project's own tests) are kept.
 
     Args:
         root: Project root directory.
 
     Returns:
-        Test files that cover an existing script, in sorted order.
+        Test files that cover an existing script or hook, in sorted order.
     """
     script_dirs = (root / "scripts", root / "scripts" / "template_setup")
-    return [
-        test_file
-        for test_file in sorted((root / "tests").glob("test_*.py"))
-        if any((folder / test_file.name.removeprefix("test_")).exists() for folder in script_dirs)
-    ]
+    hooks_dir = root / ".claude" / "hooks"
+    tests: list[Path] = []
+    for test_file in sorted((root / "tests").glob("test_*.py")):
+        script_name = test_file.name.removeprefix("test_")
+        hook_name = script_name.removesuffix(".py").removesuffix("_hook").replace("_", "-") + ".py"
+        matches_script = any((folder / script_name).exists() for folder in script_dirs)
+        matches_hook = (hooks_dir / hook_name).exists()
+        if matches_script or matches_hook:
+            tests.append(test_file)
+    return tests
 
 
 def _gather_targets(root: Path) -> list[Path]:
