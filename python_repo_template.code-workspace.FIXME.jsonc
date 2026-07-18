@@ -26,7 +26,7 @@
             "**/.nox": true,
             "**/.pytest_cache": true,
             "**/.ruff_cache": true,
-            "**/.tox": true,
+            "**/.tox": true
         },
 
         // -- GIT --------------------------------------------------
@@ -68,13 +68,14 @@
             "reportWildcardImportFromLibrary": "none"
         },
         "python.analysis.exclude": [
+            "**/.venv",
             "**/__pycache__",
             "**/.*",
             "**/*.egg-info",
             "**/build",
             "**/data",
             "**/dist",
-            "**/node_modules",
+            "**/node_modules"
         ],
 
         // -- FORMATTERS (non-Python) ------------------------------
@@ -99,7 +100,7 @@
             "plaintext": true,
             "markdown": true,
             "python": true,
-            "toml": true,
+            "toml": true
         }
     }
 }
