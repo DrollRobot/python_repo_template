@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-07-18
+
+### Added
+
+- `scripts/setup.toml` now drives the entire template setup process: every
+  choice (project name, license, feature flags, Claude hook selection, git
+  reinit) lives in one file that `setup_new_project.py` validates all at
+  once, previews, and applies with a single confirmation.
+- Pre-commit gained a pre-push stage that runs `uv lock --locked`, `uv audit`,
+  and the offline test suite; the existing commit-time hooks now run only at
+  commit time instead of re-running on push.
+- Destructive tests are now split into `destructive_local` and
+  `destructive_remote` markers, each gated independently
+  (`--run-destructive-local` / `--run-destructive-remote` plus its own
+  proof-of-disposability check), so opting into one can never silently arm
+  the other.
+
+### Changed
+
+- `compare_to_template.py` now reads feature choices from `scripts/setup.toml`
+  (or infers them from which feature files exist) and only compares, offers
+  to copy, or diffs files tied to a feature the project actually kept;
+  declining a feature now fully excludes its files instead of just marking
+  them optional.
+- `scripts/setup.toml` moved from `scripts/template_setup/setup.toml` to
+  `scripts/setup.toml` so it survives `cleanup.py` and stays available after
+  template setup is done.
+
+### Fixed
+
+- The offline test filter in pre-commit and CI referenced the retired
+  "not integration" marker instead of "not live", letting live tests slip
+  into offline runs.
+- Removing a feature via setup no longer leaves behind tests for deleted
+  Claude Code hooks in `.claude/hooks/`.
+- Credential setup prompts no longer hide non-secret fields (username,
+  tenant/client ID, cert thumbprint) behind silent input; only the password
+  and client secret stay hidden.
+
 ## [1.11.0] - 2026-07-13
 
 ### Added
