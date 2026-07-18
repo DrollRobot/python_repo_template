@@ -23,6 +23,7 @@ if sys.version_info >= (3, 11):  # noqa: UP036 # allows compatibility back to 3.
 else:
     import tomli as tomllib
 
+import pytest
 from mypy.stubinfo import stub_distribution_name
 
 # Version of this guard test. It ships to projects generated from this template
@@ -58,12 +59,15 @@ def _silences_imports(section: dict[str, Any]) -> bool:
     return bool(_IMPORT_ERROR_CODES.intersection(disabled))
 
 
+@pytest.mark.unit
 def test_stubinfo_canary() -> None:
     """Fail loudly if mypy's internal stub registry API changes semantics."""
     assert stub_distribution_name("tabulate") == "types-tabulate"
     assert stub_distribution_name("pytest") is None
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_global_mypy_config_does_not_silence_imports() -> None:
     """The global [tool.mypy] table must not suppress missing-stub errors."""
     assert not _silences_imports(_mypy_config()), (
@@ -73,6 +77,8 @@ def test_global_mypy_config_does_not_silence_imports() -> None:
     )
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_overrides_do_not_silence_modules_with_published_stubs() -> None:
     """Every silenced override module must lack a published stub package."""
     silenced: list[str] = []

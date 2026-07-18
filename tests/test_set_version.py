@@ -36,6 +36,7 @@ PYPROJECT = (
 )
 
 
+@pytest.mark.unit
 def test_validate_accepts_valid() -> None:
     """A MAJOR.MINOR.PATCH version (with optional suffix) is returned cleaned."""
     assert set_version.validate("0.1.0") == "0.1.0"
@@ -43,6 +44,7 @@ def test_validate_accepts_valid() -> None:
     assert set_version.validate("  2.3.4  ") == "2.3.4"
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize("bad", ["1", "1.0", "abc", "", "py314"])
 def test_validate_rejects_invalid(bad: str) -> None:
     """Anything that is not MAJOR.MINOR.PATCH raises ValueError."""
@@ -50,6 +52,7 @@ def test_validate_rejects_invalid(bad: str) -> None:
         set_version.validate(bad)
 
 
+@pytest.mark.unit
 def test_set_version_touches_only_project_version() -> None:
     """Only the [project] version line changes; the trap lines are untouched."""
     result = set_version.set_version(PYPROJECT, "0.1.0")
@@ -60,6 +63,8 @@ def test_set_version_touches_only_project_version() -> None:
     assert 'python_version = "3.14"' in result
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_updates_pyproject(tmp_path: Path) -> None:
     """Running the step rewrites the version in pyproject.toml."""
     (tmp_path / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
@@ -70,6 +75,8 @@ def test_run_updates_pyproject(tmp_path: Path) -> None:
     assert 'target-version = "py314"' in pyproject
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_is_idempotent(tmp_path: Path) -> None:
     """Re-running with the version already in place reports nothing to change."""
     path = tmp_path / "pyproject.toml"
@@ -81,6 +88,8 @@ def test_run_is_idempotent(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == after_first
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_dry_run_changes_nothing(tmp_path: Path) -> None:
     """A dry run reports the plan but leaves pyproject.toml untouched."""
     path = tmp_path / "pyproject.toml"
@@ -89,6 +98,8 @@ def test_dry_run_changes_nothing(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == PYPROJECT
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_rejects_invalid_version(tmp_path: Path) -> None:
     """An invalid version raises before pyproject.toml is read or written."""
     (tmp_path / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")

@@ -25,6 +25,8 @@ import choose_shell
 import rename_project
 import setup_new_project
 
+pytestmark = pytest.mark.unit
+
 CANONICAL_KEYS = [
     "strip_template_headers",
     "rename_project",

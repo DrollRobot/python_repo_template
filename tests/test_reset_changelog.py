@@ -14,9 +14,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
 import reset_changelog
+
+pytestmark = [pytest.mark.integration, pytest.mark.functional]
 
 SKELETON = "# Changelog\n\n## [Unreleased]\n"
 OLD_HISTORY = "# Changelog\n\n## [9.9.9] - 2000-01-01\n"

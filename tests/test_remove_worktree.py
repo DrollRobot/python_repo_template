@@ -24,6 +24,8 @@ from remove_worktree import (
     slug_arg,
 )
 
+pytestmark = pytest.mark.unit
+
 MAIN = ("C:/dev/repo", "refs/heads/develop")
 
 

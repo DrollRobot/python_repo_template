@@ -28,17 +28,10 @@ conventions, required checks, and how to run tests.
 - Line length limit: 100 characters.
 - Use type hints for all function signatures.
 
-## Writing Tests for New Code
+## Testing
 
-- All new code should have tests for every branch.
-- Pure logic branches (parsers, utilities with no network or I/O) get unit
-  tests in `tests/`.
-- Tests for branches with external calls (HTTP, DB) should be marked
-  `@pytest.mark.integration`.
-
-## Testing after code changes
-
-After writing new code, run tests as described in [AGENTS.TESTING.md](AGENTS.TESTING.md).
+For instructions on writing and running tests: [AGENTS.TESTING.md](AGENTS.TESTING.md).
+ALWAYS READ BEFORE WRITING NEW CODE.
 
 ## Build and Release
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from update_floors import (
@@ -21,6 +23,8 @@ from update_floors import (
     raise_floor,
     requirement_name,
 )
+
+pytestmark = pytest.mark.unit
 
 # --- normalize_name ------------------------------------------------------------------
 

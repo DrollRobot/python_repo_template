@@ -15,6 +15,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
 import protect_auto_memory
@@ -35,24 +37,28 @@ def _make_project(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@pytest.mark.unit
 def test_hook_command_uses_project_dir_and_posix_path() -> None:
     """The command resolves from $CLAUDE_PROJECT_DIR with a forward-slash path."""
     command = protect_auto_memory._hook_command()
     assert command == 'python "$CLAUDE_PROJECT_DIR/.claude/hooks/protect-auto-memory.py"'
 
 
+@pytest.mark.unit
 def test_references_our_hook_detects_template_hook() -> None:
     """An entry whose command names the hook file is recognized."""
     entry = protect_auto_memory._build_entry()
     assert protect_auto_memory._references_our_hook(entry) is True
 
 
+@pytest.mark.unit
 def test_references_our_hook_ignores_unrelated_entries() -> None:
     """An unrelated PreToolUse entry is left alone."""
     entry = {"matcher": "Write", "hooks": [{"type": "command", "command": "python other.py"}]}
     assert protect_auto_memory._references_our_hook(entry) is False
 
 
+@pytest.mark.unit
 def test_build_entry_has_matcher_and_one_command() -> None:
     """The built entry carries the Write|Edit matcher and a single command."""
     entry = protect_auto_memory._build_entry()
@@ -61,6 +67,7 @@ def test_build_entry_has_matcher_and_one_command() -> None:
     assert protect_auto_memory.HOOK_FILE in entry["hooks"][0]["command"]
 
 
+@pytest.mark.unit
 def test_merge_preserves_unrelated_keys_and_entries() -> None:
     """Merging keeps permissions and unrelated PreToolUse entries intact."""
     existing = {
@@ -78,6 +85,7 @@ def test_merge_preserves_unrelated_keys_and_entries() -> None:
     assert matchers == ["Bash", "Write|Edit"]
 
 
+@pytest.mark.unit
 def test_merge_is_idempotent() -> None:
     """Re-merging replaces our prior entry rather than appending a duplicate."""
     once = protect_auto_memory._merge_settings({})
@@ -85,6 +93,7 @@ def test_merge_is_idempotent() -> None:
     assert twice["hooks"]["PreToolUse"] == [protect_auto_memory._build_entry()]
 
 
+@pytest.mark.unit
 def test_without_our_entry_strips_ours_and_drops_empty_hooks() -> None:
     """Removing the only entry leaves no empty hooks/PreToolUse scaffolding."""
     wired = protect_auto_memory._merge_settings({})
@@ -92,6 +101,7 @@ def test_without_our_entry_strips_ours_and_drops_empty_hooks() -> None:
     assert cleaned == {}
 
 
+@pytest.mark.unit
 def test_without_our_entry_keeps_unrelated_entries() -> None:
     """Stripping our entry preserves other PreToolUse entries and keys."""
     other = {"matcher": "Bash", "hooks": [{"type": "command", "command": "python other.py"}]}
@@ -101,17 +111,20 @@ def test_without_our_entry_keeps_unrelated_entries() -> None:
     assert cleaned == existing
 
 
+@pytest.mark.unit
 def test_is_wired_reflects_presence_of_entry() -> None:
     """_is_wired is True only once our entry has been merged in."""
     assert protect_auto_memory._is_wired({}) is False
     assert protect_auto_memory._is_wired(protect_auto_memory._merge_settings({})) is True
 
 
+@pytest.mark.unit
 def test_read_settings_missing_returns_empty(tmp_path: Path) -> None:
     """A missing settings file reads as an empty mapping."""
     assert protect_auto_memory._read_settings(tmp_path / "settings.json") == {}
 
 
+@pytest.mark.unit
 def test_read_settings_empty_file_returns_empty(tmp_path: Path) -> None:
     """An empty settings file reads as an empty mapping."""
     path = tmp_path / "settings.json"
@@ -119,6 +132,7 @@ def test_read_settings_empty_file_returns_empty(tmp_path: Path) -> None:
     assert protect_auto_memory._read_settings(path) == {}
 
 
+@pytest.mark.unit
 def test_read_settings_invalid_json_returns_none(tmp_path: Path) -> None:
     """Invalid JSON is refused rather than silently discarded."""
     path = tmp_path / "settings.json"
@@ -126,6 +140,7 @@ def test_read_settings_invalid_json_returns_none(tmp_path: Path) -> None:
     assert protect_auto_memory._read_settings(path) is None
 
 
+@pytest.mark.unit
 def test_read_settings_non_object_returns_none(tmp_path: Path) -> None:
     """A JSON array (not an object) is refused."""
     path = tmp_path / "settings.json"
@@ -133,6 +148,7 @@ def test_read_settings_non_object_returns_none(tmp_path: Path) -> None:
     assert protect_auto_memory._read_settings(path) is None
 
 
+@pytest.mark.unit
 def test_read_settings_unreadable_returns_none(tmp_path: Path) -> None:
     """A file that is not UTF-8 text is refused."""
     path = tmp_path / "settings.json"
@@ -140,6 +156,7 @@ def test_read_settings_unreadable_returns_none(tmp_path: Path) -> None:
     assert protect_auto_memory._read_settings(path) is None
 
 
+@pytest.mark.unit
 def test_write_settings_deletes_file_when_empty(tmp_path: Path) -> None:
     """Writing an empty mapping removes the file rather than leaving '{}'."""
     path = tmp_path / "settings.json"
@@ -148,6 +165,8 @@ def test_write_settings_deletes_file_when_empty(tmp_path: Path) -> None:
     assert not path.exists()
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_enable_writes_settings_and_keeps_hook(tmp_path: Path) -> None:
     """Enabling wires the hook into settings and leaves the hook file in place."""
     root = _make_project(tmp_path)
@@ -159,6 +178,8 @@ def test_run_enable_writes_settings_and_keeps_hook(tmp_path: Path) -> None:
     assert (root / protect_auto_memory.HOOKS_DIR / protect_auto_memory.HOOK_FILE).exists()
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_enable_missing_hook_returns_one(tmp_path: Path) -> None:
     """Enabling without the hook file present is rejected and writes nothing."""
     (tmp_path / protect_auto_memory.HOOKS_DIR).mkdir(parents=True)
@@ -166,6 +187,8 @@ def test_run_enable_missing_hook_returns_one(tmp_path: Path) -> None:
     assert not (tmp_path / protect_auto_memory.SETTINGS_PATH).exists()
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_enable_invalid_settings_aborts_without_changes(tmp_path: Path) -> None:
     """Enabling against an unparseable settings.json aborts and changes nothing."""
     root = _make_project(tmp_path)
@@ -176,6 +199,8 @@ def test_run_enable_invalid_settings_aborts_without_changes(tmp_path: Path) -> N
     assert settings_path.read_text(encoding="utf-8") == "{not json"
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_disable_invalid_settings_aborts_without_changes(tmp_path: Path) -> None:
     """Declining against an unparseable settings.json keeps the hook file too."""
     root = _make_project(tmp_path)
@@ -187,6 +212,8 @@ def test_run_disable_invalid_settings_aborts_without_changes(tmp_path: Path) -> 
     assert (root / protect_auto_memory.HOOKS_DIR / protect_auto_memory.HOOK_FILE).exists()
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_enable_dry_run_changes_nothing(tmp_path: Path) -> None:
     """A dry run neither writes settings nor removes the hook file."""
     root = _make_project(tmp_path)
@@ -195,6 +222,8 @@ def test_run_enable_dry_run_changes_nothing(tmp_path: Path) -> None:
     assert (root / protect_auto_memory.HOOKS_DIR / protect_auto_memory.HOOK_FILE).exists()
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_disable_removes_hook_and_writes_no_settings(tmp_path: Path) -> None:
     """Declining deletes the hook file and writes no settings when none existed."""
     root = _make_project(tmp_path)
@@ -204,6 +233,8 @@ def test_run_disable_removes_hook_and_writes_no_settings(tmp_path: Path) -> None
     assert not (root / protect_auto_memory.SETTINGS_PATH).exists()
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_disable_unwires_existing_entry(tmp_path: Path) -> None:
     """Declining after a prior enable removes the wiring and the hook file."""
     root = _make_project(tmp_path)
@@ -216,6 +247,8 @@ def test_run_disable_unwires_existing_entry(tmp_path: Path) -> None:
     assert not (root / protect_auto_memory.HOOKS_DIR / protect_auto_memory.HOOK_FILE).exists()
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_disable_dry_run_keeps_everything(tmp_path: Path) -> None:
     """A declined dry run reports the removal but deletes nothing."""
     root = _make_project(tmp_path)

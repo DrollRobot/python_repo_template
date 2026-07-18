@@ -53,6 +53,8 @@ def _bash(command: str, cwd: str = "/repo") -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_malformed_json_allows(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -61,6 +63,8 @@ def test_malformed_json_allows(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_non_bash_tool_allows(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -71,6 +75,8 @@ def test_non_bash_tool_allows(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_empty_command_allows(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -78,6 +84,8 @@ def test_empty_command_allows(
     assert rc == 0
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_non_string_command_allows(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -91,6 +99,8 @@ def test_non_string_command_allows(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 @pytest.mark.parametrize(
     "command",
     [
@@ -109,6 +119,8 @@ def test_ps1_from_bash_blocked(
     assert "PowerShell tool" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_ps1_referenced_without_execution_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -123,6 +135,8 @@ def test_ps1_referenced_without_execution_allowed(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_sh_wrapper_blocked(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -131,6 +145,8 @@ def test_sh_wrapper_blocked(
     assert "bash script.sh" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_dotslash_script_blocked(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -139,6 +155,8 @@ def test_dotslash_script_blocked(
     assert "bash script.sh" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_dotslash_nested_script_blocked(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -147,6 +165,8 @@ def test_dotslash_nested_script_blocked(
     assert "bash script.sh" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_bash_script_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -155,6 +175,8 @@ def test_bash_script_allowed(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_bash_dotslash_script_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -164,6 +186,8 @@ def test_bash_dotslash_script_allowed(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_bash_syntax_check_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -172,6 +196,8 @@ def test_bash_syntax_check_allowed(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_sh_inline_c_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -180,6 +206,8 @@ def test_sh_inline_c_allowed(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_shellcheck_not_confused_with_sh(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -193,6 +221,8 @@ def test_shellcheck_not_confused_with_sh(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_cd_prefix_blocked(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -201,6 +231,8 @@ def test_cd_prefix_blocked(
     assert "prepend" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_bare_cd_blocked(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -209,6 +241,8 @@ def test_bare_cd_blocked(
     assert "prepend" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_cd_substring_command_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -222,6 +256,8 @@ def test_cd_substring_command_allowed(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_git_c_redundant_blocked(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -230,6 +266,8 @@ def test_git_c_redundant_blocked(
     assert "DIFFERENT repo" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_git_c_dot_blocked(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -238,6 +276,8 @@ def test_git_c_dot_blocked(
     assert "drop the" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_git_c_other_repo_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -246,6 +286,8 @@ def test_git_c_other_repo_allowed(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_plain_git_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -254,6 +296,8 @@ def test_plain_git_allowed(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_ordinary_command_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -267,6 +311,7 @@ def test_ordinary_command_allowed(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("command", "expected"),
     [("git status", "git"), ("  BASH  x.sh ", "bash"), ("", ""), ("   ", "")],
@@ -275,32 +320,39 @@ def test_first_token(command: str, expected: str) -> None:
     assert mod._first_token(command) == expected
 
 
+@pytest.mark.unit
 def test_git_c_empty_cwd_returns_none() -> None:
     assert mod._redundant_git_c("git -C /repo status", "") is None
 
 
+@pytest.mark.unit
 def test_git_c_no_dash_c_returns_none() -> None:
     assert mod._redundant_git_c("git status", "/repo") is None
 
 
+@pytest.mark.unit
 def test_git_c_empty_quoted_path_returns_none() -> None:
     assert mod._redundant_git_c('git -C "" status', "/repo") is None
 
 
+@pytest.mark.unit
 def test_git_c_abs_equal_to_cwd_via_tmp(tmp_path: Path) -> None:
     cwd = str(tmp_path)
     assert mod._redundant_git_c(f"git -C {cwd} status", cwd) == cwd
 
 
+@pytest.mark.unit
 def test_git_c_abs_different_from_cwd_via_tmp(tmp_path: Path) -> None:
     other = str(tmp_path / "sub")
     assert mod._redundant_git_c(f"git -C {other} status", str(tmp_path)) is None
 
 
+@pytest.mark.unit
 def test_git_c_dot_resolves_to_cwd(tmp_path: Path) -> None:
     assert mod._redundant_git_c("git -C . status", str(tmp_path)) == "."
 
 
+@pytest.mark.unit
 def test_git_c_quoted_path_with_space(tmp_path: Path) -> None:
     spaced = tmp_path / "my dir"
     spaced.mkdir()
@@ -308,11 +360,13 @@ def test_git_c_quoted_path_with_space(tmp_path: Path) -> None:
     assert mod._redundant_git_c(f'git -C "{cwd}" status', cwd) == cwd
 
 
+@pytest.mark.unit
 def test_git_c_config_options_before_dash_c(tmp_path: Path) -> None:
     cwd = str(tmp_path)
     assert mod._redundant_git_c(f"git -c core.pager=cat -C {cwd} log", cwd) == cwd
 
 
+@pytest.mark.unit
 def test_git_c_subcommand_reuse_flag_not_matched() -> None:
     assert mod._redundant_git_c("git commit -C HEAD", "/repo") is None
 
@@ -322,6 +376,7 @@ def test_git_c_subcommand_reuse_flag_not_matched() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 def test_log_noop_when_disabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     log = tmp_path / "hook-debug.log"
     monkeypatch.setattr(mod, "_DEBUG", False)
@@ -330,6 +385,7 @@ def test_log_noop_when_disabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert not log.exists()
 
 
+@pytest.mark.unit
 def test_log_writes_when_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     log = tmp_path / "hook-debug.log"
     monkeypatch.setattr(mod, "_DEBUG", True)
@@ -338,12 +394,14 @@ def test_log_writes_when_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert "hello" in log.read_text(encoding="utf-8")
 
 
+@pytest.mark.unit
 def test_log_never_raises_on_bad_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(mod, "_DEBUG", True)
     monkeypatch.setattr(mod, "_LOG", str(tmp_path))  # a directory: open() will fail
     mod._log("boom")  # must not raise
 
 
+@pytest.mark.unit
 def test_rotate_keeps_small_log_untouched(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     log = tmp_path / "hook-debug.log"
     log.write_text("one line\n", encoding="utf-8")
@@ -353,6 +411,7 @@ def test_rotate_keeps_small_log_untouched(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert log.read_text(encoding="utf-8") == "one line\n"
 
 
+@pytest.mark.unit
 def test_rotate_trims_oversized_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     log = tmp_path / "hook-debug.log"
     log.write_text("".join(f"line {i}\n" for i in range(100)), encoding="utf-8")

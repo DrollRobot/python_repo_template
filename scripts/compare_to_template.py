@@ -170,6 +170,12 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("scripts/remove_worktree.py"),
     BaselineFile("scripts/update_floors.py"),
     BaselineFile("scripts/setup_credentials.py", required=False),  # credentials feature
+    # Remote-destructive-test feature, write half: run manually to mark a
+    # target disposable. Its read half (verify_remote_disposable.py) lives in
+    # tests/, next to the conftest.py gate that is its only automatic caller.
+    # The marker mechanism is expected to be filled in per project, so drift
+    # (customization) is not an error.
+    BaselineFile("scripts/mark_remote_disposable.py", required=False, strict=False),
     # Documentation site (mkdocs feature; content is the project's own).
     BaselineFile("mkdocs.yml", required=False, strict=False),
     BaselineFile("docs/index.md", required=False, strict=False),
@@ -180,6 +186,12 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("tests/conftest.py", required=False, strict=False),
     BaselineFile("tests/_bootstrap.py", required=False),
     BaselineFile("tests/_keyvault.py", required=False),
+    # Remote-destructive-test feature, read half: run automatically by
+    # conftest.py's destructive_remote gate. Paired with
+    # scripts/mark_remote_disposable.py above; the marker mechanism is
+    # expected to be filled in per project, so drift (customization) is not
+    # an error.
+    BaselineFile("tests/verify_remote_disposable.py", required=False, strict=False),
     # The mypy stub-guard test ships to projects (cleanup.py keeps it: no
     # matching script) and must track the template, so it is compared here
     # despite the blanket tests/test_*.py exclusion, and carries a __version__.

@@ -14,6 +14,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
 import remove_mkdocs
@@ -104,6 +106,7 @@ AGENTS_RELEASING = (
 )
 
 
+@pytest.mark.unit
 def test_strip_pyproject_removes_group_and_include() -> None:
     """The docs group and its dev include are removed; siblings stay."""
     new_text, removed = remove_mkdocs._strip_pyproject(PYPROJECT)
@@ -119,6 +122,7 @@ def test_strip_pyproject_removes_group_and_include() -> None:
     assert removed
 
 
+@pytest.mark.unit
 def test_strip_gitignore_removes_site_block() -> None:
     """The mkdocs ignore block and its preceding blank are removed."""
     new_text, _removed = remove_mkdocs._strip_gitignore(GITIGNORE)
@@ -127,6 +131,7 @@ def test_strip_gitignore_removes_site_block() -> None:
     assert "/coverage\n\n# mypy\n" in new_text
 
 
+@pytest.mark.unit
 def test_strip_readme_removes_bullet_pages_and_table_row() -> None:
     """The tool bullet, Pages step, and table row are all removed."""
     new_text, _removed = remove_mkdocs._strip_readme(README_FULL)
@@ -139,6 +144,7 @@ def test_strip_readme_removes_bullet_pages_and_table_row() -> None:
     assert "| **Release script**" in new_text
 
 
+@pytest.mark.unit
 def test_strip_readme_pages_leaves_single_blank_before_rule() -> None:
     """Removing the Pages step leaves one blank line before the '---' rule."""
     new_text, _removed = remove_mkdocs._strip_readme(README_PAGES)
@@ -146,6 +152,7 @@ def test_strip_readme_pages_leaves_single_blank_before_rule() -> None:
     assert "uv run pre-commit autoupdate\n```\n\n---\n" in new_text
 
 
+@pytest.mark.unit
 def test_strip_contributing_removes_commands_and_structure_bullet() -> None:
     """The docs commands and the docs/ structure bullet are removed."""
     new_text, _removed = remove_mkdocs._strip_contributing(CONTRIBUTING)
@@ -156,6 +163,7 @@ def test_strip_contributing_removes_commands_and_structure_bullet() -> None:
     assert "- `tests/` -- pytest test suite" in new_text
 
 
+@pytest.mark.unit
 def test_strip_agents_releasing_removes_update_docs_section() -> None:
     """The 'Update docs' section is removed; neighbours stay."""
     new_text, _removed = remove_mkdocs._strip_agents_releasing(AGENTS_RELEASING)
@@ -167,6 +175,7 @@ def test_strip_agents_releasing_removes_update_docs_section() -> None:
     assert "```\n\n## Review/Update README.md\n" in new_text
 
 
+@pytest.mark.unit
 def test_plan_deletions_lists_only_existing_paths(tmp_path: Path) -> None:
     """Only mkdocs paths that exist on disk are scheduled for deletion."""
     assert remove_mkdocs.plan_deletions(tmp_path) == []
@@ -177,11 +186,15 @@ def test_plan_deletions_lists_only_existing_paths(tmp_path: Path) -> None:
     assert names == {"mkdocs.yml", "docs"}
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_returns_zero_when_nothing_matches(tmp_path: Path) -> None:
     """An empty project has no mkdocs artifacts and is a no-op success."""
     assert remove_mkdocs.run(tmp_path, assume_yes=True) == 0
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_dry_run_changes_nothing(tmp_path: Path) -> None:
     """A dry run neither deletes files nor rewrites them."""
     pyproject = tmp_path / "pyproject.toml"
@@ -194,6 +207,8 @@ def test_run_dry_run_changes_nothing(tmp_path: Path) -> None:
     assert pyproject.read_text(encoding="utf-8") == PYPROJECT
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_run_deletes_and_rewrites(tmp_path: Path) -> None:
     """A real run deletes the artifacts and strips the references."""
     pyproject = tmp_path / "pyproject.toml"

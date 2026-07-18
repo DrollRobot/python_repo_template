@@ -49,6 +49,8 @@ def _cmd(command: str, tool_name: str = "PowerShell") -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_malformed_json_allows(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -57,6 +59,8 @@ def test_malformed_json_allows(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_empty_command_allows(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -64,6 +68,8 @@ def test_empty_command_allows(
     assert rc == 0
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_non_string_command_allows(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -77,6 +83,8 @@ def test_non_string_command_allows(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_and_and_blocks(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -85,12 +93,16 @@ def test_and_and_blocks(
     assert "joined with '&&'" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_or_or_blocks(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     rc, err = _invoke(monkeypatch, capsys, _cmd("foo || bar"))
     assert rc == 2
     assert "joined with '||'" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_semicolon_blocks(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -99,6 +111,8 @@ def test_semicolon_blocks(
     assert "joined with ';'" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_multiple_joiners_all_reported(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -108,6 +122,8 @@ def test_multiple_joiners_all_reported(
     assert "joined with ';'" in err
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_fires_regardless_of_tool_name(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -122,6 +138,8 @@ def test_fires_regardless_of_tool_name(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_single_command_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -130,12 +148,16 @@ def test_single_command_allowed(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_pipe_allowed(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     rc, err = _invoke(monkeypatch, capsys, _cmd("Get-ChildItem | Select-Object -First 5"))
     assert rc == 0
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_semicolon_inside_single_quotes_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -144,6 +166,8 @@ def test_semicolon_inside_single_quotes_allowed(
     assert err == ""
 
 
+@pytest.mark.e2e
+@pytest.mark.functional
 def test_joiner_inside_double_quotes_allowed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -157,6 +181,7 @@ def test_joiner_inside_double_quotes_allowed(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("text", "expected"),
     [

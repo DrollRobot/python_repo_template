@@ -97,34 +97,41 @@ def make_ctx(
 # --- version parsing ---------------------------------------------------------
 
 
+@pytest.mark.unit
 def test_version_tuple_parses_numeric_versions() -> None:
     assert version_tuple("1.2.3") == (1, 2, 3)
     assert version_tuple("10.0") == (10, 0)
 
 
+@pytest.mark.unit
 def test_version_tuple_rejects_non_numeric_parts() -> None:
     assert version_tuple("1.2.3rc1") is None
     assert version_tuple("abc") is None
     assert version_tuple("") is None
 
 
+@pytest.mark.unit
 def test_script_version_finds_declaration() -> None:
     assert script_version('x = 1\n__version__ = "1.4.0"\n') == "1.4.0"
     assert script_version("__version__ = '2.0.0'\n") == "2.0.0"
 
 
+@pytest.mark.unit
 def test_script_version_missing_returns_none() -> None:
     assert script_version("x = 1\n") is None
 
 
+@pytest.mark.unit
 def test_python_version_forms_major_minor() -> None:
     assert python_version_forms("3.13") == ("3.13", "3.13", "py313")
 
 
+@pytest.mark.unit
 def test_python_version_forms_keeps_patch_in_full_form() -> None:
     assert python_version_forms("3.14.3") == ("3.14.3", "3.14", "py314")
 
 
+@pytest.mark.unit
 def test_python_version_forms_rejects_garbage() -> None:
     with pytest.raises(ValueError, match="not a valid Python version"):
         python_version_forms("py314")
@@ -133,18 +140,22 @@ def test_python_version_forms_rejects_garbage() -> None:
 # --- GitHub username extraction ----------------------------------------------
 
 
+@pytest.mark.unit
 def test_github_user_from_https_url() -> None:
     assert github_user_from_url("https://github.com/octocat/my-proj.git") == "octocat"
 
 
+@pytest.mark.unit
 def test_github_user_from_scp_style_ssh_url() -> None:
     assert github_user_from_url("git@github.com:octocat/my-proj.git") == "octocat"
 
 
+@pytest.mark.unit
 def test_github_user_from_ssh_scheme_url() -> None:
     assert github_user_from_url("ssh://git@github.com/octocat/my-proj.git") == "octocat"
 
 
+@pytest.mark.unit
 def test_github_user_from_non_github_url_is_none() -> None:
     assert github_user_from_url("https://gitlab.com/octocat/my-proj.git") is None
     assert github_user_from_url("") is None
@@ -153,40 +164,48 @@ def test_github_user_from_non_github_url_is_none() -> None:
 # --- text normalization -------------------------------------------------------
 
 
+@pytest.mark.unit
 def test_normalize_eol_converts_crlf_and_cr() -> None:
     assert normalize_eol("a\r\nb\rc\n") == "a\nb\nc\n"
 
 
+@pytest.mark.unit
 def test_replace_case_insensitive_replaces_all_casings() -> None:
     old = TEMPLATE_USER
     text = f"see {old} and {old.upper()} and {old.title()}"
     assert replace_case_insensitive(text, old, "octocat") == "see octocat and octocat and octocat"
 
 
+@pytest.mark.unit
 def test_strip_template_header_removes_hash_banner() -> None:
     assert strip_template_header(BANNER + "content\n") == "content\n"
 
 
+@pytest.mark.unit
 def test_strip_template_header_removes_slash_banner() -> None:
     banner = f"// ====\n// {_MARKER}\n// ====\n\ncontent\n"
     assert strip_template_header(banner) == "content\n"
 
 
+@pytest.mark.unit
 def test_strip_template_header_removes_markdown_banner() -> None:
     banner = f"<!--\n{_MARKER}\nexplanation\n-->\n\n# Title\n"
     assert strip_template_header(banner) == "# Title\n"
 
 
+@pytest.mark.unit
 def test_strip_template_header_without_marker_is_unchanged() -> None:
     text = "# just a comment\ncontent\n"
     assert strip_template_header(text) == text
 
 
+@pytest.mark.unit
 def test_strip_template_header_without_separators_is_unchanged() -> None:
     text = f"# {_MARKER}\ncontent\n"
     assert strip_template_header(text) == text
 
 
+@pytest.mark.unit
 def test_strip_template_header_ignores_marker_in_code() -> None:
     text = f'_MARKER = "{_MARKER}"\n'
     assert strip_template_header(text) == text
@@ -195,6 +214,7 @@ def test_strip_template_header_ignores_marker_in_code() -> None:
 # --- setup-script replays ------------------------------------------------------
 
 
+@pytest.mark.unit
 def test_replay_python_version_rewrites_pyproject_pins() -> None:
     text = 'requires-python = ">=3.14"\ntarget-version = "py314"\npython_version = "3.14"\n'
     result = replay_python_version("pyproject.toml", text, "3.13", "py313")
@@ -202,6 +222,7 @@ def test_replay_python_version_rewrites_pyproject_pins() -> None:
     assert result == expected
 
 
+@pytest.mark.unit
 def test_replay_python_version_rewrites_precommit_pin() -> None:
     result = replay_python_version(
         ".pre-commit-config.yaml", "  python: python3.14\n", "3.13", "py313"
@@ -209,6 +230,7 @@ def test_replay_python_version_rewrites_precommit_pin() -> None:
     assert result == "  python: python3.13\n"
 
 
+@pytest.mark.unit
 def test_replay_python_version_rewrites_contributing_and_readme() -> None:
     assert (
         replay_python_version("CONTRIBUTING.md", "Requires Python 3.14+.\n", "3.13", "py313")
@@ -220,17 +242,20 @@ def test_replay_python_version_rewrites_contributing_and_readme() -> None:
     )
 
 
+@pytest.mark.unit
 def test_replay_python_version_rewrites_bug_report_placeholder() -> None:
     text = 'id: python-version\n  attributes:\n    placeholder: "3.14.3"\n'
     result = replay_python_version(".github/ISSUE_TEMPLATE/bug_report.yml", text, "3.13", "py313")
     assert 'placeholder: "3.13.3"' in result
 
 
+@pytest.mark.unit
 def test_replay_python_version_leaves_other_files_alone() -> None:
     text = "python 3.14 mentioned in prose\n"
     assert replay_python_version("SECURITY.md", text, "3.13", "py313") == text
 
 
+@pytest.mark.unit
 def test_replay_cleanup_pyproject_drops_template_only_lines() -> None:
     text = (
         'addopts = [\n    "--cov=scripts",\n]\nmypy_path = ["scripts", "scripts/template_setup"]\n'
@@ -238,6 +263,7 @@ def test_replay_cleanup_pyproject_drops_template_only_lines() -> None:
     assert replay_cleanup_pyproject(text) == 'addopts = [\n]\nmypy_path = ["scripts"]\n'
 
 
+@pytest.mark.unit
 def test_replay_cleanup_pyproject_tolerates_missing_snippets() -> None:
     text = "unrelated = true\n"
     assert replay_cleanup_pyproject(text) == text
@@ -246,21 +272,25 @@ def test_replay_cleanup_pyproject_tolerates_missing_snippets() -> None:
 # --- token mapping -------------------------------------------------------------
 
 
+@pytest.mark.unit
 def test_map_project_path_renames_tokens_in_path() -> None:
     rel = f"docs/reference/{TEMPLATE_SNAKE}.md"
     assert map_project_path(rel, NAMES) == "docs/reference/my_proj.md"
 
 
+@pytest.mark.unit
 def test_map_project_path_leaves_plain_paths_alone() -> None:
     assert map_project_path("scripts/_cli.py", NAMES) == "scripts/_cli.py"
 
 
+@pytest.mark.unit
 def test_normalize_template_text_full_pipeline() -> None:
     text = BANNER + f"pkg {TEMPLATE_SNAKE} dist {TEMPLATE_KEBAB} by {TEMPLATE_USER.title()}\n"
     result = normalize_template_text("notes.md", text, NAMES)
     assert result == "pkg my_proj dist my-proj by octocat\n"
 
 
+@pytest.mark.unit
 def test_normalize_template_text_skips_user_when_unknown() -> None:
     names = ProjectNames(snake="my_proj", kebab="my-proj", github_user=None)
     text = f"by {TEMPLATE_USER}\n"
@@ -270,17 +300,20 @@ def test_normalize_template_text_skips_user_when_unknown() -> None:
 # --- strictness ------------------------------------------------------------------
 
 
+@pytest.mark.unit
 def test_effective_strict_demotes_mkdocs_edited_files_when_removed() -> None:
     entry = BaselineFile("CONTRIBUTING.md")
     assert effective_strict(entry, has_mkdocs=True) is True
     assert effective_strict(entry, has_mkdocs=False) is False
 
 
+@pytest.mark.unit
 def test_effective_strict_keeps_other_files_strict() -> None:
     entry = BaselineFile("SECURITY.md")
     assert effective_strict(entry, has_mkdocs=False) is True
 
 
+@pytest.mark.unit
 def test_effective_strict_never_promotes_lenient_files() -> None:
     entry = BaselineFile("pyproject.toml", strict=False)
     assert effective_strict(entry, has_mkdocs=True) is False
@@ -289,6 +322,7 @@ def test_effective_strict_never_promotes_lenient_files() -> None:
 # --- version notes and self-check ------------------------------------------------
 
 
+@pytest.mark.unit
 def test_script_version_note_outdated_and_ahead() -> None:
     older = '__version__ = "1.1.0"\n'
     newer = '__version__ = "1.2.0"\n'
@@ -296,31 +330,38 @@ def test_script_version_note_outdated_and_ahead() -> None:
     assert "upstream" in script_version_note(older, newer)
 
 
+@pytest.mark.unit
 def test_script_version_note_same_version() -> None:
     text = '__version__ = "1.0.0"\n'
     assert "without a version bump" in script_version_note(text, text)
 
 
+@pytest.mark.unit
 def test_script_version_note_missing_version_is_empty() -> None:
     assert script_version_note("x = 1\n", '__version__ = "1.0.0"\n') == ""
 
 
+@pytest.mark.unit
 def test_self_check_action_identical_content() -> None:
     assert self_check_action("1.0.0", "1.0.0", same_content=True) == "ok"
 
 
+@pytest.mark.unit
 def test_self_check_action_project_older() -> None:
     assert self_check_action("1.2.0", "1.1.0", same_content=False) == "update"
 
 
+@pytest.mark.unit
 def test_self_check_action_project_newer() -> None:
     assert self_check_action("1.1.0", "1.2.0", same_content=False) == "ahead"
 
 
+@pytest.mark.unit
 def test_self_check_action_unparseable_version() -> None:
     assert self_check_action("1.1.0", None, same_content=False) == "update"
 
 
+@pytest.mark.unit
 def test_self_check_action_same_version_different_content() -> None:
     assert self_check_action("1.1.0", "1.1.0", same_content=False) == "refresh"
 
@@ -328,6 +369,7 @@ def test_self_check_action_same_version_different_content() -> None:
 # --- compare_one -------------------------------------------------------------------
 
 
+@pytest.mark.unit
 def test_compare_one_match_after_normalization(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     template = BANNER + f"pkg {TEMPLATE_SNAKE} dist {TEMPLATE_KEBAB} by {TEMPLATE_USER}\n"
@@ -337,6 +379,7 @@ def test_compare_one_match_after_normalization(tmp_path: Path) -> None:
     assert result.status == "match"
 
 
+@pytest.mark.unit
 def test_compare_one_match_ignores_line_endings(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "notes.md", "line one\nline two\n")
@@ -344,6 +387,7 @@ def test_compare_one_match_ignores_line_endings(tmp_path: Path) -> None:
     assert compare_one(BaselineFile("notes.md"), ctx).status == "match"
 
 
+@pytest.mark.unit
 def test_compare_one_modified_strict(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "notes.md", "template says A\n")
@@ -354,6 +398,7 @@ def test_compare_one_modified_strict(tmp_path: Path) -> None:
     assert result.project_norm is not None
 
 
+@pytest.mark.unit
 def test_compare_one_review_for_lenient_entries(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "notes.md", "template says A\n")
@@ -363,24 +408,28 @@ def test_compare_one_review_for_lenient_entries(tmp_path: Path) -> None:
     assert "expected to differ" in result.note
 
 
+@pytest.mark.unit
 def test_compare_one_missing_required(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "notes.md", "content\n")
     assert compare_one(BaselineFile("notes.md"), ctx).status == "missing"
 
 
+@pytest.mark.unit
 def test_compare_one_absent_optional(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "notes.md", "content\n")
     assert compare_one(BaselineFile("notes.md", required=False), ctx).status == "absent"
 
 
+@pytest.mark.unit
 def test_compare_one_no_template(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.project_root, "notes.md", "content\n")
     assert compare_one(BaselineFile("notes.md"), ctx).status == "no-template"
 
 
+@pytest.mark.unit
 def test_compare_one_existence_only_ignores_content(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "README.md", "template readme\n")
@@ -393,6 +442,7 @@ def test_compare_one_existence_only_ignores_content(tmp_path: Path) -> None:
     assert result.project_norm is None
 
 
+@pytest.mark.unit
 def test_compare_one_existence_only_missing_required_is_drift(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "README.md", "template readme\n")
@@ -400,6 +450,7 @@ def test_compare_one_existence_only_missing_required_is_drift(tmp_path: Path) ->
     assert result.status == "missing"
 
 
+@pytest.mark.unit
 def test_compare_one_existence_only_absent_when_optional(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "extra.md", "template extra\n")
@@ -407,6 +458,7 @@ def test_compare_one_existence_only_absent_when_optional(tmp_path: Path) -> None
     assert result.status == "absent"
 
 
+@pytest.mark.unit
 def test_compare_one_binary_files(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     (ctx.template_root / "blob.bin").write_bytes(b"\xff\xfe\x00\x01")
@@ -418,6 +470,7 @@ def test_compare_one_binary_files(tmp_path: Path) -> None:
     assert "binary" in result.note
 
 
+@pytest.mark.unit
 def test_compare_one_notes_script_versions(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "scripts/helper.py", '__version__ = "1.2.0"\nnew = True\n')
@@ -427,6 +480,7 @@ def test_compare_one_notes_script_versions(tmp_path: Path) -> None:
     assert "project 1.1.0 < template 1.2.0" in result.note
 
 
+@pytest.mark.unit
 def test_compare_one_notes_versioned_non_script(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, "tests/test_guard.py", '__version__ = "1.2.0"\nnew = True\n')
@@ -436,6 +490,7 @@ def test_compare_one_notes_versioned_non_script(tmp_path: Path) -> None:
     assert "project 1.1.0 < template 1.2.0" in result.note
 
 
+@pytest.mark.unit
 def test_compare_one_demotes_mkdocs_edited_file(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path, has_mkdocs=False)
     write(ctx.template_root, "CONTRIBUTING.md", "with docs section\n")
@@ -445,6 +500,7 @@ def test_compare_one_demotes_mkdocs_edited_file(tmp_path: Path) -> None:
     assert "mkdocs removed" in result.note
 
 
+@pytest.mark.unit
 def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     rel = f"docs/reference/{TEMPLATE_SNAKE}.md"
@@ -458,24 +514,29 @@ def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
 # --- manifest ------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 def test_manifest_has_no_duplicates() -> None:
     paths = [entry.path for entry in MANIFEST]
     assert len(paths) == len(set(paths))
 
 
+@pytest.mark.unit
 def test_carries_version_true_for_scripts_by_path() -> None:
     assert carries_version(BaselineFile("scripts/helper.py")) is True
 
 
+@pytest.mark.unit
 def test_carries_version_true_for_flagged_entries() -> None:
     assert carries_version(BaselineFile("tests/test_guard.py", versioned=True)) is True
 
 
+@pytest.mark.unit
 def test_carries_version_false_for_plain_files() -> None:
     assert carries_version(BaselineFile("tests/test_guard.py")) is False
     assert carries_version(BaselineFile("scripts/notes.md")) is False
 
 
+@pytest.mark.unit
 def test_manifest_tracks_versioned_stub_guard() -> None:
     (guard,) = [e for e in MANIFEST if e.path == "tests/test_mypy_stub_guard.py"]
     assert guard.required is True
@@ -483,6 +544,7 @@ def test_manifest_tracks_versioned_stub_guard() -> None:
     assert guard.versioned is True
 
 
+@pytest.mark.unit
 def test_is_excluded_manifest_entry_beats_glob() -> None:
     # The stub-guard test matches the blanket tests/test_*.py glob but is
     # manifested, so it must not be reported as excluded.
@@ -491,12 +553,15 @@ def test_is_excluded_manifest_entry_beats_glob() -> None:
     assert is_excluded("tests/test_cleanup.py") is True
 
 
+@pytest.mark.unit
 def test_manifest_readme_is_required_but_existence_only() -> None:
     (readme,) = [entry for entry in MANIFEST if entry.path == "README.md"]
     assert readme.required is True
     assert readme.compare_content is False
 
 
+@pytest.mark.integration
+@pytest.mark.functional
 def test_manifest_covers_all_tracked_template_files() -> None:
     """Every tracked template file must be in the manifest or excluded.
 
@@ -528,6 +593,7 @@ def test_manifest_covers_all_tracked_template_files() -> None:
 # --- diff output (VS Code) --------------------------------------------------------------
 
 
+@pytest.mark.unit
 def test_diff_files_for_writes_pairs_and_skips_match_and_binary(tmp_path: Path) -> None:
     results = [
         Comparison(
@@ -561,6 +627,7 @@ def test_diff_files_for_writes_pairs_and_skips_match_and_binary(tmp_path: Path) 
     assert not (base / "c.md").exists()
 
 
+@pytest.mark.unit
 def test_diff_files_for_uses_project_rel_for_the_project_side(tmp_path: Path) -> None:
     rel = f"docs/reference/{TEMPLATE_SNAKE}.md"
     results = [
@@ -578,11 +645,13 @@ def test_diff_files_for_uses_project_rel_for_the_project_side(tmp_path: Path) ->
     assert right == project_root / "docs/reference/my_proj.md"
 
 
+@pytest.mark.unit
 def test_resolve_code_splits_an_explicit_tool() -> None:
     assert resolve_code("codium") == ["codium"]
     assert resolve_code("code --new-window") == ["code", "--new-window"]
 
 
+@pytest.mark.unit
 def test_resolve_code_ignores_a_blank_override() -> None:
     # A blank override falls through to auto-detection of the 'code' CLI, which
     # is present or not depending on the environment.

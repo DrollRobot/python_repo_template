@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "tem
 
 from cleanup import dev_script_tests, strip_template_config
 
+pytestmark = pytest.mark.unit
+
 # A pyproject.toml slice holding both template-only lines cleanup removes,
 # surrounded by neighbors that must survive untouched.
 PYPROJECT = (

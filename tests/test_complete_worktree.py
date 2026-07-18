@@ -9,6 +9,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from complete_worktree import (
@@ -17,6 +19,8 @@ from complete_worktree import (
     parse_front_matter,
     render_note,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def test_clean_tree_returns_no_lines() -> None:

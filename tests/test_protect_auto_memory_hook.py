@@ -26,6 +26,8 @@ assert _spec.loader is not None
 mod: Any = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(mod)
 
+pytestmark = [pytest.mark.e2e, pytest.mark.functional]
+
 
 def _invoke(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], payload: object

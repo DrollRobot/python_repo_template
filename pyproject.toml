@@ -60,14 +60,28 @@ addopts = [
     "--cov=python_repo_template",
     "--cov=scripts",
     "--cov-report=term-missing",
-    "--cov-fail-under=0", # FIXME: the test coverage gate is disabled for template. set to 80? 90?
+    "--cov-fail-under=0", # FIXME: coverage disabled for template. update for your project.
     "--strict-markers",
     "--strict-config",
 ]
 xfail_strict = true
 filterwarnings = ["error"]
 markers = [
-    "integration: requires a populated .env (network/credentials)",
+    # Scope
+    "unit: single function/class in isolation; all dependencies mocked or stubbed",
+    "integration: multiple real components wired together across a boundary",
+    "e2e: whole application end to end, driven like a real user",
+    # Purpose
+    "smoke: fast 'is it fundamentally broken' check",
+    "regression: guards against reintroduction of a previously fixed bug",
+    "acceptance: verifies behavior against a requirement or user-facing spec",
+    "functional: tests behavior/output of a feature without regard to internal structure",
+    # Dependency
+    "live: requires a real external resource (network, live tenant, secrets, third-party API)",
+    "destructive_local: mutates the host/device; guarded to prevent accidental execution",
+    "destructive_remote: mutates a remote/external system; guarded to prevent accidental execution",
+    # Performance
+    "slow: long-running",
 ]
 
 [tool.ruff]
