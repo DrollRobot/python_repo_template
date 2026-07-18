@@ -30,7 +30,7 @@
 # Pre-push hooks (run once on `git push`, slower whole-repo gates):
 #   uv-lock-check     -- fails if uv.lock is out of sync with pyproject.toml
 #   uv-audit          -- fails on known-vulnerable dependencies (needs network)
-#   pytest-offline    -- runs the offline test suite (`-m "not integration"`)
+#   pytest-offline    -- runs the offline test suite (`-m "not live"`)
 # =============================================================================
 
 default_language_version:
@@ -113,7 +113,7 @@ repos:
 
       - id: pytest-offline
         name: pytest (offline)
-        entry: uv run pytest -m "not integration"
+        entry: uv run pytest -m "not live"
         language: system
         stages: [pre-push]
         pass_filenames: false

@@ -90,5 +90,5 @@ jobs:
       - name: Type check (mypy)
         run: uv run mypy
 
-      - name: Unit tests
-        run: uv run pytest -m "not integration"
+      - name: Offline tests
+        run: uv run pytest -m "not live"
