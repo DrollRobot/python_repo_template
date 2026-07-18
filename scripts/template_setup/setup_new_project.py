@@ -1,8 +1,8 @@
 """Run the whole template-to-project transition from one config file.
 
-Edit ``scripts/template_setup/setup.toml`` with your values (project name,
-GitHub username, Python/project version, license choice, which optional
-features to keep, whether to re-initialize git), then run:
+Edit ``scripts/setup.toml`` with your values (project name, GitHub username,
+Python/project version, license choice, which optional features to keep,
+whether to re-initialize git), then run:
 
     uv run scripts/template_setup/setup_new_project.py
 
@@ -11,6 +11,11 @@ nothing runs and every problem is listed at once. It then previews every
 change every step would make (nothing applied yet), asks for a single
 confirmation, and applies everything. ``--dry-run`` stops after the preview;
 ``-y``/``--yes`` skips the confirmation (the preview still runs first).
+
+``scripts/setup.toml`` deliberately lives outside ``scripts/template_setup/``
+(this script's own folder) so ``cleanup.py`` -- which deletes that whole
+folder -- leaves it in place: ``scripts/compare_to_template.py`` keeps
+reading it afterward to know which optional features this project kept.
 
 Steps always execute in this order, regardless of the config file's own
 table order: strip template headers -> rename -> set GitHub user -> set
@@ -21,9 +26,9 @@ declined) -> remove keyring backend (if declined) -> remove KeyVault backend
 above are declined) -> re-initialize git (if requested). A read-only FIXME
 report always runs last, whether or not anything failed.
 
-Each step is also runnable on its own with its own prompts/flags -- see
-``scripts/template_setup/README.md``. This script does NOT delete
-``scripts/template_setup/`` (``cleanup.py``) -- that stays a separate,
+Each step is also runnable on its own with its own prompts/flags -- see that
+script's module docstring (e.g. ``remove_mkdocs.py``). This script does NOT
+delete ``scripts/template_setup/`` (``cleanup.py``) -- that stays a separate,
 manual step; run it yourself whenever you're ready.
 
 Usage:
@@ -622,12 +627,12 @@ def main() -> None:
         "--config",
         type=Path,
         default=None,
-        help="Path to setup.toml (default: setup.toml next to this script).",
+        help="Path to setup.toml (default: scripts/setup.toml).",
     )
     args = parser.parse_args()
 
     root = _common.find_root()
-    config_path = args.config or (_common.SETUP_DIR / CONFIG_FILENAME)
+    config_path = args.config or (_common.SETUP_DIR.parent / CONFIG_FILENAME)
     sys.exit(run_setup(root, config_path, assume_yes=args.yes, dry_run=args.dry_run))
 
 

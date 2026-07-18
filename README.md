@@ -34,7 +34,7 @@ Based on some personal preference, and what I understand are the most widely use
 git clone https://github.com/DrollRobot/python_repo_template.git YOUR-PROJECT-NAME
 ```
 
-2. **Edit `scripts/template_setup/setup.toml`** with your values: project name,
+2. **Edit `scripts/setup.toml`** with your values: project name,
    GitHub username, Python/project version, license choice, which optional
    features to keep (`mkdocs`, `keyring`, `azure_keyvault`, Claude command
    hooks), and whether to re-initialize git.
@@ -51,11 +51,8 @@ uv run scripts/template_setup/setup_new_project.py
    Add `--dry-run` to preview only, or `-y`/`--yes` to skip the confirmation
    (the preview still runs first).
 
-   …or run any step on its own — see `scripts/template_setup/README.md` for
-   the full list of steps, the `setup.toml` field reference, and what each
-   script does. Run standalone, each script previews its changes and asks
-   before applying; most accept `--dry-run` and `-y`/`--yes`. After choosing
-   a license, update the license badge near the top of this README to match.
+   After choosing a license, update the license badge near the top of this
+   README to match.
 
    This does **not** delete `scripts/template_setup/` — that stays a
    separate, manual step (`cleanup.py`, or just delete the folder) once

@@ -1,10 +1,15 @@
-# scripts/template_setup/setup.toml
+# scripts/setup.toml
 #
 # Config-driven template setup. Edit the values below, then run:
 #   uv run scripts/template_setup/setup_new_project.py
 # --dry-run previews every change with nothing applied; -y/--yes skips the
-# single confirmation prompt (still previews first). See
-# scripts/template_setup/README.md for the full field reference.
+# single confirmation prompt (still previews first). Every field is
+# documented inline below.
+#
+# Lives in scripts/, not scripts/template_setup/, so cleanup.py's deletion of
+# the setup-scripts folder doesn't take this with it: compare_to_template.py
+# keeps reading it afterward to know which optional features this project
+# kept, so it never offers to restore a feature you deliberately removed.
 
 [project]
 # New project name (any case; both the snake_case import name and the
@@ -37,10 +42,12 @@ name = ""
 company = ""
 
 [claude]
-# Command hooks, each independently optional -- see the "Claude Code command
-# hooks" section of scripts/template_setup/README.md for what each one does.
-# shell picks which flavor (powershell/bash) to wire in; it is a no-op if
-# both hooks below are false.
+# Command hooks, each independently optional (see choose_shell.py):
+# no_chained_commands requires one shell command per tool call, so a
+# permission allowlist keeps matching; canonical_commands keeps shell
+# invocation consistent, so you don't need to allow multiple equivalent
+# commands. shell picks which flavor (powershell/bash) to wire in; it is a
+# no-op if both hooks below are false.
 shell = "powershell"
 no_chained_commands = true
 canonical_commands = true

@@ -21,19 +21,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from compare_to_template import (
     _MARKER,
     MANIFEST,
+    SETUP_CONFIG_REL,
     TEMPLATE_KEBAB,
     TEMPLATE_SNAKE,
     TEMPLATE_USER,
     BaselineFile,
     CompareContext,
     Comparison,
+    FeatureFlags,
     ProjectNames,
     carries_version,
     compare_one,
     diff_files_for,
+    effective_required,
     effective_strict,
+    feature_flags_from_config,
     github_user_from_url,
+    infer_feature_flags,
+    is_applicable,
     is_excluded,
+    load_setup_config,
     map_project_path,
     normalize_eol,
     normalize_template_text,
@@ -43,6 +50,7 @@ from compare_to_template import (
     replay_cleanup_pyproject,
     replay_python_version,
     resolve_code,
+    resolve_feature_flags,
     script_version,
     script_version_note,
     self_check_action,
@@ -69,6 +77,34 @@ def write(root: Path, rel: str, text: str) -> Path:
     return path
 
 
+def make_flags(
+    *,
+    mkdocs: bool = True,
+    keyring: bool = True,
+    keyvault: bool = True,
+    credentials: bool = True,
+    hook_no_chained_pwsh: bool = True,
+    hook_no_chained_bash: bool = True,
+    hook_canonical_pwsh: bool = True,
+    hook_canonical_bash: bool = True,
+    hook_auto_memory: bool = True,
+    source: str = "test",
+) -> FeatureFlags:
+    """Build a FeatureFlags with every feature/hook on, unless overridden."""
+    return FeatureFlags(
+        mkdocs=mkdocs,
+        keyring=keyring,
+        keyvault=keyvault,
+        credentials=credentials,
+        hook_no_chained_pwsh=hook_no_chained_pwsh,
+        hook_no_chained_bash=hook_no_chained_bash,
+        hook_canonical_pwsh=hook_canonical_pwsh,
+        hook_canonical_bash=hook_canonical_bash,
+        hook_auto_memory=hook_auto_memory,
+        source=source,
+    )
+
+
 def make_ctx(
     tmp_path: Path,
     *,
@@ -76,7 +112,7 @@ def make_ctx(
     dotted: str | None = None,
     compact: str | None = None,
     ran_cleanup: bool = False,
-    has_mkdocs: bool = True,
+    flags: FeatureFlags | None = None,
 ) -> CompareContext:
     """Create template/ and project/ dirs under tmp_path and build a context."""
     template_root = tmp_path / "template"
@@ -90,7 +126,7 @@ def make_ctx(
         dotted=dotted,
         compact=compact,
         ran_cleanup=ran_cleanup,
-        has_mkdocs=has_mkdocs,
+        flags=flags if flags is not None else make_flags(),
     )
 
 
@@ -492,7 +528,7 @@ def test_compare_one_notes_versioned_non_script(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_compare_one_demotes_mkdocs_edited_file(tmp_path: Path) -> None:
-    ctx = make_ctx(tmp_path, has_mkdocs=False)
+    ctx = make_ctx(tmp_path, flags=make_flags(mkdocs=False))
     write(ctx.template_root, "CONTRIBUTING.md", "with docs section\n")
     write(ctx.project_root, "CONTRIBUTING.md", "docs section removed\n")
     result = compare_one(BaselineFile("CONTRIBUTING.md"), ctx)
@@ -509,6 +545,147 @@ def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
     result = compare_one(BaselineFile(rel, required=False, strict=False), ctx)
     assert result.status == "match"
     assert result.project_rel == "docs/reference/my_proj.md"
+
+
+# --- feature gating ------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_is_applicable_true_for_ungated_entries() -> None:
+    assert is_applicable(BaselineFile("SECURITY.md"), make_flags(mkdocs=False)) is True
+
+
+@pytest.mark.unit
+def test_is_applicable_follows_the_matching_flag() -> None:
+    entry = BaselineFile("mkdocs.yml", gate="mkdocs")
+    assert is_applicable(entry, make_flags(mkdocs=True)) is True
+    assert is_applicable(entry, make_flags(mkdocs=False)) is False
+
+
+@pytest.mark.unit
+def test_effective_required_uses_static_field_when_ungated() -> None:
+    flags = make_flags()
+    assert effective_required(BaselineFile("SECURITY.md"), flags) is True
+    assert effective_required(BaselineFile("extra.md", required=False), flags) is False
+
+
+@pytest.mark.unit
+def test_effective_required_ignores_the_flag_for_gated_entries() -> None:
+    # Meaningful only once a caller's is_applicable() check has already kept
+    # the entry in play (which implies the flag is True); as a pure function
+    # it always reports a gated entry as required, trusting the caller to
+    # have filtered out declined features first.
+    entry = BaselineFile("tests/_keyvault.py", gate="keyvault")
+    assert effective_required(entry, make_flags(keyvault=False)) is True
+
+
+@pytest.mark.unit
+def test_compare_one_missing_is_drift_when_feature_kept(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path, flags=make_flags(keyvault=True))
+    write(ctx.template_root, "tests/_keyvault.py", "content\n")
+    entry = BaselineFile("tests/_keyvault.py", gate="keyvault")
+    assert compare_one(entry, ctx).status == "missing"
+
+
+@pytest.mark.unit
+def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
+    raw = {
+        "features": {"mkdocs": False, "keyring": True, "azure_keyvault": False},
+        "claude": {
+            "shell": "bash",
+            "no_chained_commands": True,
+            "canonical_commands": False,
+            "auto_memory_guard": True,
+        },
+    }
+    flags = feature_flags_from_config(raw)
+    assert flags.mkdocs is False
+    assert flags.keyring is True
+    assert flags.keyvault is False
+    assert flags.credentials is True  # keyring alone is enough
+    assert flags.hook_no_chained_bash is True
+    assert flags.hook_no_chained_pwsh is False
+    assert flags.hook_canonical_bash is False
+    assert flags.hook_auto_memory is True
+    assert flags.source == SETUP_CONFIG_REL
+
+
+@pytest.mark.unit
+def test_feature_flags_from_config_credentials_needs_at_least_one_backend() -> None:
+    raw = {"features": {"keyring": False, "azure_keyvault": False}}
+    assert feature_flags_from_config(raw).credentials is False
+
+
+@pytest.mark.unit
+def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
+    # An unedited config's [features] table is all-true and [claude] hooks
+    # are off; a config missing those tables entirely reads the same way.
+    flags = feature_flags_from_config({})
+    assert flags.mkdocs is True
+    assert flags.keyring is True
+    assert flags.keyvault is True
+    assert flags.credentials is True
+    assert flags.hook_no_chained_pwsh is False
+    assert flags.hook_auto_memory is False
+
+
+@pytest.mark.unit
+def test_feature_flags_from_config_tolerates_malformed_tables() -> None:
+    flags = feature_flags_from_config({"features": "not a table", "claude": None})
+    assert flags.mkdocs is True
+    assert flags.hook_auto_memory is False
+
+
+@pytest.mark.unit
+def test_infer_feature_flags_reads_file_presence(tmp_path: Path) -> None:
+    write(tmp_path, "tests/_keyvault.py", "x\n")
+    write(tmp_path, ".claude/hooks/canonical-commands-bash.py", "x\n")
+
+    flags = infer_feature_flags(tmp_path)
+    assert flags.keyvault is True
+    assert flags.keyring is False
+    assert flags.mkdocs is False
+    assert flags.hook_canonical_bash is True
+    assert flags.hook_canonical_pwsh is False
+    assert flags.source == "inferred from file presence"
+
+
+@pytest.mark.unit
+def test_load_setup_config_missing_file_is_none(tmp_path: Path) -> None:
+    assert load_setup_config(tmp_path) is None
+
+
+@pytest.mark.unit
+def test_load_setup_config_invalid_toml_is_none(tmp_path: Path) -> None:
+    write(tmp_path, SETUP_CONFIG_REL, "not [ valid toml")
+    assert load_setup_config(tmp_path) is None
+
+
+@pytest.mark.unit
+def test_load_setup_config_parses_valid_toml(tmp_path: Path) -> None:
+    write(tmp_path, SETUP_CONFIG_REL, "[features]\nmkdocs = false\n")
+    raw = load_setup_config(tmp_path)
+    assert raw is not None
+    assert raw["features"]["mkdocs"] is False
+
+
+@pytest.mark.unit
+def test_resolve_feature_flags_prefers_config_over_inference(tmp_path: Path) -> None:
+    # The config says mkdocs is on even though no mkdocs.yml exists on disk
+    # yet (e.g. setup.toml was hand-edited without re-running
+    # setup_new_project.py) -- the config wins.
+    write(tmp_path, SETUP_CONFIG_REL, "[features]\nmkdocs = true\n")
+    flags = resolve_feature_flags(tmp_path)
+    assert flags.source == SETUP_CONFIG_REL
+    assert flags.mkdocs is True
+
+
+@pytest.mark.unit
+def test_resolve_feature_flags_falls_back_when_config_absent(tmp_path: Path) -> None:
+    write(tmp_path, "mkdocs.yml", "site_name: x\n")
+    flags = resolve_feature_flags(tmp_path)
+    assert flags.source == "inferred from file presence"
+    assert flags.mkdocs is True
 
 
 # --- manifest ------------------------------------------------------------------------
@@ -558,6 +735,34 @@ def test_manifest_readme_is_required_but_existence_only() -> None:
     (readme,) = [entry for entry in MANIFEST if entry.path == "README.md"]
     assert readme.required is True
     assert readme.compare_content is False
+
+
+@pytest.mark.unit
+def test_manifest_setup_config_is_required_existence_only_and_ungated() -> None:
+    (entry,) = [e for e in MANIFEST if e.path == SETUP_CONFIG_REL]
+    assert entry.required is True
+    assert entry.compare_content is False
+    assert entry.gate is None
+
+
+@pytest.mark.unit
+def test_manifest_gates_match_feature_flags_fields() -> None:
+    # Every gate string must resolve to a real FeatureFlags field (else
+    # FeatureFlags.wanted() raises at runtime), and every field should be
+    # used by at least one entry, or it's dead code.
+    valid_gates = {
+        "mkdocs",
+        "keyring",
+        "keyvault",
+        "credentials",
+        "hook_no_chained_pwsh",
+        "hook_no_chained_bash",
+        "hook_canonical_pwsh",
+        "hook_canonical_bash",
+        "hook_auto_memory",
+    }
+    gates = {entry.gate for entry in MANIFEST if entry.gate is not None}
+    assert gates == valid_gates
 
 
 @pytest.mark.integration

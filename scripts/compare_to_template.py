@@ -20,6 +20,16 @@ project). A few files (e.g. the README) are checked for existence only, as
 the project rewrites their contents wholesale. Files the project adds on top
 of the template are ignored.
 
+Files belonging to a config-driven optional feature (mkdocs, the keyring/
+KeyVault credential backends, the Claude Code command hooks) are gated on
+that project's own choices, read from ``scripts/setup.toml`` -- or, if that
+file is missing, inferred from which feature files exist. A feature the
+project declined is left out of the comparison, the version preflight, and
+``--diff`` entirely: it is never reported and never offered for copy, exactly
+like a file the project simply doesn't have. A feature the project kept is
+compared like any other required file, so an accidentally deleted one is
+reported as drift instead of silently ignored.
+
 Before comparing, the script checks the version of every versioned file (the
 dev helper scripts ``scripts/*.py`` and the ``mypy`` stub-guard test) on both
 sides and offers to copy over any that are out of date or missing in the
@@ -54,6 +64,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from os.path import normcase, normpath
 from pathlib import Path
+from typing import Any
 
 import _cli as cli
 
@@ -65,7 +76,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -77,6 +88,12 @@ TEMPLATE_USER = "".join(("droll", "robot"))
 
 # This script's own path, used by the self-check/update step.
 SELF_REL = "scripts/compare_to_template.py"
+
+# Path (relative to a project root) of the config-driven setup's input file.
+# It lives outside scripts/template_setup/ specifically so cleanup.py's
+# deletion of that folder leaves it behind -- resolve_feature_flags() below
+# keeps reading it long after the rest of the setup scaffolding is gone.
+SETUP_CONFIG_REL = "scripts/setup.toml"
 
 # The template-header banner marker (see scripts/template_setup/
 # strip_template_headers.py). Assigning it here is safe: the strip script only
@@ -99,7 +116,8 @@ class BaselineFile:
     Attributes:
         path: Template-relative POSIX path.
         required: Whether the file must exist in the project (``False`` for
-            deletable optional features).
+            deletable optional features). Ignored when ``gate`` is set --
+            see :func:`effective_required`.
         strict: Whether content drift is an error (``False`` for files that
             are expected to diverge and are reported for review only).
         compare_content: Whether to compare the file's contents at all. When
@@ -111,6 +129,11 @@ class BaselineFile:
             version pre-flight and drift note should track. Implied for the
             ``scripts/*.py`` helpers (see :func:`carries_version`); set it
             explicitly for any other versioned file.
+        gate: Name of the matching :class:`FeatureFlags` field, for a file
+            that belongs to one config-driven optional feature (mkdocs, a
+            credentials backend, a Claude command hook). ``None`` for files
+            that are always part of the baseline. See :func:`is_applicable`
+            and :func:`effective_required`.
     """
 
     path: str
@@ -118,6 +141,7 @@ class BaselineFile:
     strict: bool = True
     compare_content: bool = True
     versioned: bool = False
+    gate: str | None = None
 
 
 # Every tracked template file is either listed here or matched by the
@@ -132,15 +156,18 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".github/dependabot.yml"),
     BaselineFile(".github/workflows/audit.yml"),
     BaselineFile(".github/workflows/ci.yml"),
-    BaselineFile(".github/workflows/docs.yml", required=False),  # mkdocs feature
+    BaselineFile(".github/workflows/docs.yml", gate="mkdocs"),
     # Claude Code configuration. choose_shell.py deletes the unchosen hook
-    # pair (or all hooks), and settings.json accumulates per-project
-    # permissions, so the hooks are optional and the settings are lenient.
-    BaselineFile(".claude/hooks/canonical-commands-bash.py", required=False),
-    BaselineFile(".claude/hooks/canonical-commands-pwsh.py", required=False),
-    BaselineFile(".claude/hooks/no-chained-commands-bash.py", required=False),
-    BaselineFile(".claude/hooks/no-chained-commands-pwsh.py", required=False),
-    BaselineFile(".claude/hooks/protect-auto-memory.py", required=False),
+    # pair (or all hooks) and protect_auto_memory.py deletes its own hook on
+    # decline, so each hook file's presence tracks exactly one [claude]
+    # config flag. settings.json accumulates per-project permissions on top
+    # of whichever hooks are wired in, so it stays optional and lenient
+    # instead of gated.
+    BaselineFile(".claude/hooks/canonical-commands-bash.py", gate="hook_canonical_bash"),
+    BaselineFile(".claude/hooks/canonical-commands-pwsh.py", gate="hook_canonical_pwsh"),
+    BaselineFile(".claude/hooks/no-chained-commands-bash.py", gate="hook_no_chained_bash"),
+    BaselineFile(".claude/hooks/no-chained-commands-pwsh.py", gate="hook_no_chained_pwsh"),
+    BaselineFile(".claude/hooks/protect-auto-memory.py", gate="hook_auto_memory"),
     BaselineFile(".claude/settings.json", required=False, strict=False),
     # Editor / lint / format / hygiene config.
     BaselineFile(".editorconfig"),
@@ -159,6 +186,10 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("README.md", compare_content=False),  # rewritten per project: only check it exists
     # Project configuration: always diverges (version, description, deps).
     BaselineFile("pyproject.toml", strict=False),
+    # The config-driven setup's own input file (see SETUP_CONFIG_REL): its
+    # content is this project's feature choices, never the template's, but
+    # resolve_feature_flags() needs the file itself to stay present.
+    BaselineFile(SETUP_CONFIG_REL, compare_content=False),
     # Dev helper scripts (each carries its own __version__).
     BaselineFile("scripts/_cli.py"),
     BaselineFile(SELF_REL),
@@ -169,23 +200,25 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("scripts/push_new_tag_to_main.py"),
     BaselineFile("scripts/remove_worktree.py"),
     BaselineFile("scripts/update_floors.py"),
-    BaselineFile("scripts/setup_credentials.py", required=False),  # credentials feature
+    BaselineFile("scripts/setup_credentials.py", gate="keyring"),
     # Remote-destructive-test feature, write half: run manually to mark a
     # target disposable. Its read half (verify_remote_disposable.py) lives in
     # tests/, next to the conftest.py gate that is its only automatic caller.
     # The marker mechanism is expected to be filled in per project, so drift
-    # (customization) is not an error.
+    # (customization) is not an error. Not config-driven (no setup.toml
+    # field for it), so it stays optional rather than gated.
     BaselineFile("scripts/mark_remote_disposable.py", required=False, strict=False),
     # Documentation site (mkdocs feature; content is the project's own).
-    BaselineFile("mkdocs.yml", required=False, strict=False),
-    BaselineFile("docs/index.md", required=False, strict=False),
-    BaselineFile(f"docs/reference/{TEMPLATE_SNAKE}.md", required=False, strict=False),
+    BaselineFile("mkdocs.yml", gate="mkdocs", strict=False),
+    BaselineFile("docs/index.md", gate="mkdocs", strict=False),
+    BaselineFile(f"docs/reference/{TEMPLATE_SNAKE}.md", gate="mkdocs", strict=False),
     # Test infrastructure (credential feature is removable; conftest grows
     # project fixtures).
     BaselineFile("tests/__init__.py", required=False),
     BaselineFile("tests/conftest.py", required=False, strict=False),
-    BaselineFile("tests/_bootstrap.py", required=False),
-    BaselineFile("tests/_keyvault.py", required=False),
+    BaselineFile("tests/_bootstrap.py", gate="credentials"),
+    BaselineFile("tests/_keyring.py", gate="keyring"),
+    BaselineFile("tests/_keyvault.py", gate="keyvault"),
     # Remote-destructive-test feature, read half: run automatically by
     # conftest.py's destructive_remote gate. Paired with
     # scripts/mark_remote_disposable.py above; the marker mechanism is
@@ -236,6 +269,56 @@ class ProjectNames:
 
 
 @dataclass(frozen=True)
+class FeatureFlags:
+    """Which config-driven optional files this project actually kept.
+
+    Each field name (other than ``source``) matches a :class:`BaselineFile`
+    ``gate`` value; see :func:`is_applicable` and :func:`effective_required`,
+    which consult these flags to decide whether a gated entry is part of this
+    project's baseline at all.
+
+    Attributes:
+        mkdocs: Documentation site kept (``[features].mkdocs``).
+        keyring: OS-keyring credentials backend kept (``[features].keyring``).
+        keyvault: Azure KeyVault backend kept (``[features].azure_keyvault``).
+        credentials: Shared credentials dispatcher kept -- ``True`` whenever
+            ``keyring`` or ``keyvault`` is, since either backend needs it.
+        hook_no_chained_pwsh: ``no-chained-commands`` hook, PowerShell flavor.
+        hook_no_chained_bash: ``no-chained-commands`` hook, bash flavor.
+        hook_canonical_pwsh: ``canonical-commands`` hook, PowerShell flavor.
+        hook_canonical_bash: ``canonical-commands`` hook, bash flavor.
+        hook_auto_memory: Auto-memory write-guard hook
+            (``[claude].auto_memory_guard``).
+        source: Where these flags came from -- :data:`SETUP_CONFIG_REL` or
+            ``"inferred from file presence"`` -- shown in the report so it's
+            clear which one produced a given run's results.
+    """
+
+    mkdocs: bool
+    keyring: bool
+    keyvault: bool
+    credentials: bool
+    hook_no_chained_pwsh: bool
+    hook_no_chained_bash: bool
+    hook_canonical_pwsh: bool
+    hook_canonical_bash: bool
+    hook_auto_memory: bool
+    source: str
+
+    def wanted(self, gate: str) -> bool:
+        """Return whether the config wants the feature named by ``gate``.
+
+        Args:
+            gate: A :class:`BaselineFile` ``gate`` value (one of this
+                dataclass's own boolean field names).
+
+        Returns:
+            That field's value.
+        """
+        return bool(getattr(self, gate))
+
+
+@dataclass(frozen=True)
 class CompareContext:
     """Everything :func:`compare_one` needs to compare one baseline file.
 
@@ -248,9 +331,10 @@ class CompareContext:
         compact: Project Python version as ``pyMAJORMINOR``, or ``None``.
         ran_cleanup: Whether the project ran cleanup.py (its template-only
             pyproject.toml lines are then dropped from the template side too).
-        has_mkdocs: Whether the project still has mkdocs (``mkdocs.yml``
-            present); when ``False`` the :data:`MKDOCS_EDITED` files are
-            compared leniently.
+        flags: The project's resolved config-driven feature flags. Used both
+            for gating (:func:`is_applicable`, :func:`effective_required`) and
+            -- via ``flags.mkdocs`` -- to demote the :data:`MKDOCS_EDITED`
+            files to lenient comparison when mkdocs is gone.
     """
 
     template_root: Path
@@ -259,7 +343,7 @@ class CompareContext:
     dotted: str | None
     compact: str | None
     ran_cleanup: bool
-    has_mkdocs: bool
+    flags: FeatureFlags
 
 
 @dataclass(frozen=True)
@@ -680,6 +764,117 @@ def pyproject_name(root: Path) -> str | None:
     return name if isinstance(name, str) else None
 
 
+def load_setup_config(project_root: Path) -> dict[str, Any] | None:
+    """Read and parse a project's :data:`SETUP_CONFIG_REL`, if present.
+
+    Args:
+        project_root: Root of the project checkout.
+
+    Returns:
+        The parsed TOML content, or ``None`` when the file is missing,
+        unreadable, or not valid TOML -- callers then fall back to
+        :func:`infer_feature_flags`.
+    """
+    path = project_root / SETUP_CONFIG_REL
+    if not path.is_file():
+        return None
+    try:
+        with path.open("rb") as handle:
+            return tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):  # fmt: skip
+        return None
+
+
+def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
+    """Derive :class:`FeatureFlags` from parsed ``setup.toml`` content.
+
+    Tolerant of missing or malformed tables/keys -- a hand-trimmed config
+    still yields a usable result -- by falling back to the template's own
+    "keep everything, no hooks" defaults for anything unreadable, mirroring
+    what an unedited ``setup.toml`` means for each of these fields.
+
+    Args:
+        raw: Parsed TOML content.
+
+    Returns:
+        The resolved flags, tagged with :data:`SETUP_CONFIG_REL` as the source.
+    """
+    features_raw = raw.get("features")
+    features = features_raw if isinstance(features_raw, dict) else {}
+    claude_raw = raw.get("claude")
+    claude = claude_raw if isinstance(claude_raw, dict) else {}
+
+    keyring = bool(features.get("keyring", True))
+    keyvault = bool(features.get("azure_keyvault", True))
+    shell = claude.get("shell")
+    no_chained_commands = bool(claude.get("no_chained_commands", False))
+    canonical_commands = bool(claude.get("canonical_commands", False))
+
+    return FeatureFlags(
+        mkdocs=bool(features.get("mkdocs", True)),
+        keyring=keyring,
+        keyvault=keyvault,
+        credentials=keyring or keyvault,
+        hook_no_chained_pwsh=(shell == "powershell" and no_chained_commands),
+        hook_no_chained_bash=(shell == "bash" and no_chained_commands),
+        hook_canonical_pwsh=(shell == "powershell" and canonical_commands),
+        hook_canonical_bash=(shell == "bash" and canonical_commands),
+        hook_auto_memory=bool(claude.get("auto_memory_guard", False)),
+        source=SETUP_CONFIG_REL,
+    )
+
+
+def infer_feature_flags(project_root: Path) -> FeatureFlags:
+    """Derive :class:`FeatureFlags` from which optional files are present.
+
+    Fallback for when :data:`SETUP_CONFIG_REL` is missing or unreadable (for
+    example a project generated before this file was tracked). Mirrors what
+    each template-setup step's removal script leaves behind, so the result
+    matches what a present config would have said.
+
+    Args:
+        project_root: Root of the project checkout.
+
+    Returns:
+        The resolved flags, tagged ``"inferred from file presence"``.
+    """
+    hooks_dir = project_root / ".claude" / "hooks"
+    keyring = (project_root / "tests" / "_keyring.py").is_file()
+    keyvault = (project_root / "tests" / "_keyvault.py").is_file()
+    return FeatureFlags(
+        mkdocs=(project_root / "mkdocs.yml").is_file(),
+        keyring=keyring,
+        keyvault=keyvault,
+        credentials=(project_root / "tests" / "_bootstrap.py").is_file(),
+        hook_no_chained_pwsh=(hooks_dir / "no-chained-commands-pwsh.py").is_file(),
+        hook_no_chained_bash=(hooks_dir / "no-chained-commands-bash.py").is_file(),
+        hook_canonical_pwsh=(hooks_dir / "canonical-commands-pwsh.py").is_file(),
+        hook_canonical_bash=(hooks_dir / "canonical-commands-bash.py").is_file(),
+        hook_auto_memory=(hooks_dir / "protect-auto-memory.py").is_file(),
+        source="inferred from file presence",
+    )
+
+
+def resolve_feature_flags(project_root: Path) -> FeatureFlags:
+    """Determine which config-driven optional files this project kept.
+
+    Reads :data:`SETUP_CONFIG_REL` when it is present and parses cleanly --
+    the normal case, since ``setup_new_project.py`` leaves it behind on
+    purpose (see its module docstring) -- and falls back to inferring from
+    which feature files exist otherwise.
+
+    Args:
+        project_root: Root of the project checkout.
+
+    Returns:
+        The resolved flags.
+    """
+    raw = load_setup_config(project_root)
+    if raw is not None:
+        return feature_flags_from_config(raw)
+    return infer_feature_flags(project_root)
+
+
 def carries_version(entry: BaselineFile) -> bool:
     """Whether an entry declares a ``__version__`` the comparison tracks.
 
@@ -696,6 +891,45 @@ def carries_version(entry: BaselineFile) -> bool:
     if entry.versioned:
         return True
     return entry.path.startswith("scripts/") and entry.path.endswith(".py")
+
+
+def is_applicable(entry: BaselineFile, flags: FeatureFlags) -> bool:
+    """Whether ``entry`` is part of this project's tracked baseline at all.
+
+    An ungated entry always is. A gated entry is only tracked when the
+    project's config wants that feature -- declining it drops the file out of
+    comparison, the version pre-flight's copy offers, and ``--diff`` entirely,
+    rather than reporting it as an always-ignorable "absent" optional file.
+
+    Args:
+        entry: The manifest entry.
+        flags: The project's resolved feature flags.
+
+    Returns:
+        ``True`` if the entry should be compared for this project.
+    """
+    return entry.gate is None or flags.wanted(entry.gate)
+
+
+def effective_required(entry: BaselineFile, flags: FeatureFlags) -> bool:
+    """Whether ``entry`` must be present in this project.
+
+    Only meaningful for entries :func:`is_applicable` has already kept in
+    play: an ungated entry uses its own static ``required`` field; a gated
+    one is only ever compared when its flag is ``True``, which makes it
+    required by definition -- there is no "the project might not have this
+    yet" state once the config says it wants the feature.
+
+    Args:
+        entry: The manifest entry.
+        flags: The project's resolved feature flags.
+
+    Returns:
+        ``True`` if the file's absence should be reported as drift.
+    """
+    if entry.gate is None:
+        return entry.required
+    return True
 
 
 def compare_one(entry: BaselineFile, ctx: CompareContext) -> Comparison:
@@ -716,14 +950,15 @@ def compare_one(entry: BaselineFile, ctx: CompareContext) -> Comparison:
     if not template_path.is_file():
         return Comparison(entry, project_rel, "no-template", " (not in this template checkout)")
     if not project_path.is_file():
-        return Comparison(entry, project_rel, "missing" if entry.required else "absent")
+        required = effective_required(entry, ctx.flags)
+        return Comparison(entry, project_rel, "missing" if required else "absent")
 
     if not entry.compare_content:
         return Comparison(entry, project_rel, "match", " (exists; contents not compared)")
 
     template_raw = template_path.read_bytes()
     project_raw = project_path.read_bytes()
-    strict = effective_strict(entry, has_mkdocs=ctx.has_mkdocs)
+    strict = effective_strict(entry, has_mkdocs=ctx.flags.mkdocs)
 
     template_text = decode_text(template_raw)
     project_text = decode_text(project_raw)
@@ -909,7 +1144,12 @@ def versioned_entries() -> tuple[BaselineFile, ...]:
 
 
 def check_versioned_file(
-    entry: BaselineFile, template_root: Path, project_root: Path, *, allow_update: bool
+    entry: BaselineFile,
+    template_root: Path,
+    project_root: Path,
+    *,
+    required: bool,
+    allow_update: bool,
 ) -> bool:
     """Compare one versioned file and offer to update the project's copy.
 
@@ -918,6 +1158,9 @@ def check_versioned_file(
             :func:`carries_version`).
         template_root: Root of the template checkout.
         project_root: Root of the project checkout.
+        required: Whether the project must have this file (see
+            :func:`effective_required`); the caller has already filtered out
+            entries that aren't :func:`is_applicable` at all.
         allow_update: Whether updating may be offered (``False`` under
             ``--no-update``).
 
@@ -937,7 +1180,7 @@ def check_versioned_file(
     if not project_path.is_file():
         # An absent optional file is a deliberately removed feature, not
         # drift; leave it out. The main comparison still reports it as absent.
-        if not entry.required:
+        if not required:
             return False
         cli.warn(f"  The project is missing {rel} (template {template_version or 'unversioned'}).")
         if allow_update and cli.confirm(f"  Copy {rel} from the template into the project?"):
@@ -977,18 +1220,23 @@ def check_versioned_file(
     return True
 
 
-def check_versioned_files(template_root: Path, project_root: Path, *, allow_update: bool) -> None:
+def check_versioned_files(
+    template_root: Path, project_root: Path, flags: FeatureFlags, *, allow_update: bool
+) -> None:
     """Compare every versioned file and offer to update the project's copies.
 
     Runs before the main comparison so outdated copies (whose manifest and
     replay logic may lag the template) are refreshed first. When a script this
     program is running from -- this file or the ``_cli`` module it imports -- is
     itself replaced, the script exits afterwards so the user re-runs the updated
-    version (with its current manifest).
+    version (with its current manifest). Entries tied to a declined feature
+    (:func:`is_applicable` is ``False``) are skipped entirely -- never offered
+    for copy, same as they're never reported as drift in the main comparison.
 
     Args:
         template_root: Root of the template checkout.
         project_root: Root of the project checkout.
+        flags: The project's resolved feature flags.
         allow_update: Whether updating may be offered (``False`` under
             ``--no-update``).
     """
@@ -1000,7 +1248,15 @@ def check_versioned_files(template_root: Path, project_root: Path, *, allow_upda
     updated = 0
     replaced_running = False
     for entry in versioned_entries():
-        if not check_versioned_file(entry, template_root, project_root, allow_update=allow_update):
+        if not is_applicable(entry, flags):
+            continue
+        if not check_versioned_file(
+            entry,
+            template_root,
+            project_root,
+            required=effective_required(entry, flags),
+            allow_update=allow_update,
+        ):
             continue
         updated += 1
         project_path = normcase(normpath(str((project_root / entry.path).resolve())))
@@ -1013,13 +1269,16 @@ def check_versioned_files(template_root: Path, project_root: Path, *, allow_upda
         sys.exit(0)
 
 
-def build_context(template_root: Path, project_root: Path, names: ProjectNames) -> CompareContext:
+def build_context(
+    template_root: Path, project_root: Path, names: ProjectNames, flags: FeatureFlags
+) -> CompareContext:
     """Assemble the comparison context from the project's on-disk state.
 
     Args:
         template_root: Root of the template checkout.
         project_root: Root of the project checkout.
         names: Project-side identity tokens.
+        flags: The project's resolved feature flags.
 
     Returns:
         The context used by :func:`compare_one`.
@@ -1041,7 +1300,7 @@ def build_context(template_root: Path, project_root: Path, names: ProjectNames) 
         dotted=dotted,
         compact=compact,
         ran_cleanup=not (project_root / "scripts" / "template_setup").exists(),
-        has_mkdocs=(project_root / "mkdocs.yml").is_file(),
+        flags=flags,
     )
 
 
@@ -1225,6 +1484,21 @@ def open_diffs_in_vscode(
     cli.success(f"  Opened {len(pairs) - failures} diff(s) with {code_argv[0]}.")
 
 
+# FeatureFlags field name -> human label, in the order printed in the
+# "Feature configuration" section.
+_FEATURE_LABELS: tuple[tuple[str, str], ...] = (
+    ("mkdocs", "mkdocs"),
+    ("keyring", "keyring backend"),
+    ("keyvault", "Azure KeyVault backend"),
+    ("credentials", "credentials dispatcher"),
+    ("hook_no_chained_pwsh", "no-chained-commands hook (powershell)"),
+    ("hook_no_chained_bash", "no-chained-commands hook (bash)"),
+    ("hook_canonical_pwsh", "canonical-commands hook (powershell)"),
+    ("hook_canonical_bash", "canonical-commands hook (bash)"),
+    ("hook_auto_memory", "auto-memory guard hook"),
+)
+
+
 def show_diffs(results: list[Comparison], diff_tool: str | None, project_root: Path) -> None:
     """Present the diffs: open them in VS Code, or print them if it is absent.
 
@@ -1268,12 +1542,24 @@ def main() -> None:
     else:
         cli.info("GitHub user", names.github_user)
 
-    check_versioned_files(template_root, project_root, allow_update=not args.no_update)
+    flags = resolve_feature_flags(project_root)
+    cli.section("Feature configuration")
+    cli.info("Source", flags.source)
+    for gate, label in _FEATURE_LABELS:
+        cli.info(label, "on" if flags.wanted(gate) else "off")
 
-    ctx = build_context(template_root, project_root, names)
-    results = [compare_one(entry, ctx) for entry in MANIFEST]
+    check_versioned_files(template_root, project_root, flags, allow_update=not args.no_update)
+
+    ctx = build_context(template_root, project_root, names, flags)
+    applicable = [entry for entry in MANIFEST if is_applicable(entry, flags)]
+    skipped = [entry for entry in MANIFEST if not is_applicable(entry, flags)]
+    results = [compare_one(entry, ctx) for entry in applicable]
 
     cli.section("Comparison")
+    if skipped:
+        cli.warn(f"  Skipping {len(skipped)} file(s) tied to features this project doesn't have:")
+        for entry in skipped:
+            print(f"    {entry.path}")
     print_results(results, show_all=args.all)
     if args.diff:
         show_diffs(results, args.diff_tool, project_root)
