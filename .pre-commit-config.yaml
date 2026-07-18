@@ -7,13 +7,14 @@
 # accidentally committed secrets before they reach the repo.
 #
 # First-time setup (run once after cloning):
-#   uv run pre-commit install          # install the git hook
-#   uv run pre-commit run --all-files  # optional: check existing files now
+#   uv run pre-commit install                         # commit-time hooks
+#   uv run pre-commit install --hook-type pre-push    # pre-push hooks
+#   uv run pre-commit run --all-files                 # optional: check now
 #
 # To keep hook versions current:
 #   uv run pre-commit autoupdate       # bump all rev: pins to latest
 #
-# Hooks included in this config:
+# Commit-time hooks (run on every `git commit`):
 #   pre-commit-hooks  -- trailing whitespace, EOF newline, YAML/TOML syntax,
 #                        large file guard, line-ending normalization
 #   ruff              -- lint (with --fix) and format
@@ -25,10 +26,20 @@
 #   detect-secrets    -- prevents secrets from being committed; requires a
 #                        baseline file (.secrets.baseline). Create it once with:
 #                          uv run detect-secrets scan > .secrets.baseline
+#
+# Pre-push hooks (run once on `git push`, slower whole-repo gates):
+#   uv-lock-check     -- fails if uv.lock is out of sync with pyproject.toml
+#   uv-audit          -- fails on known-vulnerable dependencies (needs network)
+#   pytest-offline    -- runs the offline test suite (`-m "not integration"`)
 # =============================================================================
 
 default_language_version:
   python: python3.14
+
+# Hooks with no explicit `stages` run at this stage only, so the commit-time
+# suite below does not also re-run on `git push`. The pre-push block sets its
+# own `stages: [pre-push]`.
+default_stages: [pre-commit]
 
 ci:
   autoupdate_schedule: monthly
@@ -78,3 +89,32 @@ repos:
     hooks:
       - id: detect-secrets
         args: ['--baseline', '.secrets.baseline']
+
+  # Pre-push checks: slower, whole-repo gates that run once before `git push`
+  # rather than on every commit. Install with:
+  #   uv run pre-commit install --hook-type pre-push
+  - repo: local
+    hooks:
+      - id: uv-lock-check
+        name: uv lock --locked
+        entry: uv lock --locked
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+      - id: uv-audit
+        name: uv audit
+        entry: uv audit
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+      - id: pytest-offline
+        name: pytest (offline)
+        entry: uv run pytest -m "not integration"
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
