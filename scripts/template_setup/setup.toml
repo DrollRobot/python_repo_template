@@ -1,0 +1,64 @@
+# scripts/template_setup/setup.toml
+#
+# Config-driven template setup. Edit the values below, then run:
+#   uv run scripts/template_setup/setup_new_project.py
+# --dry-run previews every change with nothing applied; -y/--yes skips the
+# single confirmation prompt (still previews first). See
+# scripts/template_setup/README.md for the full field reference.
+
+[project]
+# New project name (any case; both the snake_case import name and the
+# kebab-case distribution name are derived from this). Shipped as the
+# template's own name -- a no-op until you change it.
+name = "python_repo_template"
+
+# Your GitHub username; replaces "DrollRobot" everywhere. Shipped as the
+# template author's own username -- a no-op until you change it.
+github_user = "DrollRobot"
+
+# Python version the project targets (MAJOR.MINOR or MAJOR.MINOR.PATCH).
+python_version = "3.14"
+
+# Initial release version written to pyproject.toml's [project] version.
+# 0.1.0, not the template's own accumulated release number -- a new project
+# has not released anything yet.
+version = "0.1.0"
+
+[license]
+# One of: "mit", "apache", "gnu", "proprietary". No default is a genuine
+# no-op -- the template ships 4 unclaimed candidates and a choice is
+# mandatory (see choose_license.py). This section WILL fail validation on an
+# unedited config; that's deliberate, not a bug.
+key = "mit"
+# Required unless key = "gnu" (the GPL text carries its own notice).
+year = "2026"
+name = ""
+# Required only when key = "proprietary".
+company = ""
+
+[claude]
+# Command hooks, each independently optional -- see the "Claude Code command
+# hooks" section of scripts/template_setup/README.md for what each one does.
+# shell picks which flavor (powershell/bash) to wire in; it is a no-op if
+# both hooks below are false.
+shell = "powershell"
+no_chained_commands = true
+canonical_commands = true
+# Off until you opt in (matches the committed .claude/settings.json today,
+# which wires neither hook pair nor the memory guard).
+auto_memory_guard = false
+
+[features]
+# Each false removes that feature. All default true ("keep everything") so
+# an unedited config changes nothing here. keyring and azure_keyvault are
+# independent -- either can be true without the other.
+mkdocs = true
+keyring = true
+azure_keyvault = true
+
+[git]
+# DESTRUCTIVE: deletes .git and runs `git init`. Refused (as a validation
+# error, before anything else runs) unless the repo still looks like a
+# pristine, un-reinitialized template clone -- see reinit_git.py.
+reinit = false
+branch = "main"

@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "tem
 
 import choose_shell
 
+_BOTH_KINDS = frozenset({"no_chained_commands", "canonical_commands"})
+
 
 def _make_project(tmp_path: Path) -> Path:
     """Create a project root with all four hook files present.
@@ -33,9 +35,8 @@ def _make_project(tmp_path: Path) -> Path:
     """
     hooks = tmp_path / choose_shell.HOOKS_DIR
     hooks.mkdir(parents=True)
-    for spec in choose_shell.SHELLS.values():
-        for name in spec["hooks"]:
-            (hooks / name).write_text("", encoding="utf-8")
+    for name in choose_shell._ALL_HOOK_FILES:
+        (hooks / name).write_text("", encoding="utf-8")
     return tmp_path
 
 
@@ -65,14 +66,23 @@ def test_references_our_hook_ignores_unrelated_entries() -> None:
 
 
 @pytest.mark.unit
-def test_build_entry_has_one_command_per_hook() -> None:
-    """The built entry carries the matcher and one command per chosen hook."""
-    spec = choose_shell.SHELLS["powershell"]
-    entry = choose_shell._build_entry(spec)
-    assert entry["matcher"] == spec["matcher"]
+def test_build_entry_has_one_command_per_kind() -> None:
+    """Both kinds enabled builds an entry with one command for each."""
+    entry = choose_shell._build_entry("powershell", _BOTH_KINDS)
+    assert entry["matcher"] == choose_shell._SHELL_META["powershell"]["matcher"]
     commands = [hook["command"] for hook in entry["hooks"]]
-    assert len(commands) == len(spec["hooks"])
-    assert all(name in command for name, command in zip(spec["hooks"], commands, strict=True))
+    assert len(commands) == 2
+    assert any("no-chained-commands-pwsh.py" in c for c in commands)
+    assert any("canonical-commands-pwsh.py" in c for c in commands)
+
+
+@pytest.mark.unit
+def test_build_entry_with_single_kind_has_one_command() -> None:
+    """Only the requested kind's file is referenced when the other is declined."""
+    entry = choose_shell._build_entry("bash", frozenset({"no_chained_commands"}))
+    commands = [hook["command"] for hook in entry["hooks"]]
+    assert len(commands) == 1
+    assert "no-chained-commands-bash.py" in commands[0]
 
 
 @pytest.mark.unit
@@ -86,7 +96,7 @@ def test_merge_preserves_unrelated_keys_and_entries() -> None:
             ]
         },
     }
-    entry = choose_shell._build_entry(choose_shell.SHELLS["bash"])
+    entry = choose_shell._build_entry("bash", _BOTH_KINDS)
     merged = choose_shell._merge_settings(existing, entry)
 
     assert merged["permissions"] == existing["permissions"]
@@ -97,7 +107,7 @@ def test_merge_preserves_unrelated_keys_and_entries() -> None:
 @pytest.mark.unit
 def test_merge_is_idempotent() -> None:
     """Re-merging replaces our prior entry rather than appending a duplicate."""
-    entry = choose_shell._build_entry(choose_shell.SHELLS["powershell"])
+    entry = choose_shell._build_entry("powershell", _BOTH_KINDS)
     once = choose_shell._merge_settings({}, entry)
     twice = choose_shell._merge_settings(once, entry)
     assert twice["hooks"]["PreToolUse"] == [entry]
@@ -106,8 +116,8 @@ def test_merge_is_idempotent() -> None:
 @pytest.mark.unit
 def test_merge_switching_shells_replaces_entry() -> None:
     """Choosing the other shell drops the previous shell's entry."""
-    ps_entry = choose_shell._build_entry(choose_shell.SHELLS["powershell"])
-    bash_entry = choose_shell._build_entry(choose_shell.SHELLS["bash"])
+    ps_entry = choose_shell._build_entry("powershell", _BOTH_KINDS)
+    bash_entry = choose_shell._build_entry("bash", _BOTH_KINDS)
     merged = choose_shell._merge_settings(choose_shell._merge_settings({}, ps_entry), bash_entry)
     assert merged["hooks"]["PreToolUse"] == [bash_entry]
 
@@ -155,7 +165,12 @@ def test_read_settings_unreadable_returns_none(tmp_path: Path) -> None:
 def test_run_invalid_shell_returns_one(tmp_path: Path) -> None:
     """An unrecognized shell name is rejected without writing anything."""
     root = _make_project(tmp_path)
-    assert choose_shell.run(root, "fish", install=True, assume_yes=True) == 1
+    assert (
+        choose_shell.run(
+            root, "fish", no_chained_commands=True, canonical_commands=True, assume_yes=True
+        )
+        == 1
+    )
     assert not (root / choose_shell.SETTINGS_PATH).exists()
 
 
@@ -165,7 +180,12 @@ def test_run_missing_hook_files_returns_one(tmp_path: Path) -> None:
     """A shell whose hook files are absent is rejected."""
     root = tmp_path
     (root / choose_shell.HOOKS_DIR).mkdir(parents=True)
-    assert choose_shell.run(root, "bash", install=True, assume_yes=True) == 1
+    assert (
+        choose_shell.run(
+            root, "bash", no_chained_commands=True, canonical_commands=True, assume_yes=True
+        )
+        == 1
+    )
 
 
 @pytest.mark.integration
@@ -176,7 +196,12 @@ def test_run_invalid_settings_aborts_without_changes(tmp_path: Path) -> None:
     settings_path = root / choose_shell.SETTINGS_PATH
     settings_path.write_text("{not json", encoding="utf-8")
 
-    assert choose_shell.run(root, "powershell", install=True, assume_yes=True) == 1
+    assert (
+        choose_shell.run(
+            root, "powershell", no_chained_commands=True, canonical_commands=True, assume_yes=True
+        )
+        == 1
+    )
 
     assert settings_path.read_text(encoding="utf-8") == "{not json"
     hooks = root / choose_shell.HOOKS_DIR
@@ -189,7 +214,17 @@ def test_run_invalid_settings_aborts_without_changes(tmp_path: Path) -> None:
 def test_run_dry_run_changes_nothing(tmp_path: Path) -> None:
     """A dry run neither writes settings nor deletes the other shell's hooks."""
     root = _make_project(tmp_path)
-    assert choose_shell.run(root, "powershell", install=True, assume_yes=True, dry_run=True) == 0
+    assert (
+        choose_shell.run(
+            root,
+            "powershell",
+            no_chained_commands=True,
+            canonical_commands=True,
+            assume_yes=True,
+            dry_run=True,
+        )
+        == 0
+    )
     assert not (root / choose_shell.SETTINGS_PATH).exists()
     hooks = root / choose_shell.HOOKS_DIR
     assert (hooks / "canonical-commands-bash.py").exists()
@@ -200,7 +235,12 @@ def test_run_dry_run_changes_nothing(tmp_path: Path) -> None:
 def test_run_writes_settings_and_deletes_unused(tmp_path: Path) -> None:
     """A real run wires the chosen hooks and removes the other shell's files."""
     root = _make_project(tmp_path)
-    assert choose_shell.run(root, "powershell", install=True, assume_yes=True) == 0
+    assert (
+        choose_shell.run(
+            root, "powershell", no_chained_commands=True, canonical_commands=True, assume_yes=True
+        )
+        == 0
+    )
 
     settings = json.loads((root / choose_shell.SETTINGS_PATH).read_text(encoding="utf-8"))
     entry = settings["hooks"]["PreToolUse"][-1]
@@ -214,10 +254,38 @@ def test_run_writes_settings_and_deletes_unused(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 @pytest.mark.functional
-def test_run_decline_removes_all_hooks(tmp_path: Path) -> None:
-    """Declining the hooks deletes every hook file and writes no settings."""
+def test_run_one_kind_only_keeps_only_that_file(tmp_path: Path) -> None:
+    """Declining one kind removes it even for the chosen shell; the other stays."""
     root = _make_project(tmp_path)
-    assert choose_shell.run(root, install=False, assume_yes=True) == 0
+    assert (
+        choose_shell.run(
+            root, "bash", no_chained_commands=True, canonical_commands=False, assume_yes=True
+        )
+        == 0
+    )
+
+    hooks = root / choose_shell.HOOKS_DIR
+    assert (hooks / "no-chained-commands-bash.py").exists()
+    assert not (hooks / "canonical-commands-bash.py").exists()
+    assert not (hooks / "no-chained-commands-pwsh.py").exists()
+    assert not (hooks / "canonical-commands-pwsh.py").exists()
+
+    settings = json.loads((root / choose_shell.SETTINGS_PATH).read_text(encoding="utf-8"))
+    entry = settings["hooks"]["PreToolUse"][-1]
+    commands = [hook["command"] for hook in entry["hooks"]]
+    assert len(commands) == 1
+    assert "no-chained-commands-bash.py" in commands[0]
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_decline_removes_all_hooks(tmp_path: Path) -> None:
+    """Declining both kinds deletes every hook file and writes no settings."""
+    root = _make_project(tmp_path)
+    assert (
+        choose_shell.run(root, no_chained_commands=False, canonical_commands=False, assume_yes=True)
+        == 0
+    )
 
     assert not (root / choose_shell.SETTINGS_PATH).exists()
     hooks = root / choose_shell.HOOKS_DIR
@@ -229,7 +297,16 @@ def test_run_decline_removes_all_hooks(tmp_path: Path) -> None:
 def test_run_decline_dry_run_keeps_hooks(tmp_path: Path) -> None:
     """A declined dry run reports the removal but deletes nothing."""
     root = _make_project(tmp_path)
-    assert choose_shell.run(root, install=False, assume_yes=True, dry_run=True) == 0
+    assert (
+        choose_shell.run(
+            root,
+            no_chained_commands=False,
+            canonical_commands=False,
+            assume_yes=True,
+            dry_run=True,
+        )
+        == 0
+    )
 
     hooks = root / choose_shell.HOOKS_DIR
     for name in choose_shell._ALL_HOOK_FILES:

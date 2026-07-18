@@ -1,22 +1,24 @@
 """
 Shared credential bootstrap utilities for tests and dev scripts.
 
-This module is the public entry point and the *keyring* backend. It has no
-Azure dependency: the optional KeyVault backend lives in ``tests/_keyvault.py``
-and is loaded lazily, so deleting that file (plus the ``keyvault`` dependency
-group in ``pyproject.toml``) removes Azure entirely without touching this file.
+This module is the public, backend-agnostic entry point: it loads settings
+from ``.env`` and routes to whichever backend ``CREDENTIAL_BACKEND`` selects,
+by convention -- ``CREDENTIAL_BACKEND=<name>`` loads ``tests._<name>`` -- with
+no static, source-level dependency on any specific backend. Both
+``tests/_keyring.py`` and ``tests/_keyvault.py`` are loaded lazily by name, so
+deleting either one (plus its own dependency lines in ``pyproject.toml``)
+removes it entirely without touching this file.
 
 Backend selection (CREDENTIAL_BACKEND)
 --------------------------------------
-- ``keyring`` (default): fetch secrets from the OS native keyring (Windows
-  Credential Manager, macOS Keychain, Linux Secret Service). Run
-  ``uv run scripts/setup_credentials.py --type <type>`` once to store them.
-- ``keyvault``: fetch secrets from Azure KeyVault (requires ``tests/_keyvault.py``
-  and the ``keyvault`` dependency group). Set ``CREDENTIAL_BACKEND=keyvault`` in
-  ``.env`` to switch -- no code change needed.
+- ``keyring`` (default, including when unset): ``tests/_keyring.py`` -- OS
+  native keyring (Windows Credential Manager, macOS Keychain, Linux Secret
+  Service).
+- ``keyvault``: ``tests/_keyvault.py`` -- Azure KeyVault.
 
 Calling code stays backend-agnostic: use ``get_user_pass(settings)`` etc. and
-the backend is chosen at runtime from ``.env``.
+the backend is chosen at runtime from ``.env`` -- no code change needed to
+switch.
 
 Credential types (CREDENTIAL_TYPE)
 ----------------------------------
@@ -33,11 +35,11 @@ handle them appropriately.
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from typing import Protocol, cast
 
 _ENV_FILE = Path(__file__).parent.parent / ".env"
-_KEYRING_SERVICE = "python_repo_template"
 
 
 def load_settings(env_file: Path = _ENV_FILE) -> dict[str, str]:
@@ -54,96 +56,44 @@ def load_settings(env_file: Path = _ENV_FILE) -> dict[str, str]:
     return {k: v for k, v in values.items() if v is not None}
 
 
-# ---------------------------------------------------------------------------
-# Optional KeyVault backend -- loaded lazily by name so this module has no
-# static dependency on tests/_keyvault.py or on azure-*. Deleting that file
-# leaves the keyring path (and mypy) untouched.
-# ---------------------------------------------------------------------------
-
-
-class _KeyVaultBackend(Protocol):
-    """Structural contract implemented by ``tests/_keyvault.py``."""
+class _CredentialBackend(Protocol):
+    """Structural contract implemented by every ``tests/_<backend>.py`` module."""
 
     def get_user_pass(self, settings: dict[str, str]) -> tuple[str, str]: ...
     def get_cert_thumbprint(self, settings: dict[str, str]) -> str: ...
     def get_service_principal(self, settings: dict[str, str]) -> tuple[str, str, str]: ...
 
 
-def _keyvault() -> _KeyVaultBackend:
-    """Import and return the KeyVault backend module, or raise a clear error."""
-    import importlib
-
-    try:
-        return cast("_KeyVaultBackend", importlib.import_module("tests._keyvault"))
-    except ModuleNotFoundError as exc:  # KeyVault feature was removed
-        raise RuntimeError(
-            "CREDENTIAL_BACKEND=keyvault but tests/_keyvault.py is missing. "
-            "Restore it and the `keyvault` dependency group, or set "
-            "CREDENTIAL_BACKEND=keyring in .env."
-        ) from exc
-
-
-def _backend(settings: dict[str, str]) -> str:
+def _backend_name(settings: dict[str, str]) -> str:
     return settings.get("CREDENTIAL_BACKEND", "keyring").lower()
 
 
-# ---------------------------------------------------------------------------
-# Credential fetchers -- keyring backend
-# ---------------------------------------------------------------------------
+def _load_backend(name: str) -> _CredentialBackend:
+    """Import and return the ``tests._<name>`` backend module, by convention.
 
+    Deliberately name-agnostic: this function has never heard of "keyring" or
+    "keyvault" specifically. Any ``tests/_<name>.py`` implementing the three
+    methods below is a valid backend, selected purely via ``CREDENTIAL_BACKEND``.
 
-def _fetch_user_pass_from_keyring(settings: dict[str, str]) -> tuple[str, str]:
-    import keyring
+    Args:
+        name: Backend name from ``CREDENTIAL_BACKEND`` (e.g. ``"keyring"``).
 
-    username_key = settings["USERNAME_KEY"]
-    password_key = settings["PASSWORD_KEY"]
-    username = keyring.get_password(_KEYRING_SERVICE, username_key)
-    password = keyring.get_password(_KEYRING_SERVICE, password_key)
-    if not username or not password:
-        raise ValueError(
-            f"Credentials not found in keyring (service='{_KEYRING_SERVICE}', "
-            f"keys='{username_key}', '{password_key}'). "
-            "Run 'uv run scripts/setup_credentials.py --type user_pass' to store them."
-        )
-    return username, password
+    Returns:
+        The imported module, structurally matching ``_CredentialBackend``.
 
-
-def _fetch_cert_thumbprint_from_keyring(settings: dict[str, str]) -> str:
-    import keyring
-
-    thumbprint_key = settings["CERT_THUMBPRINT_KEY"]
-    thumbprint = keyring.get_password(_KEYRING_SERVICE, thumbprint_key)
-    if not thumbprint:
-        raise ValueError(
-            f"Certificate thumbprint not found in keyring "
-            f"(service='{_KEYRING_SERVICE}', key='{thumbprint_key}'). "
-            "Run 'uv run scripts/setup_credentials.py --type cert_thumbprint' to store it."
-        )
-    return thumbprint
-
-
-def _fetch_service_principal_from_keyring(settings: dict[str, str]) -> tuple[str, str, str]:
-    import keyring
-
-    tenant_id_key = settings["TENANT_ID_KEY"]
-    client_id_key = settings["CLIENT_ID_KEY"]
-    client_secret_key = settings["CLIENT_SECRET_KEY"]
-    tenant_id = keyring.get_password(_KEYRING_SERVICE, tenant_id_key)
-    client_id = keyring.get_password(_KEYRING_SERVICE, client_id_key)
-    client_secret = keyring.get_password(_KEYRING_SERVICE, client_secret_key)
-    if not tenant_id or not client_id or not client_secret:
-        raise ValueError(
-            f"Service principal credentials not found in keyring "
-            f"(service='{_KEYRING_SERVICE}', "
-            f"keys='{tenant_id_key}', '{client_id_key}', '{client_secret_key}'). "
-            "Run 'uv run scripts/setup_credentials.py --type service_principal' to store them."
-        )
-    return tenant_id, client_id, client_secret
-
-
-# ---------------------------------------------------------------------------
-# Public dispatchers -- pick the backend at runtime from CREDENTIAL_BACKEND
-# ---------------------------------------------------------------------------
+    Raises:
+        RuntimeError: If ``tests/_<name>.py`` does not exist -- the backend
+            was removed, or the name is misspelled.
+    """
+    module_name = f"tests._{name}"
+    try:
+        return cast("_CredentialBackend", importlib.import_module(module_name))
+    except ModuleNotFoundError as exc:
+        path = module_name.replace(".", "/") + ".py"
+        raise RuntimeError(
+            f"CREDENTIAL_BACKEND={name!r} but {path} is missing. "
+            "Restore it, or set CREDENTIAL_BACKEND to a backend that exists."
+        ) from exc
 
 
 def get_user_pass(settings: dict[str, str]) -> tuple[str, str]:
@@ -152,12 +102,7 @@ def get_user_pass(settings: dict[str, str]) -> tuple[str, str]:
     Returns:
         ``(username, password)``
     """
-    backend = _backend(settings)
-    if backend == "keyring":
-        return _fetch_user_pass_from_keyring(settings)
-    if backend == "keyvault":
-        return _keyvault().get_user_pass(settings)
-    raise ValueError(f"Unknown CREDENTIAL_BACKEND={backend!r}; expected 'keyring' or 'keyvault'.")
+    return _load_backend(_backend_name(settings)).get_user_pass(settings)
 
 
 def get_cert_thumbprint(settings: dict[str, str]) -> str:
@@ -166,12 +111,7 @@ def get_cert_thumbprint(settings: dict[str, str]) -> str:
     Returns:
         Certificate thumbprint string.
     """
-    backend = _backend(settings)
-    if backend == "keyring":
-        return _fetch_cert_thumbprint_from_keyring(settings)
-    if backend == "keyvault":
-        return _keyvault().get_cert_thumbprint(settings)
-    raise ValueError(f"Unknown CREDENTIAL_BACKEND={backend!r}; expected 'keyring' or 'keyvault'.")
+    return _load_backend(_backend_name(settings)).get_cert_thumbprint(settings)
 
 
 def get_service_principal(settings: dict[str, str]) -> tuple[str, str, str]:
@@ -180,9 +120,4 @@ def get_service_principal(settings: dict[str, str]) -> tuple[str, str, str]:
     Returns:
         ``(tenant_id, client_id, client_secret)``
     """
-    backend = _backend(settings)
-    if backend == "keyring":
-        return _fetch_service_principal_from_keyring(settings)
-    if backend == "keyvault":
-        return _keyvault().get_service_principal(settings)
-    raise ValueError(f"Unknown CREDENTIAL_BACKEND={backend!r}; expected 'keyring' or 'keyvault'.")
+    return _load_backend(_backend_name(settings)).get_service_principal(settings)

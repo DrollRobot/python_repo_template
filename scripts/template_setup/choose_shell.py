@@ -1,22 +1,25 @@
 """Optionally install Claude Code command hooks, wired to your primary shell.
 
-The template ships two flavors of two ``PreToolUse`` hooks under
-``.claude/hooks/``:
+The template ships two independent ``PreToolUse`` hooks under
+``.claude/hooks/``, each in a powershell/bash flavor:
 
-    canonical-commands-pwsh.py   no-chained-commands-pwsh.py   (PowerShell)
-    canonical-commands-bash.py   no-chained-commands-bash.py   (Bash)
+    no-chained-commands-pwsh.py   no-chained-commands-bash.py
+    canonical-commands-pwsh.py    canonical-commands-bash.py
 
-Each hook keeps shell invocations consistent so a permission allowlist keeps
-matching. This script first asks whether to install the hooks at all. Decline
-and it deletes all four hook files so none linger. Accept and it asks which
-shell you primarily use, writes the matching pair into ``.claude/settings.json``
-(merging with anything already there), and deletes the unused pair so the
-project ships only the hooks it uses.
+``no-chained-commands`` requires one shell command per tool call, so a
+permission allowlist keeps matching. ``canonical-commands`` keeps shell
+invocation consistent, so you don't need to allow multiple equivalent
+commands. Each hook is independently optional. If at least one is wanted,
+this script asks which shell you primarily use, writes the matching pair
+into ``.claude/settings.json`` (merging with anything already there), and
+deletes every hook file that isn't wanted -- the unused shell's files, and
+either hook kind you declined.
 
 Usage:
     uv run scripts/template_setup/choose_shell.py
     uv run scripts/template_setup/choose_shell.py --shell bash
     uv run scripts/template_setup/choose_shell.py --shell powershell --dry-run
+    uv run scripts/template_setup/choose_shell.py --shell bash --no-canonical-commands
     uv run scripts/template_setup/choose_shell.py --no-hooks
 """
 
@@ -30,33 +33,33 @@ from typing import Any
 
 import _common
 
-# Per-shell wiring. ``hooks`` are the hook files to keep (and reference from
-# settings); ``drop`` are the other shell's files to delete; ``matcher`` is the
-# tool-name regex Claude Code uses to decide when to run them; ``python`` is the
-# interpreter the hook command invokes (stdlib-only hooks, so no venv needed).
-SHELLS = {
-    "powershell": {
-        "matcher": "Bash|PowerShell",
-        "python": "python",
-        "hooks": ["no-chained-commands-pwsh.py", "canonical-commands-pwsh.py"],
-        "drop": ["no-chained-commands-bash.py", "canonical-commands-bash.py"],
-    },
-    "bash": {
-        "matcher": "Bash",
-        "python": "python3",
-        "hooks": ["no-chained-commands-bash.py", "canonical-commands-bash.py"],
-        "drop": ["no-chained-commands-pwsh.py", "canonical-commands-pwsh.py"],
-    },
+# Per-shell wiring shared by both hook kinds: the tool-name regex Claude Code
+# uses to decide when to run them, and the interpreter the hook command
+# invokes (stdlib-only hooks, so no venv needed).
+_SHELL_META = {
+    "powershell": {"matcher": "Bash|PowerShell", "python": "python"},
+    "bash": {"matcher": "Bash", "python": "python3"},
 }
+
+# The two independently-toggleable hook kinds, in display/wiring order.
+_KINDS = ("no_chained_commands", "canonical_commands")
+
+# (kind, shell) -> the hook file that implements it.
+_FILE_BY_KIND_AND_SHELL = {
+    ("no_chained_commands", "powershell"): "no-chained-commands-pwsh.py",
+    ("no_chained_commands", "bash"): "no-chained-commands-bash.py",
+    ("canonical_commands", "powershell"): "canonical-commands-pwsh.py",
+    ("canonical_commands", "bash"): "canonical-commands-bash.py",
+}
+
+# Every hook file the template ships, used to strip stale entries from an
+# existing settings file so re-running this step is idempotent.
+_ALL_HOOK_FILES = set(_FILE_BY_KIND_AND_SHELL.values())
 
 # Directory (relative to the project root) holding the hook scripts, and the
 # committed settings file the hooks are wired into.
 HOOKS_DIR = Path(".claude") / "hooks"
 SETTINGS_PATH = Path(".claude") / "settings.json"
-
-# Every hook file the template ships, used to strip stale entries from an
-# existing settings file so re-running this step is idempotent.
-_ALL_HOOK_FILES = {name for spec in SHELLS.values() for name in spec["hooks"]}
 
 
 def _hook_command(python: str, hook_file: str) -> str:
@@ -90,20 +93,22 @@ def _references_our_hook(entry: dict[str, Any]) -> bool:
     return False
 
 
-def _build_entry(spec: dict[str, Any]) -> dict[str, Any]:
-    """Build the ``PreToolUse`` matcher entry for the chosen shell.
+def _build_entry(shell: str, kinds: frozenset[str]) -> dict[str, Any]:
+    """Build the ``PreToolUse`` matcher entry for the chosen shell and hook kinds.
 
     Args:
-        spec: One value from :data:`SHELLS`.
+        shell: ``powershell`` or ``bash``.
+        kinds: Which hook kinds to include (subset of :data:`_KINDS`).
 
     Returns:
         A matcher entry ready to append to ``hooks.PreToolUse``.
     """
+    meta = _SHELL_META[shell]
+    files = [_FILE_BY_KIND_AND_SHELL[(kind, shell)] for kind in _KINDS if kind in kinds]
     return {
-        "matcher": spec["matcher"],
+        "matcher": meta["matcher"],
         "hooks": [
-            {"type": "command", "command": _hook_command(spec["python"], name)}
-            for name in spec["hooks"]
+            {"type": "command", "command": _hook_command(meta["python"], name)} for name in files
         ],
     }
 
@@ -151,7 +156,7 @@ def _remove_all_hooks(hooks_dir: Path) -> list[str]:
 
 
 def _decline_hooks(hooks_dir: Path, *, dry_run: bool = False) -> int:
-    """Remove all hook files when the user opts out of installing the hooks.
+    """Remove all hook files when neither hook kind is wanted.
 
     Args:
         hooks_dir: The ``.claude/hooks`` directory.
@@ -181,16 +186,21 @@ def run(
     root: Path,
     shell: str | None = None,
     *,
-    install: bool | None = None,
+    no_chained_commands: bool | None = None,
+    canonical_commands: bool | None = None,
     assume_yes: bool = False,
     dry_run: bool = False,
 ) -> int:
-    """Install the chosen shell's hooks into settings, or remove them on decline.
+    """Install the chosen hooks into settings, or remove all of them on decline.
 
     Args:
         root: Project root directory.
-        shell: ``powershell`` or ``bash``; prompt if ``None`` (only when installing).
-        install: Whether to install the hooks at all; prompt if ``None``.
+        shell: ``powershell`` or ``bash``; prompt if ``None`` (only when at
+            least one hook kind is wanted).
+        no_chained_commands: Whether to install the no-chained-commands hook;
+            prompt if ``None``.
+        canonical_commands: Whether to install the canonical-commands hook;
+            prompt if ``None``.
         assume_yes: Skip the confirmation prompt.
         dry_run: Show the plan without changing anything.
 
@@ -202,20 +212,38 @@ def run(
 
     hooks_dir = root / HOOKS_DIR
 
-    if install is None:
-        install = _prompt_install()
-    if not install:
+    if no_chained_commands is None:
+        no_chained_commands = _prompt_kind(
+            "no-chained-commands",
+            "Requires one shell command per tool call, so a permission allowlist keeps matching.",
+        )
+    if canonical_commands is None:
+        canonical_commands = _prompt_kind(
+            "canonical-commands",
+            "Keeps shell invocation consistent, so you don't need to allow multiple equivalent"
+            " commands.",
+        )
+
+    kinds = frozenset(
+        kind
+        for kind, wanted in (
+            ("no_chained_commands", no_chained_commands),
+            ("canonical_commands", canonical_commands),
+        )
+        if wanted
+    )
+    if not kinds:
         return _decline_hooks(hooks_dir, dry_run=dry_run)
 
     if shell is None:
         shell = _prompt_choice()
     shell = shell.lower()
-    if shell not in SHELLS:
-        print(f"  '{shell}' is not valid. Choose from: {', '.join(sorted(SHELLS))}.")
+    if shell not in _SHELL_META:
+        print(f"  '{shell}' is not valid. Choose from: {', '.join(sorted(_SHELL_META))}.")
         return 1
-    spec = SHELLS[shell]
 
-    missing = [name for name in spec["hooks"] if not (hooks_dir / name).exists()]
+    keep = [_FILE_BY_KIND_AND_SHELL[(kind, shell)] for kind in _KINDS if kind in kinds]
+    missing = [name for name in keep if not (hooks_dir / name).exists()]
     if missing:
         print(f"  Missing hook file(s): {', '.join(missing)}. Has setup already run?")
         return 1
@@ -224,11 +252,11 @@ def run(
     existing = _read_settings(settings_path)
     if existing is None:
         return 1
-    drop = [name for name in spec["drop"] if (hooks_dir / name).exists()]
+    drop = sorted(name for name in _ALL_HOOK_FILES - set(keep) if (hooks_dir / name).exists())
 
     _common.info("Shell", shell)
     _common.info("Wire into", str(SETTINGS_PATH))
-    print(f"  Keep: {', '.join(spec['hooks'])}")
+    print(f"  Keep: {', '.join(keep)}")
     if drop:
         print(f"  Delete: {', '.join(drop)}")
 
@@ -237,11 +265,11 @@ def run(
         return 0
 
     print()
-    if not _common.confirm("Apply shell choice?", assume_yes=assume_yes):
+    if not _common.confirm("Apply hook choice?", assume_yes=assume_yes):
         print("  Aborted; nothing changed.")
         return 1
 
-    settings = _merge_settings(existing, _build_entry(spec))
+    settings = _merge_settings(existing, _build_entry(shell, kinds))
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     for name in drop:
@@ -290,22 +318,18 @@ def _read_settings(path: Path) -> dict[str, Any] | None:
     return data
 
 
-def _prompt_install() -> bool:
-    """Ask whether to install the Claude Code command hooks at all.
+def _prompt_kind(label: str, description: str) -> bool:
+    """Ask whether to install one hook kind.
+
+    Args:
+        label: Short hook name shown in the prompt (e.g. ``no-chained-commands``).
+        description: One-line explanation of what the hook does.
 
     Returns:
-        ``True`` to install (and then choose a shell), ``False`` to skip them
-        and remove the hook files.
+        ``True`` to install this hook kind, ``False`` to decline it.
     """
-    print("Claude pre-tool hooks:")
-    print("  1. No chained commands. (allows allowlist to evaluate properly)")
-    print(
-        "  2. Keep command invocation consistent. "
-        "(avoids having to allow multiple similar commands)"
-    )
-    print("Declining removes the hook scripts entirely.")
-    print()
-    return _common.confirm("  Install Claude pre-tool hooks?")
+    print(f"{label}: {description}")
+    return _common.confirm(f"  Install the {label} hook?")
 
 
 def _prompt_choice() -> str:
@@ -314,7 +338,7 @@ def _prompt_choice() -> str:
     Returns:
         The chosen shell key.
     """
-    keys = sorted(SHELLS)
+    keys = sorted(_SHELL_META)
     print("  Available shells:")
     for index, key in enumerate(keys, start=1):
         print(f"    {index}) {key}")
@@ -331,9 +355,19 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--shell", choices=sorted(SHELLS), help="Primary shell to wire in.")
+    group.add_argument("--shell", choices=sorted(_SHELL_META), help="Primary shell to wire in.")
     group.add_argument(
-        "--no-hooks", action="store_true", help="Skip the hooks and remove the hook files."
+        "--no-hooks", action="store_true", help="Skip both hooks and remove all hook files."
+    )
+    parser.add_argument(
+        "--no-chained-commands",
+        action="store_true",
+        help="With --shell, skip the no-chained-commands hook.",
+    )
+    parser.add_argument(
+        "--no-canonical-commands",
+        action="store_true",
+        help="With --shell, skip the canonical-commands hook.",
     )
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt.")
     parser.add_argument(
@@ -341,11 +375,31 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # --no-hooks declines; --shell implies installing; otherwise prompt.
-    install: bool | None = False if args.no_hooks else True if args.shell else None
+    # --no-hooks declines both; --shell implies wanting hooks (each kind can be
+    # negated); otherwise prompt for each kind individually.
+    no_chained_commands: bool | None
+    canonical_commands: bool | None
+    if args.no_hooks:
+        no_chained_commands = False
+        canonical_commands = False
+    elif args.shell:
+        no_chained_commands = not args.no_chained_commands
+        canonical_commands = not args.no_canonical_commands
+    else:
+        no_chained_commands = None
+        canonical_commands = None
 
     root = _common.find_root()
-    sys.exit(run(root, args.shell, install=install, assume_yes=args.yes, dry_run=args.dry_run))
+    sys.exit(
+        run(
+            root,
+            args.shell,
+            no_chained_commands=no_chained_commands,
+            canonical_commands=canonical_commands,
+            assume_yes=args.yes,
+            dry_run=args.dry_run,
+        )
+    )
 
 
 if __name__ == "__main__":

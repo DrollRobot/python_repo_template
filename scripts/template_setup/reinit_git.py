@@ -20,6 +20,12 @@ from pathlib import Path
 
 import _common
 
+# The template's own root commit ("Initial commit"), verified via
+# `git rev-list --max-parents=0 HEAD` in this repo. Used by
+# _is_pristine_template_clone to refuse a config-driven reinit once history
+# has already been replaced once.
+_TEMPLATE_ROOT_COMMIT = "8d3274631068965eb81817971e03468c44c0af98"
+
 
 def _git_output(git: str, args: list[str], cwd: Path) -> str | None:
     """Run a read-only git command and return its stripped stdout.
@@ -44,13 +50,53 @@ def _git_output(git: str, args: list[str], cwd: Path) -> str | None:
     return result.stdout.strip()
 
 
-def run(root: Path, *, branch: str = "main", assume_yes: bool = False) -> int:
+def _is_pristine_template_clone(root: Path) -> bool:
+    """Return whether ``root`` still has the template's original git history.
+
+    Used as a pre-flight guard before a config-driven, non-interactive
+    ``reinit=true`` run (see ``setup_new_project.validate_config``): if
+    history was already replaced by an earlier reinit, this catches it and
+    forces a fail-loud validation error instead of silently skipping the step.
+
+    Not called from :func:`run` or ``main()`` -- a human running
+    ``reinit_git.py`` directly already sees the current branch/origin printed
+    below and must type an explicit confirmation, which is itself the safety
+    check for that path. This guard exists specifically for the zero-prompt,
+    config-driven path, where a mistaken ``reinit = true`` in an edited config
+    could otherwise delete history with no human ever specifically choosing
+    that action for *this* run.
+
+    Note: a shallow clone (``git clone --depth 1``) also fails this check,
+    even on a genuine pristine template clone, because the root commit object
+    isn't present locally. Accepted fail-closed tradeoff -- do a full clone
+    before reinitializing.
+
+    Args:
+        root: Project root directory.
+
+    Returns:
+        ``True`` only if git is available, exactly one root commit exists,
+        and it matches :data:`_TEMPLATE_ROOT_COMMIT`.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return False
+    root_commits = _git_output(git, ["rev-list", "--max-parents=0", "HEAD"], root)
+    if root_commits is None:
+        return False
+    return root_commits.split() == [_TEMPLATE_ROOT_COMMIT]
+
+
+def run(
+    root: Path, *, branch: str = "main", assume_yes: bool = False, dry_run: bool = False
+) -> int:
     """Delete ``.git`` and initialize a new repository.
 
     Args:
         root: Project root directory.
         branch: Name for the initial branch of the new repository.
         assume_yes: Skip the confirmation prompt.
+        dry_run: Show the plan without changing anything.
 
     Returns:
         Process exit code (0 on success, 1 if aborted or git is missing).
@@ -73,6 +119,10 @@ def run(root: Path, *, branch: str = "main", assume_yes: bool = False) -> int:
         print("  No .git directory present; will initialize a new repository.")
 
     print(f"  Then run: git init -b {branch}")
+
+    if dry_run:
+        print("\n  (dry run -- nothing changed)")
+        return 0
 
     print()
     if not _common.confirm("Delete .git and start a fresh history?", assume_yes=assume_yes):

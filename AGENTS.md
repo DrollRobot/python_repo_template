@@ -12,27 +12,22 @@ conventions, required checks, and how to run tests.
 # Agent Rules
 
 ## Package Purpose
-
 <!-- FIXME: Describe what this package does, who consumes it, and any key
      constraints (e.g. "credentials are always supplied by the caller"). -->
 
 ## General rules
-
 - All environment specific values should live in .env, not in source.
 - Fail early, fail loudly. Avoid default values that could mask errors.
 
 ## Code Formatting and Style
-
 - Follow pep8 style guidelines.
 - Always include thorough docstrings for all functions and classes.
 - Line length limit: 100 characters.
 - Use type hints for all function signatures.
 
 ## Testing
-
 For instructions on writing and running tests: [AGENTS.TESTING.md](AGENTS.TESTING.md).
 ALWAYS READ BEFORE WRITING NEW CODE.
 
 ## Build and Release
-
 For build and release procedures, see [AGENTS.RELEASING.md](AGENTS.RELEASING.md).

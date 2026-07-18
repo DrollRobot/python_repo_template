@@ -141,6 +141,136 @@ def write_text(path: Path, text: str) -> None:
         handle.write(text)
 
 
+def remove_matching(text: str, predicate: Callable[[str], bool]) -> tuple[str, list[str]]:
+    """Drop every whole line whose stripped form satisfies ``predicate``.
+
+    Args:
+        text: File contents.
+        predicate: Returns ``True`` for a stripped line that should be removed.
+
+    Returns:
+        A ``(new_text, removed_lines)`` tuple.
+    """
+    kept: list[str] = []
+    removed: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if predicate(line.strip()):
+            removed.append(line.strip())
+        else:
+            kept.append(line)
+    return "".join(kept), removed
+
+
+def remove_block(text: str, header: str) -> tuple[str, list[str]]:
+    """Remove a block that starts at ``header`` and runs to the next blank line.
+
+    A blank line immediately preceding the block is removed with it, so the
+    surrounding file keeps a single separating blank line rather than two.
+
+    Args:
+        text: File contents.
+        header: The exact (stripped) text of the block's first line.
+
+    Returns:
+        A ``(new_text, removed_lines)`` tuple.
+    """
+    lines = text.splitlines(keepends=True)
+    kept: list[str] = []
+    removed: list[str] = []
+    index = 0
+    while index < len(lines):
+        if lines[index].strip() == header:
+            if kept and not kept[-1].strip():
+                kept.pop()
+            removed.append(lines[index].strip())
+            index += 1
+            while index < len(lines) and lines[index].strip():
+                removed.append(lines[index].strip())
+                index += 1
+            continue
+        kept.append(lines[index])
+        index += 1
+    return "".join(kept), removed
+
+
+def remove_section(text: str, header: str, stop_prefix: str) -> tuple[str, list[str]]:
+    """Remove a heading section from ``header`` up to the next heading.
+
+    The section runs from its heading line until (but not including) the next
+    line whose stripped form starts with ``stop_prefix`` (or end of file). The
+    blank line that separated it from the following heading is consumed too.
+
+    Args:
+        text: File contents.
+        header: The exact (stripped) text of the section heading.
+        stop_prefix: Prefix that marks the start of the next section.
+
+    Returns:
+        A ``(new_text, removed_lines)`` tuple.
+    """
+    lines = text.splitlines(keepends=True)
+    kept: list[str] = []
+    removed: list[str] = []
+    index = 0
+    while index < len(lines):
+        if lines[index].strip() == header:
+            removed.append(lines[index].strip())
+            index += 1
+            while index < len(lines) and not lines[index].lstrip().startswith(stop_prefix):
+                if lines[index].strip():
+                    removed.append(lines[index].strip())
+                index += 1
+            continue
+        kept.append(lines[index])
+        index += 1
+    return "".join(kept), removed
+
+
+def remove_region(
+    text: str, start_text: str, end_marker: str, *, blank: str
+) -> tuple[str, list[str]]:
+    """Remove a multi-paragraph region between two markers.
+
+    Removes from the line equal to ``start_text`` through the first later line
+    that contains ``end_marker`` (inclusive), spanning any blank lines in
+    between. One adjacent blank line is trimmed to avoid leaving a double gap:
+    ``blank="leading"`` drops the blank before the region, ``blank="trailing"``
+    the blank after it.
+
+    Args:
+        text: File contents.
+        start_text: The exact (stripped) text of the region's first line.
+        end_marker: Substring identifying the region's last line.
+        blank: Which adjacent blank line to trim (``"leading"`` or ``"trailing"``).
+
+    Returns:
+        A ``(new_text, removed_lines)`` tuple.
+    """
+    lines = text.splitlines(keepends=True)
+    kept: list[str] = []
+    removed: list[str] = []
+    index = 0
+    while index < len(lines):
+        if lines[index].strip() == start_text:
+            if blank == "leading" and kept and not kept[-1].strip():
+                kept.pop()
+            removed.append(lines[index].strip())
+            index += 1
+            while index < len(lines):
+                if lines[index].strip():
+                    removed.append(lines[index].strip())
+                ended = end_marker in lines[index]
+                index += 1
+                if ended:
+                    break
+            if blank == "trailing" and index < len(lines) and not lines[index].strip():
+                index += 1
+            continue
+        kept.append(lines[index])
+        index += 1
+    return "".join(kept), removed
+
+
 def force_remove(func: Callable[[str], object], path: str, _exc: BaseException) -> None:
     """Clear a read-only bit and retry a failed deletion (``shutil.rmtree`` hook).
 

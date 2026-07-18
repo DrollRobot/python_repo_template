@@ -1,18 +1,18 @@
-"""Unit tests for the checklist orchestrator in scripts/template_setup/setup_new_project.py.
+"""Unit tests for the config-driven orchestrator in scripts/template_setup/setup_new_project.py.
 
 The template_setup folder is not a package, so the module is imported by
 adding the folder to sys.path, mirroring how the setup scripts import their
 shared _common module.
 
 This file is itself a dev-script test: cleanup.py matches it to
-scripts/template_setup/setup_new_project.py and deletes it along with the rest
-of the scaffolding, so it never lingers in a project started from the template.
+scripts/template_setup/setup_new_project.py and deletes it along with the
+rest of the scaffolding, so it never lingers in a project started from the
+template.
 """
 
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -20,57 +20,101 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
+import _common
 import choose_license
 import choose_shell
+import find_fixmes
+import protect_auto_memory
+import reinit_git
+import remove_credentials
+import remove_keyring
+import remove_keyvault
+import remove_mkdocs
 import rename_project
+import reset_changelog
+import set_github_user
+import set_python_version
+import set_version
 import setup_new_project
+import strip_template_headers
 
-pytestmark = pytest.mark.unit
+VALID_TOML = """
+[project]
+name = "my-project"
+github_user = "someone"
+python_version = "3.14"
+version = "0.1.0"
 
-CANONICAL_KEYS = [
-    "strip_template_headers",
-    "rename_project",
-    "set_github_user",
-    "set_python_version",
-    "set_version",
-    "reset_changelog",
-    "choose_shell",
-    "protect_auto_memory",
-    "choose_license",
-    "remove_mkdocs",
-    "find_fixmes",
-    "reinit_git",
-    "cleanup",
-]
+[license]
+key = "mit"
+year = "2026"
+name = "Ada Lovelace"
+company = ""
 
-ALL_SELECTED = frozenset(range(1, len(CANONICAL_KEYS) + 1))
+[claude]
+shell = "powershell"
+no_chained_commands = true
+canonical_commands = true
+auto_memory_guard = false
 
+[features]
+mkdocs = true
+keyring = true
+azure_keyvault = true
 
-def _scripted_input(lines: list[str]) -> Callable[[str], str]:
-    """Return an input_fn that replays the given lines in order."""
-    iterator: Iterator[str] = iter(lines)
-
-    def fake_input(prompt: str) -> str:
-        return next(iterator)
-
-    return fake_input
-
-
-def _fake_step(key: str, log: list[str], *, exit_code: int = 0) -> setup_new_project.Step:
-    """Build a Step whose gather/execute record their calls in ``log``."""
-
-    def gather(root: Path) -> dict[str, Any]:
-        log.append(f"gather:{key}")
-        return {"key": key}
-
-    def execute(root: Path, params: dict[str, Any]) -> int:
-        log.append(f"execute:{params['key']}")
-        return exit_code
-
-    return setup_new_project.Step(key, key, gather, execute)
+[git]
+reinit = false
+branch = "main"
+"""
 
 
-def _recording_run(calls: list[dict[str, Any]], exit_code: int = 0) -> Callable[..., int]:
+def _valid_raw() -> dict[str, Any]:
+    """Return a fresh, valid parsed-TOML dict matching VALID_TOML."""
+    return {
+        "project": {
+            "name": "my-project",
+            "github_user": "someone",
+            "python_version": "3.14",
+            "version": "0.1.0",
+        },
+        "license": {"key": "mit", "year": "2026", "name": "Ada Lovelace", "company": ""},
+        "claude": {
+            "shell": "powershell",
+            "no_chained_commands": True,
+            "canonical_commands": True,
+            "auto_memory_guard": False,
+        },
+        "features": {"mkdocs": True, "keyring": True, "azure_keyvault": True},
+        "git": {"reinit": False, "branch": "main"},
+    }
+
+
+def _make_config(**overrides: Any) -> setup_new_project.Config:
+    """Build a valid Config, overriding individual fields for a specific test."""
+    fields: dict[str, Any] = {
+        "name": "my-project",
+        "github_user": "someone",
+        "python_version": "3.14",
+        "version": "0.1.0",
+        "license_key": "mit",
+        "license_year": "2026",
+        "license_name": "Ada Lovelace",
+        "license_company": "",
+        "shell": "powershell",
+        "no_chained_commands": True,
+        "canonical_commands": True,
+        "auto_memory_guard": False,
+        "mkdocs": True,
+        "keyring": True,
+        "azure_keyvault": True,
+        "reinit": False,
+        "branch": "main",
+    }
+    fields.update(overrides)
+    return setup_new_project.Config(**fields)
+
+
+def _recording_run(calls: list[dict[str, Any]], exit_code: int = 0) -> Any:
     """Return a stand-in for a sub-script run() that records its arguments."""
 
     def run(*args: Any, **kwargs: Any) -> int:
@@ -81,323 +125,626 @@ def _recording_run(calls: list[dict[str, Any]], exit_code: int = 0) -> Callable[
 
 
 # ---------------------------------------------------------------------------
-# parse_menu_input
+# _load_toml
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("raw", ["", "   ", "help", "?"])
-def test_parse_blank_and_help_input_is_help(raw: str) -> None:
-    command = setup_new_project.parse_menu_input(raw, 13)
-    assert command.action == "help"
-    assert command.message
+@pytest.mark.unit
+def test_load_toml_missing_file_returns_error(tmp_path: Path) -> None:
+    """A missing config file is reported, not raised."""
+    raw, error = setup_new_project._load_toml(tmp_path / "missing.toml")
+    assert raw == {}
+    assert error is not None
+    assert "not found" in error
 
 
-@pytest.mark.parametrize("raw", ["run", " RUN ", "Run"])
-def test_parse_run_command(raw: str) -> None:
-    assert setup_new_project.parse_menu_input(raw, 13).action == "run"
+@pytest.mark.unit
+def test_load_toml_valid_file_returns_parsed_dict(tmp_path: Path) -> None:
+    """A well-formed file parses with no error."""
+    path = tmp_path / "setup.toml"
+    path.write_text(VALID_TOML, encoding="utf-8")
+    raw, error = setup_new_project._load_toml(path)
+    assert error is None
+    assert raw["project"]["name"] == "my-project"
 
 
-@pytest.mark.parametrize("raw", ["q", "quit", "Q", " QUIT "])
-def test_parse_quit_commands(raw: str) -> None:
-    assert setup_new_project.parse_menu_input(raw, 13).action == "quit"
-
-
-def test_parse_all_and_none() -> None:
-    assert setup_new_project.parse_menu_input("all", 13).action == "all"
-    assert setup_new_project.parse_menu_input("none", 13).action == "none"
-
-
-def test_parse_single_number_toggles() -> None:
-    command = setup_new_project.parse_menu_input("3", 13)
-    assert command.action == "toggle"
-    assert command.indices == frozenset({3})
-
-
-def test_parse_space_and_comma_separated() -> None:
-    command = setup_new_project.parse_menu_input("1 3,5", 13)
-    assert command.action == "toggle"
-    assert command.indices == frozenset({1, 3, 5})
-
-
-def test_parse_range_expands() -> None:
-    command = setup_new_project.parse_menu_input("5-8", 13)
-    assert command.action == "toggle"
-    assert command.indices == frozenset({5, 6, 7, 8})
-
-
-def test_parse_mixed_numbers_and_ranges() -> None:
-    command = setup_new_project.parse_menu_input("1, 3-4 13", 13)
-    assert command.action == "toggle"
-    assert command.indices == frozenset({1, 3, 4, 13})
-
-
-def test_parse_duplicates_collapse() -> None:
-    command = setup_new_project.parse_menu_input("2 2,1-2", 13)
-    assert command.action == "toggle"
-    assert command.indices == frozenset({1, 2})
-
-
-@pytest.mark.parametrize("raw", ["0", "14", "1-14", "0-3"])
-def test_parse_rejects_out_of_range(raw: str) -> None:
-    command = setup_new_project.parse_menu_input(raw, 13)
-    assert command.action == "error"
-    assert raw.strip() in command.message
-
-
-def test_parse_rejects_reversed_range() -> None:
-    command = setup_new_project.parse_menu_input("5-2", 13)
-    assert command.action == "error"
-    assert "5-2" in command.message
-
-
-@pytest.mark.parametrize("raw", ["banana", "1-", "-3", "1--3", "run 3", "1 banana 3"])
-def test_parse_rejects_garbage_and_whole_line(raw: str) -> None:
-    command = setup_new_project.parse_menu_input(raw, 13)
-    assert command.action == "error"
-    assert command.indices == frozenset()
+@pytest.mark.unit
+def test_load_toml_malformed_file_returns_error(tmp_path: Path) -> None:
+    """Invalid TOML syntax is reported, not raised."""
+    path = tmp_path / "setup.toml"
+    path.write_text("this is not [ valid toml", encoding="utf-8")
+    raw, error = setup_new_project._load_toml(path)
+    assert raw == {}
+    assert error is not None
+    assert "not valid TOML" in error
 
 
 # ---------------------------------------------------------------------------
-# apply_toggles / render_menu
+# validate_config
 # ---------------------------------------------------------------------------
 
 
-def test_apply_toggles_unchecks_and_rechecks() -> None:
-    selected = frozenset({1, 2, 3})
-    unchecked = setup_new_project.apply_toggles(selected, frozenset({2, 4}))
-    assert unchecked == frozenset({1, 3, 4})
-    rechecked = setup_new_project.apply_toggles(unchecked, frozenset({2, 4}))
-    assert rechecked == selected
+@pytest.mark.unit
+def test_validate_config_all_valid_returns_config_and_no_problems(tmp_path: Path) -> None:
+    """A fully valid config produces a Config and an empty problem list."""
+    config, problems = setup_new_project.validate_config(tmp_path, _valid_raw())
+    assert problems == []
+    assert config is not None
+    assert config.name == "my-project"
+    assert config.license_key == "mit"
 
 
-def test_render_menu_marks_checked_and_unchecked() -> None:
-    menu = setup_new_project.render_menu(setup_new_project.STEPS, frozenset({1}))
-    assert "[x]  1." in menu
-    assert "[ ]  2." in menu
-    assert "13." in menu
+@pytest.mark.unit
+def test_validate_config_missing_table_reports_problem(tmp_path: Path) -> None:
+    """A missing top-level table is reported and no Config is built."""
+    raw = _valid_raw()
+    del raw["project"]
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[project]" in problem for problem in problems)
 
 
-def test_render_menu_flags_destructive_steps() -> None:
-    menu = setup_new_project.render_menu(setup_new_project.STEPS, ALL_SELECTED)
-    destructive_rows = [line for line in menu.splitlines() if "[DESTRUCTIVE]" in line]
-    assert len(destructive_rows) == 2
-    assert any("Re-initialize git" in line for line in destructive_rows)
-    assert any("scaffolding" in line for line in destructive_rows)
+@pytest.mark.unit
+def test_validate_config_missing_key_reports_problem(tmp_path: Path) -> None:
+    """A missing key within a present table is reported."""
+    raw = _valid_raw()
+    del raw["project"]["name"]
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[project].name" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_invalid_name_reports_problem(tmp_path: Path) -> None:
+    """A name that can't derive valid package identifiers is reported."""
+    raw = _valid_raw()
+    raw["project"]["name"] = "???"
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[project].name" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_invalid_python_version_reports_problem(tmp_path: Path) -> None:
+    """An invalid Python version string is reported."""
+    raw = _valid_raw()
+    raw["project"]["python_version"] = "not-a-version"
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[project].python_version" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_invalid_version_reports_problem(tmp_path: Path) -> None:
+    """An invalid project version string is reported."""
+    raw = _valid_raw()
+    raw["project"]["version"] = "not-a-version"
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[project].version" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_invalid_license_key_reports_problem(tmp_path: Path) -> None:
+    """A license key outside the four candidates is reported."""
+    raw = _valid_raw()
+    raw["license"]["key"] = "wtfpl"
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[license].key" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_license_gnu_skips_holder_requirement(tmp_path: Path) -> None:
+    """The GNU license needs no year/name/company."""
+    raw = _valid_raw()
+    raw["license"] = {"key": "gnu", "year": "", "name": "", "company": ""}
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert problems == []
+    assert config is not None
+    assert config.license_key == "gnu"
+
+
+@pytest.mark.unit
+def test_validate_config_license_mit_requires_year_and_name(tmp_path: Path) -> None:
+    """MIT requires both a copyright year and holder name."""
+    raw = _valid_raw()
+    raw["license"] = {"key": "mit", "year": "", "name": "", "company": ""}
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("year" in problem for problem in problems)
+    assert any("name" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_proprietary_requires_company(tmp_path: Path) -> None:
+    """Proprietary additionally requires a company name."""
+    raw = _valid_raw()
+    raw["license"] = {"key": "proprietary", "year": "2026", "name": "Ada", "company": ""}
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("company" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_invalid_shell_reports_problem(tmp_path: Path) -> None:
+    """A shell outside powershell/bash is reported."""
+    raw = _valid_raw()
+    raw["claude"]["shell"] = "fish"
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[claude].shell" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_empty_branch_reports_problem(tmp_path: Path) -> None:
+    """A blank branch name is reported."""
+    raw = _valid_raw()
+    raw["git"]["branch"] = "   "
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[git].branch" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_non_bool_feature_flag_reports_problem(tmp_path: Path) -> None:
+    """A string where a boolean is expected is reported, not silently truthy."""
+    raw = _valid_raw()
+    raw["features"]["mkdocs"] = "true"
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[features].mkdocs" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_reinit_true_pristine_clone_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """reinit=true is accepted when the pristine-clone guard passes."""
+    monkeypatch.setattr(reinit_git, "_is_pristine_template_clone", lambda root: True)
+    raw = _valid_raw()
+    raw["git"]["reinit"] = True
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert problems == []
+    assert config is not None
+    assert config.reinit is True
+
+
+@pytest.mark.unit
+def test_validate_config_reinit_true_not_pristine_reports_problem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """reinit=true is rejected -- with zero changes made -- when the guard fails."""
+    monkeypatch.setattr(reinit_git, "_is_pristine_template_clone", lambda root: False)
+    raw = _valid_raw()
+    raw["git"]["reinit"] = True
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("pristine template clone" in problem for problem in problems)
 
 
 # ---------------------------------------------------------------------------
-# menu_loop
+# build_steps
 # ---------------------------------------------------------------------------
 
-
-def test_menu_loop_starts_all_selected() -> None:
-    result = setup_new_project.menu_loop(
-        setup_new_project.STEPS, input_fn=_scripted_input(["run"]), print_fn=lambda _: None
-    )
-    assert result == ALL_SELECTED
-
-
-def test_menu_loop_toggle_then_run() -> None:
-    result = setup_new_project.menu_loop(
-        setup_new_project.STEPS, input_fn=_scripted_input(["3", "run"]), print_fn=lambda _: None
-    )
-    assert result == ALL_SELECTED - {3}
+_ALWAYS_ON_KEYS = [
+    "strip_template_headers",
+    "rename_project",
+    "set_github_user",
+    "set_python_version",
+    "set_version",
+    "reset_changelog",
+    "choose_shell",
+    "protect_auto_memory",
+    "choose_license",
+]
 
 
-def test_menu_loop_blank_enter_shows_hint_not_run() -> None:
-    printed: list[str] = []
-    result = setup_new_project.menu_loop(
-        setup_new_project.STEPS, input_fn=_scripted_input(["", "q"]), print_fn=printed.append
-    )
-    assert result is None
-    assert any("'run' to execute" in text for text in printed)
+@pytest.mark.unit
+def test_build_steps_canonical_order_all_kept() -> None:
+    """With every feature kept and reinit off, only the always-on steps run."""
+    steps = setup_new_project.build_steps(_make_config())
+    assert [step.key for step in steps] == _ALWAYS_ON_KEYS
 
 
-def test_menu_loop_quit_returns_none() -> None:
-    result = setup_new_project.menu_loop(
-        setup_new_project.STEPS, input_fn=_scripted_input(["q"]), print_fn=lambda _: None
-    )
-    assert result is None
+@pytest.mark.unit
+def test_build_steps_includes_remove_mkdocs_when_declined() -> None:
+    """mkdocs=false adds the remove_mkdocs step at the end."""
+    steps = setup_new_project.build_steps(_make_config(mkdocs=False))
+    assert steps[-1].key == "remove_mkdocs"
 
 
-def test_menu_loop_run_with_empty_selection_reprompts() -> None:
-    printed: list[str] = []
-    result = setup_new_project.menu_loop(
-        setup_new_project.STEPS,
-        input_fn=_scripted_input(["none", "run", "q"]),
-        print_fn=printed.append,
-    )
-    assert result is None
-    assert any("No steps selected" in text for text in printed)
+@pytest.mark.unit
+def test_build_steps_includes_remove_keyring_when_declined() -> None:
+    """keyring=false adds the remove_keyring step."""
+    steps = setup_new_project.build_steps(_make_config(keyring=False))
+    keys = [step.key for step in steps]
+    assert "remove_keyring" in keys
+    assert "remove_keyvault" not in keys
+    assert "remove_credentials" not in keys
 
 
-def test_menu_loop_invalid_input_reprompts() -> None:
-    printed: list[str] = []
-    result = setup_new_project.menu_loop(
-        setup_new_project.STEPS,
-        input_fn=_scripted_input(["banana", "run"]),
-        print_fn=printed.append,
-    )
-    assert result == ALL_SELECTED
-    assert any("banana" in text for text in printed)
+@pytest.mark.unit
+def test_build_steps_includes_remove_keyvault_when_declined() -> None:
+    """azure_keyvault=false adds the remove_keyvault step, independent of keyring."""
+    steps = setup_new_project.build_steps(_make_config(azure_keyvault=False))
+    keys = [step.key for step in steps]
+    assert "remove_keyvault" in keys
+    assert "remove_keyring" not in keys
+    assert "remove_credentials" not in keys
 
 
-def test_menu_loop_none_then_all_restores() -> None:
-    result = setup_new_project.menu_loop(
-        setup_new_project.STEPS,
-        input_fn=_scripted_input(["none", "all", "run"]),
-        print_fn=lambda _: None,
-    )
-    assert result == ALL_SELECTED
+@pytest.mark.unit
+def test_build_steps_includes_remove_credentials_only_when_both_declined() -> None:
+    """remove_credentials only appears once both backends are declined."""
+    steps = setup_new_project.build_steps(_make_config(keyring=False, azure_keyvault=False))
+    keys = [step.key for step in steps]
+    assert keys.index("remove_keyring") < keys.index("remove_credentials")
+    assert keys.index("remove_keyvault") < keys.index("remove_credentials")
+    assert keys[-1] == "remove_credentials"
 
 
-def test_menu_loop_eof_aborts() -> None:
-    def raising_input(prompt: str) -> str:
-        raise EOFError
-
-    result = setup_new_project.menu_loop(
-        setup_new_project.STEPS, input_fn=raising_input, print_fn=lambda _: None
-    )
-    assert result is None
+@pytest.mark.unit
+def test_build_steps_includes_reinit_when_requested() -> None:
+    """reinit=true adds the destructive reinit_git step last."""
+    steps = setup_new_project.build_steps(_make_config(reinit=True))
+    assert steps[-1].key == "reinit_git"
+    assert steps[-1].destructive is True
 
 
-# ---------------------------------------------------------------------------
-# step registry
-# ---------------------------------------------------------------------------
-
-
-def test_registry_order_is_canonical() -> None:
-    assert [step.key for step in setup_new_project.STEPS] == CANONICAL_KEYS
-
-
-def test_registry_cleanup_last_and_destructive_flags() -> None:
-    assert setup_new_project.STEPS[-1].key == "cleanup"
-    destructive = {step.key for step in setup_new_project.STEPS if step.destructive}
-    assert destructive == {"reinit_git", "cleanup"}
-
-
-def test_paramless_gathers_return_empty(tmp_path: Path) -> None:
-    paramless = {
-        "strip_template_headers",
-        "reset_changelog",
-        "remove_mkdocs",
-        "find_fixmes",
-        "cleanup",
-    }
-    for step in setup_new_project.STEPS:
-        if step.key in paramless:
-            assert step.gather(tmp_path) == {}
+@pytest.mark.unit
+def test_build_steps_find_fixmes_never_included() -> None:
+    """find_fixmes is never part of the built step list -- it runs separately."""
+    steps = setup_new_project.build_steps(_make_config(mkdocs=False, reinit=True))
+    assert "find_fixmes" not in [step.key for step in steps]
 
 
 # ---------------------------------------------------------------------------
-# execute_steps
+# Step binders forward assume_yes=True and the right arguments
 # ---------------------------------------------------------------------------
 
 
-def test_execute_steps_runs_only_selected_in_registry_order(tmp_path: Path) -> None:
-    log: list[str] = []
-    steps = [_fake_step("a", log), _fake_step("b", log), _fake_step("c", log)]
-    failed = setup_new_project.execute_steps(tmp_path, steps, frozenset({1, 3}))
-    assert failed == []
-    assert log == ["gather:a", "execute:a", "gather:c", "execute:c"]
-
-
-def test_execute_steps_gathers_just_in_time(tmp_path: Path) -> None:
-    log: list[str] = []
-    steps = [_fake_step("a", log), _fake_step("b", log)]
-    setup_new_project.execute_steps(tmp_path, steps, frozenset({1, 2}))
-    assert log == ["gather:a", "execute:a", "gather:b", "execute:b"]
-
-
-def test_execute_steps_collects_failures(tmp_path: Path) -> None:
-    log: list[str] = []
-    steps = [
-        _fake_step("a", log),
-        _fake_step("b", log, exit_code=1),
-        _fake_step("c", log),
-    ]
-    failed = setup_new_project.execute_steps(tmp_path, steps, frozenset({1, 2, 3}))
-    assert failed == ["b"]
-    assert "execute:c" in log
-
-
-def test_execute_passes_assume_yes_true(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    sample_params: dict[str, dict[str, Any]] = {
-        "strip_template_headers": {},
-        "rename_project": {"name": "my-project"},
-        "set_github_user": {"username": "someone"},
-        "set_python_version": {"version": "3.14"},
-        "set_version": {"version": "0.1.0"},
-        "reset_changelog": {},
-        "choose_shell": {"install": True, "shell": "bash"},
-        "protect_auto_memory": {"install": True},
-        "choose_license": {"key": "mit", "year": "2026", "name": "Ada"},
-        "remove_mkdocs": {},
-        "reinit_git": {"branch": "main"},
-        "cleanup": {},
-    }
-    for step in setup_new_project.STEPS:
-        if step.key == "find_fixmes":
-            continue  # read-only report; takes no assume_yes
-        calls: list[dict[str, Any]] = []
-        module = getattr(setup_new_project, step.key)
-        monkeypatch.setattr(module, "run", _recording_run(calls))
-        assert step.execute(tmp_path, sample_params[step.key]) == 0
-        assert calls[0]["kwargs"].get("assume_yes") is True, step.key
-
-
-def test_execute_license_forwards_gathered_params(
+@pytest.mark.unit
+def test_step_rename_forwards_name_and_assume_yes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(choose_license, "run", _recording_run(calls))
-    step = setup_new_project.STEPS[CANONICAL_KEYS.index("choose_license")]
-    step.execute(tmp_path, {"key": "gnu"})
-    assert calls[0]["kwargs"]["key"] == "gnu"
-    assert calls[0]["kwargs"]["assume_yes"] is True
+    monkeypatch.setattr(rename_project, "run", _recording_run(calls))
+    step = setup_new_project.build_steps(_make_config(name="other-name"))[1]
+    assert step.key == "rename_project"
+    step.call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path, "other-name")
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
 
 
-def test_execute_shell_forwards_install_and_shell(
+@pytest.mark.unit
+def test_step_github_user_forwards_username(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(set_github_user, "run", _recording_run(calls))
+    step = setup_new_project.build_steps(_make_config(github_user="octocat"))[2]
+    step.call(tmp_path, True)
+    assert calls[0]["args"] == (tmp_path, "octocat")
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": True}
+
+
+@pytest.mark.unit
+def test_step_python_version_forwards_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(set_python_version, "run", _recording_run(calls))
+    step = setup_new_project.build_steps(_make_config(python_version="3.13"))[3]
+    step.call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path, "3.13")
+
+
+@pytest.mark.unit
+def test_step_version_forwards_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(set_version, "run", _recording_run(calls))
+    step = setup_new_project.build_steps(_make_config(version="1.2.3"))[4]
+    step.call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path, "1.2.3")
+
+
+@pytest.mark.unit
+def test_step_strip_headers_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(strip_template_headers, "run", _recording_run(calls))
+    step = setup_new_project.build_steps(_make_config())[0]
+    step.call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
+def test_step_reset_changelog_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(reset_changelog, "run", _recording_run(calls))
+    step = setup_new_project.build_steps(_make_config())[5]
+    step.call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+
+
+@pytest.mark.unit
+def test_step_choose_shell_forwards_hook_kinds_and_shell(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(choose_shell, "run", _recording_run(calls))
-    step = setup_new_project.STEPS[CANONICAL_KEYS.index("choose_shell")]
-    step.execute(tmp_path, {"install": False, "shell": None})
-    assert calls[0]["args"] == (tmp_path, None)
-    assert calls[0]["kwargs"]["install"] is False
-
-
-# ---------------------------------------------------------------------------
-# param gathering
-# ---------------------------------------------------------------------------
-
-
-def test_prompt_valid_reprompts_until_valid() -> None:
-    answers = iter(["???", "my-project"])
-
-    def fake_prompt(prompt: str, *, default: str = "") -> str:
-        return next(answers)
-
-    value = setup_new_project._prompt_valid(
-        "New project name", rename_project.derive_names, prompt_fn=fake_prompt
+    config = _make_config(  # noqa: S604  (shell= here is the hook-shell field, not subprocess)
+        shell="bash", no_chained_commands=True, canonical_commands=False
     )
-    assert value == "my-project"
+    step = setup_new_project.build_steps(config)[6]
+    step.call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path, "bash")
+    assert calls[0]["kwargs"]["no_chained_commands"] is True
+    assert calls[0]["kwargs"]["canonical_commands"] is False
+    assert calls[0]["kwargs"]["assume_yes"] is True
 
 
-def test_require_value_rejects_empty() -> None:
-    with pytest.raises(ValueError, match="required"):
-        setup_new_project._require_value("   ")
-    assert setup_new_project._require_value("someone") == "someone"
-
-
-def test_gather_license_no_candidates_prompts_nothing(tmp_path: Path) -> None:
-    assert setup_new_project._gather_license(tmp_path) == {}
-
-
-def test_gather_license_gnu_skips_holder_prompts(
+@pytest.mark.unit
+def test_step_memory_guard_forwards_install(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / choose_license.CANDIDATES["gnu"]).write_text("GPL text", encoding="utf-8")
-    monkeypatch.setattr(choose_license, "_prompt_choice", lambda available: "gnu")
-    assert setup_new_project._gather_license(tmp_path) == {"key": "gnu"}
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(protect_auto_memory, "run", _recording_run(calls))
+    step = setup_new_project.build_steps(_make_config(auto_memory_guard=True))[7]
+    step.call(tmp_path, False)
+    assert calls[0]["kwargs"]["install"] is True
+    assert calls[0]["kwargs"]["assume_yes"] is True
+
+
+@pytest.mark.unit
+def test_step_license_forwards_all_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(choose_license, "run", _recording_run(calls))
+    config = _make_config(
+        license_key="proprietary",
+        license_year="2026",
+        license_name="Ada",
+        license_company="Acme",
+    )
+    step = setup_new_project.build_steps(config)[8]
+    step.call(tmp_path, False)
+    assert calls[0]["kwargs"]["key"] == "proprietary"
+    assert calls[0]["kwargs"]["year"] == "2026"
+    assert calls[0]["kwargs"]["name"] == "Ada"
+    assert calls[0]["kwargs"]["company"] == "Acme"
+    assert calls[0]["kwargs"]["assume_yes"] is True
+
+
+@pytest.mark.unit
+def test_step_remove_mkdocs_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_mkdocs, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(mkdocs=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
+def test_step_remove_keyring_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_keyring, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(keyring=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+
+
+@pytest.mark.unit
+def test_step_remove_keyvault_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_keyvault, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(azure_keyvault=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+
+
+@pytest.mark.unit
+def test_step_remove_credentials_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_credentials, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(keyring=False, azure_keyvault=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+
+
+@pytest.mark.unit
+def test_step_reinit_git_forwards_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(reinit_git, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(reinit=True, branch="develop"))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["kwargs"]["branch"] == "develop"
+    assert calls[0]["kwargs"]["assume_yes"] is True
+
+
+# ---------------------------------------------------------------------------
+# preview_steps / apply_steps
+# ---------------------------------------------------------------------------
+
+
+def _fake_planned_step(
+    key: str, log: list[str], *, exit_code: int = 0
+) -> setup_new_project.PlannedStep:
+    """Build a PlannedStep whose call() records its invocation in log."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        log.append(f"{key}:{dry_run}")
+        return exit_code
+
+    return setup_new_project.PlannedStep(key, key, call)
+
+
+@pytest.mark.unit
+def test_preview_steps_calls_every_step_with_dry_run_true(tmp_path: Path) -> None:
+    log: list[str] = []
+    steps = (_fake_planned_step("a", log), _fake_planned_step("b", log))
+    setup_new_project.preview_steps(tmp_path, steps)
+    assert log == ["a:True", "b:True"]
+
+
+@pytest.mark.unit
+def test_apply_steps_calls_every_step_with_dry_run_false_in_order(tmp_path: Path) -> None:
+    log: list[str] = []
+    steps = (_fake_planned_step("a", log), _fake_planned_step("b", log))
+    failed = setup_new_project.apply_steps(tmp_path, steps)
+    assert log == ["a:False", "b:False"]
+    assert failed == []
+
+
+@pytest.mark.unit
+def test_apply_steps_collects_failures_without_stopping(tmp_path: Path) -> None:
+    log: list[str] = []
+    steps = (
+        _fake_planned_step("a", log),
+        _fake_planned_step("b", log, exit_code=1),
+        _fake_planned_step("c", log),
+    )
+    failed = setup_new_project.apply_steps(tmp_path, steps)
+    assert failed == ["b"]
+    assert log == ["a:False", "b:False", "c:False"]
+
+
+# ---------------------------------------------------------------------------
+# run_setup
+# ---------------------------------------------------------------------------
+
+
+def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_code: int = 0) -> None:
+    """Monkeypatch every step module's run() to record its call and dry_run value."""
+    modules = [
+        strip_template_headers,
+        rename_project,
+        set_github_user,
+        set_python_version,
+        set_version,
+        reset_changelog,
+        choose_shell,
+        protect_auto_memory,
+        choose_license,
+        remove_mkdocs,
+        remove_keyring,
+        remove_keyvault,
+        remove_credentials,
+        reinit_git,
+    ]
+    for module in modules:
+
+        def make_run(name: str) -> Any:
+            def run(*args: Any, **kwargs: Any) -> int:
+                calls.append(f"{name}:dry_run={kwargs.get('dry_run')}")
+                return exit_code
+
+            return run
+
+        monkeypatch.setattr(module, "run", make_run(module.__name__))
+
+    def fake_find_fixmes_run(root: Path) -> int:
+        calls.append("find_fixmes")
+        return 0
+
+    monkeypatch.setattr(find_fixmes, "run", fake_find_fixmes_run)
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_setup_missing_config_returns_two(tmp_path: Path) -> None:
+    """A missing config file returns 2 without attempting validation."""
+    assert setup_new_project.run_setup(tmp_path, tmp_path / "missing.toml") == 2
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_setup_invalid_config_returns_one_and_calls_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invalid config aborts before any step's run() is ever called."""
+    calls: list[str] = []
+    _patch_all_steps(monkeypatch, calls)
+    config_path = tmp_path / "setup.toml"
+    config_path.write_text(VALID_TOML.replace('key = "mit"', 'key = "bogus"'), encoding="utf-8")
+
+    assert setup_new_project.run_setup(tmp_path, config_path, assume_yes=True) == 1
+    assert calls == []
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_setup_dry_run_calls_every_step_with_dry_run_true_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dry run previews every step and applies nothing."""
+    calls: list[str] = []
+    _patch_all_steps(monkeypatch, calls)
+    config_path = tmp_path / "setup.toml"
+    config_path.write_text(VALID_TOML, encoding="utf-8")
+
+    assert setup_new_project.run_setup(tmp_path, config_path, dry_run=True) == 0
+    assert calls
+    assert all("dry_run=True" in call for call in calls)
+    assert "find_fixmes" not in calls
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_setup_confirmed_apply_runs_steps_then_find_fixmes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A confirmed apply previews, then applies for real, then reports FIXMEs."""
+    calls: list[str] = []
+    _patch_all_steps(monkeypatch, calls)
+    config_path = tmp_path / "setup.toml"
+    config_path.write_text(VALID_TOML, encoding="utf-8")
+
+    assert setup_new_project.run_setup(tmp_path, config_path, assume_yes=True) == 0
+    assert calls[-1] == "find_fixmes"
+    assert any("dry_run=True" in call for call in calls)
+    assert any("dry_run=False" in call for call in calls)
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_setup_step_failure_continues_and_returns_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One failing step does not block the rest; the overall result is still 1."""
+    calls: list[str] = []
+    _patch_all_steps(monkeypatch, calls, exit_code=1)
+    config_path = tmp_path / "setup.toml"
+    config_path.write_text(VALID_TOML, encoding="utf-8")
+
+    assert setup_new_project.run_setup(tmp_path, config_path, assume_yes=True) == 1
+    assert calls[-1] == "find_fixmes"
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_setup_declined_confirmation_returns_one_and_applies_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Declining the confirmation applies nothing for real."""
+    calls: list[str] = []
+    _patch_all_steps(monkeypatch, calls)
+    monkeypatch.setattr(_common, "confirm", lambda *a, **k: False)
+    config_path = tmp_path / "setup.toml"
+    config_path.write_text(VALID_TOML, encoding="utf-8")
+
+    assert setup_new_project.run_setup(tmp_path, config_path, assume_yes=False) == 1
+    assert all("dry_run=True" in call for call in calls)

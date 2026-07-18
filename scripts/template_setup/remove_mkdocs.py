@@ -47,136 +47,6 @@ _README_PAGES_HEADER = "**If using mkdocs, enable GitHub Pages for docs**"
 _CONTRIB_DOCS_HEADER = "# Docs (live preview at http://127.0.0.1:8000)"
 
 
-def _remove_matching(text: str, predicate: Callable[[str], bool]) -> tuple[str, list[str]]:
-    """Drop every whole line whose stripped form satisfies ``predicate``.
-
-    Args:
-        text: File contents.
-        predicate: Returns ``True`` for a stripped line that should be removed.
-
-    Returns:
-        A ``(new_text, removed_lines)`` tuple.
-    """
-    kept: list[str] = []
-    removed: list[str] = []
-    for line in text.splitlines(keepends=True):
-        if predicate(line.strip()):
-            removed.append(line.strip())
-        else:
-            kept.append(line)
-    return "".join(kept), removed
-
-
-def _remove_block(text: str, header: str) -> tuple[str, list[str]]:
-    """Remove a block that starts at ``header`` and runs to the next blank line.
-
-    A blank line immediately preceding the block is removed with it, so the
-    surrounding file keeps a single separating blank line rather than two.
-
-    Args:
-        text: File contents.
-        header: The exact (stripped) text of the block's first line.
-
-    Returns:
-        A ``(new_text, removed_lines)`` tuple.
-    """
-    lines = text.splitlines(keepends=True)
-    kept: list[str] = []
-    removed: list[str] = []
-    index = 0
-    while index < len(lines):
-        if lines[index].strip() == header:
-            if kept and not kept[-1].strip():
-                kept.pop()
-            removed.append(lines[index].strip())
-            index += 1
-            while index < len(lines) and lines[index].strip():
-                removed.append(lines[index].strip())
-                index += 1
-            continue
-        kept.append(lines[index])
-        index += 1
-    return "".join(kept), removed
-
-
-def _remove_section(text: str, header: str, stop_prefix: str) -> tuple[str, list[str]]:
-    """Remove a heading section from ``header`` up to the next heading.
-
-    The section runs from its heading line until (but not including) the next
-    line whose stripped form starts with ``stop_prefix`` (or end of file). The
-    blank line that separated it from the following heading is consumed too.
-
-    Args:
-        text: File contents.
-        header: The exact (stripped) text of the section heading.
-        stop_prefix: Prefix that marks the start of the next section.
-
-    Returns:
-        A ``(new_text, removed_lines)`` tuple.
-    """
-    lines = text.splitlines(keepends=True)
-    kept: list[str] = []
-    removed: list[str] = []
-    index = 0
-    while index < len(lines):
-        if lines[index].strip() == header:
-            removed.append(lines[index].strip())
-            index += 1
-            while index < len(lines) and not lines[index].lstrip().startswith(stop_prefix):
-                if lines[index].strip():
-                    removed.append(lines[index].strip())
-                index += 1
-            continue
-        kept.append(lines[index])
-        index += 1
-    return "".join(kept), removed
-
-
-def _remove_region(
-    text: str, start_text: str, end_marker: str, *, blank: str
-) -> tuple[str, list[str]]:
-    """Remove a multi-paragraph region between two markers.
-
-    Removes from the line equal to ``start_text`` through the first later line
-    that contains ``end_marker`` (inclusive), spanning any blank lines in
-    between. One adjacent blank line is trimmed to avoid leaving a double gap:
-    ``blank="leading"`` drops the blank before the region, ``blank="trailing"``
-    the blank after it.
-
-    Args:
-        text: File contents.
-        start_text: The exact (stripped) text of the region's first line.
-        end_marker: Substring identifying the region's last line.
-        blank: Which adjacent blank line to trim (``"leading"`` or ``"trailing"``).
-
-    Returns:
-        A ``(new_text, removed_lines)`` tuple.
-    """
-    lines = text.splitlines(keepends=True)
-    kept: list[str] = []
-    removed: list[str] = []
-    index = 0
-    while index < len(lines):
-        if lines[index].strip() == start_text:
-            if blank == "leading" and kept and not kept[-1].strip():
-                kept.pop()
-            removed.append(lines[index].strip())
-            index += 1
-            while index < len(lines):
-                if lines[index].strip():
-                    removed.append(lines[index].strip())
-                ended = end_marker in lines[index]
-                index += 1
-                if ended:
-                    break
-            if blank == "trailing" and index < len(lines) and not lines[index].strip():
-                index += 1
-            continue
-        kept.append(lines[index])
-        index += 1
-    return "".join(kept), removed
-
-
 def _strip_pyproject(text: str) -> tuple[str, list[str]]:
     """Remove the ``docs`` dependency group and its ``dev`` include.
 
@@ -217,12 +87,12 @@ def _strip_pyproject(text: str) -> tuple[str, list[str]]:
 
 def _strip_gitignore(text: str) -> tuple[str, list[str]]:
     """Remove the mkdocs ``/site`` build-output ignore block from ``.gitignore``."""
-    return _remove_block(text, "# mkdocs documentation")
+    return _common.remove_block(text, "# mkdocs documentation")
 
 
 def _strip_agents_releasing(text: str) -> tuple[str, list[str]]:
     """Remove the ``Update docs`` release step from ``AGENTS.RELEASING.md``."""
-    return _remove_section(text, "## Update docs", "## ")
+    return _common.remove_section(text, "## Update docs", "## ")
 
 
 def _strip_readme(text: str) -> tuple[str, list[str]]:
@@ -238,13 +108,13 @@ def _strip_readme(text: str) -> tuple[str, list[str]]:
         A ``(new_text, removed_lines)`` tuple.
     """
     removed: list[str] = []
-    text, part = _remove_matching(text, lambda line: line.startswith("- **mkdocs**"))
+    text, part = _common.remove_matching(text, lambda line: line.startswith("- **mkdocs**"))
     removed += part
-    text, part = _remove_region(
+    text, part = _common.remove_region(
         text, _README_PAGES_HEADER, ".github/workflows/docs.yml", blank="trailing"
     )
     removed += part
-    text, part = _remove_matching(text, lambda line: line.startswith("| **MkDocs docs**"))
+    text, part = _common.remove_matching(text, lambda line: line.startswith("| **MkDocs docs**"))
     removed += part
     return text, removed
 
@@ -262,9 +132,11 @@ def _strip_contributing(text: str) -> tuple[str, list[str]]:
         A ``(new_text, removed_lines)`` tuple.
     """
     removed: list[str] = []
-    text, part = _remove_region(text, _CONTRIB_DOCS_HEADER, "mkdocs gh-deploy", blank="leading")
+    text, part = _common.remove_region(
+        text, _CONTRIB_DOCS_HEADER, "mkdocs gh-deploy", blank="leading"
+    )
     removed += part
-    text, part = _remove_matching(
+    text, part = _common.remove_matching(
         text, lambda line: line.startswith("- `docs/`") and "MkDocs" in line
     )
     removed += part

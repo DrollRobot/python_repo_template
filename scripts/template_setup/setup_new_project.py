@@ -1,51 +1,57 @@
-"""Run the whole template-to-project transition from one toggle checklist.
+"""Run the whole template-to-project transition from one config file.
 
-Shows a numbered checklist of every setup step, all checked by default:
+Edit ``scripts/template_setup/setup.toml`` with your values (project name,
+GitHub username, Python/project version, license choice, which optional
+features to keep, whether to re-initialize git), then run:
 
-     1. strip template headers
-     2. rename the project
-     3. set the GitHub username
-     4. set the Python version
-     5. set the project version    (resets to 0.1.0 for a new project)
-     6. reset the changelog        (drops the template's history)
-     7. install command hooks      (wires Claude Code hooks to your shell)
-     8. protect auto-memory        (gate Claude's memory writes)
-     9. choose a license
-    10. remove mkdocs              (if you don't want a docs site)
-    11. report remaining FIXMEs
-    12. re-initialize git          (destructive: deletes history)
-    13. remove this scaffolding    (destructive: deletes these scripts)
+    uv run scripts/template_setup/setup_new_project.py
 
-Toggle steps by number ("3", "1 4", "5-8"), or with "all"/"none". Type "run"
-to execute the checked steps -- that is the single point of confirmation:
-each step then prompts for its inputs right before it runs and applies its
-changes without asking again. Unchecked steps are skipped entirely, leaving
-the repo untouched. Type "q" to quit without changing anything.
+This validates every field in the config up front -- if anything is wrong,
+nothing runs and every problem is listed at once. It then previews every
+change every step would make (nothing applied yet), asks for a single
+confirmation, and applies everything. ``--dry-run`` stops after the preview;
+``-y``/``--yes`` skips the confirmation (the preview still runs first).
 
-Each step is also runnable on its own with per-step previews and prompts;
-this orchestrator just chains them. Steps always execute in the listed
-order (cleanup last), no matter the order they were toggled in.
+Steps always execute in this order, regardless of the config file's own
+table order: strip template headers -> rename -> set GitHub user -> set
+Python version -> set project version -> reset changelog -> Claude command
+hooks -> Claude auto-memory guard -> choose license -> remove mkdocs (if
+declined) -> remove keyring backend (if declined) -> remove KeyVault backend
+(if declined) -> remove the credentials dispatcher (only once both backends
+above are declined) -> re-initialize git (if requested). A read-only FIXME
+report always runs last, whether or not anything failed.
+
+Each step is also runnable on its own with its own prompts/flags -- see
+``scripts/template_setup/README.md``. This script does NOT delete
+``scripts/template_setup/`` (``cleanup.py``) -- that stays a separate,
+manual step; run it yourself whenever you're ready.
 
 Usage:
     uv run scripts/template_setup/setup_new_project.py
+    uv run scripts/template_setup/setup_new_project.py --dry-run
+    uv run scripts/template_setup/setup_new_project.py -y
+    uv run scripts/template_setup/setup_new_project.py --config path/to/other.toml
 """
 
 from __future__ import annotations
 
-import datetime
+import argparse
 import sys
+import tomllib
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import _common
 import choose_license
 import choose_shell
-import cleanup
 import find_fixmes
 import protect_auto_memory
 import reinit_git
+import remove_credentials
+import remove_keyring
+import remove_keyvault
 import remove_mkdocs
 import rename_project
 import reset_changelog
@@ -54,619 +60,575 @@ import set_python_version
 import set_version
 import strip_template_headers
 
-MenuAction = Literal["toggle", "run", "quit", "all", "none", "help", "error"]
-
-_HINT = (
-    "  Toggle steps by number ('3', '1 4', '5-8'), 'all'/'none' to check or clear\n"
-    "  everything, 'run' to execute the checked steps, 'q' to quit."
-)
+CONFIG_FILENAME = "setup.toml"
 
 
 @dataclass(frozen=True)
-class MenuCommand:
-    """Parsed result of one line of menu input.
+class Config:
+    """Fully validated setup.toml contents, ready to drive every step."""
 
-    Attributes:
-        action: What the input asks for.
-        indices: Step numbers to toggle (``toggle`` action only).
-        message: Text to show the user (``help`` and ``error`` actions only).
-    """
-
-    action: MenuAction
-    indices: frozenset[int] = field(default_factory=frozenset)
-    message: str = ""
+    name: str
+    github_user: str
+    python_version: str
+    version: str
+    license_key: str
+    license_year: str
+    license_name: str
+    license_company: str
+    shell: str
+    no_chained_commands: bool
+    canonical_commands: bool
+    auto_memory_guard: bool
+    mkdocs: bool
+    keyring: bool
+    azure_keyvault: bool
+    reinit: bool
+    branch: str
 
 
 @dataclass(frozen=True)
-class Step:
-    """One orchestrated setup step, in canonical execution order.
+class PlannedStep:
+    """One orchestrated setup step, already bound to config values.
 
     Attributes:
         key: The step's module name, e.g. ``rename_project``.
-        label: One-line description shown in the menu.
-        gather: Prompts for the step's inputs and returns them as kwargs.
-        execute: Runs the step with the gathered kwargs; returns an exit code.
-        destructive: Whether the step deletes things that cannot be restored.
+        label: One-line description shown in the preview/summary.
+        call: Runs the step; ``call(root, dry_run)`` forwards to the
+            underlying script's own ``run(..., assume_yes=True, dry_run=...)``.
+        destructive: Whether this step deletes things that cannot be restored.
     """
 
     key: str
     label: str
-    gather: Callable[[Path], dict[str, Any]]
-    execute: Callable[[Path, dict[str, Any]], int]
+    call: Callable[[Path, bool], int]
     destructive: bool = False
 
 
-def parse_menu_input(raw: str, step_count: int) -> MenuCommand:
-    """Parse one line of menu input into a command.
-
-    Empty input (and ``help``/``?``) shows the usage hint -- it never starts
-    execution; only an explicit ``run`` does.
+def _load_toml(path: Path) -> tuple[dict[str, Any], str | None]:
+    """Read and parse ``setup.toml``.
 
     Args:
-        raw: The line as typed.
-        step_count: Number of steps; valid step numbers are ``1..step_count``.
+        path: Path to the config file.
 
     Returns:
-        The parsed :class:`MenuCommand`. Any invalid token rejects the whole
-        line with an ``error`` command naming the offending token.
+        A ``(raw, error)`` tuple. ``error`` is ``None`` on success; otherwise
+        ``raw`` is ``{}`` and ``error`` describes why the file could not be
+        loaded (missing, unreadable, or invalid TOML syntax).
     """
-    text = raw.strip().lower()
-    if text in ("", "help", "?"):
-        return MenuCommand("help", message=_HINT)
-    if text == "run":
-        return MenuCommand("run")
-    if text in ("q", "quit"):
-        return MenuCommand("quit")
-    if text == "all":
-        return MenuCommand("all")
-    if text == "none":
-        return MenuCommand("none")
-
-    toggles: set[int] = set()
-    for token in text.replace(",", " ").split():
-        first, dash, last = token.partition("-")
-        if not first.isdigit() or (dash and not last.isdigit()):
-            return MenuCommand("error", message=f"  Not a step number or range: '{token}'.")
-        low = int(first)
-        high = int(last) if dash else low
-        if low > high:
-            return MenuCommand("error", message=f"  Range is reversed: '{token}'.")
-        if low < 1 or high > step_count:
-            return MenuCommand("error", message=f"  Out of range (1-{step_count}): '{token}'.")
-        toggles.update(range(low, high + 1))
-    return MenuCommand("toggle", indices=frozenset(toggles))
+    if not path.exists():
+        return {}, f"Config file not found: {path}"
+    try:
+        with path.open("rb") as handle:
+            return tomllib.load(handle), None
+    except OSError as exc:
+        return {}, f"Could not read {path}: {exc}"
+    except tomllib.TOMLDecodeError as exc:
+        return {}, f"{path} is not valid TOML: {exc}"
 
 
-def apply_toggles(selected: frozenset[int], toggles: frozenset[int]) -> frozenset[int]:
-    """Flip each toggled step number in or out of the selection.
+def _table(raw: dict[str, Any], name: str, problems: list[str]) -> dict[str, Any]:
+    """Return ``raw[name]`` as a dict, recording a problem if it's missing or invalid.
 
     Args:
-        selected: Currently checked step numbers.
-        toggles: Step numbers to flip.
+        raw: Parsed TOML content.
+        name: Top-level table name to look up (e.g. ``"project"``).
+        problems: Problem list to append to.
 
     Returns:
-        The updated selection (symmetric difference).
+        The table's contents, or ``{}`` if it is missing or not a table.
     """
-    return selected ^ toggles
-
-
-def render_menu(steps: Sequence[Step], selected: frozenset[int]) -> str:
-    """Render the checklist with ``[x]``/``[ ]`` markers and the usage hint.
-
-    Args:
-        steps: All steps, in canonical order.
-        selected: Step numbers currently checked.
-
-    Returns:
-        The menu as a single printable string.
-    """
-    width = len(str(len(steps)))
-    lines = ["", "Setup steps (checked steps run without further confirmation):", ""]
-    for index, step in enumerate(steps, start=1):
-        mark = "x" if index in selected else " "
-        tag = "  [DESTRUCTIVE]" if step.destructive else ""
-        lines.append(f"  [{mark}] {index:>{width}}. {step.label}{tag}")
-    lines.append("")
-    lines.append(_HINT)
-    return "\n".join(lines)
-
-
-def menu_loop(
-    steps: Sequence[Step],
-    *,
-    input_fn: Callable[[str], str] = input,
-    print_fn: Callable[[str], None] = print,
-) -> frozenset[int] | None:
-    """Show the toggle menu and collect a final selection.
-
-    Args:
-        steps: All steps, in canonical order.
-        input_fn: Reads one line of input (injectable for tests).
-        print_fn: Writes one block of output (injectable for tests).
-
-    Returns:
-        The checked step numbers once the user types ``run``, or ``None`` when
-        the user quits (or input ends).
-    """
-    selected = frozenset(range(1, len(steps) + 1))
-    print_fn(render_menu(steps, selected))
-    while True:
-        try:
-            raw = input_fn("> ")
-        except EOFError:
-            return None
-        command = parse_menu_input(raw, len(steps))
-        if command.action in ("help", "error"):
-            print_fn(command.message)
-        elif command.action == "quit":
-            return None
-        elif command.action == "run":
-            if selected:
-                return selected
-            print_fn("  No steps selected; toggle some on, or type 'q' to quit.")
-        else:
-            if command.action == "all":
-                selected = frozenset(range(1, len(steps) + 1))
-            elif command.action == "none":
-                selected = frozenset()
-            else:
-                selected = apply_toggles(selected, command.indices)
-            print_fn(render_menu(steps, selected))
-
-
-def _prompt_valid(
-    prompt: str,
-    validator: Callable[[str], object],
-    *,
-    default: str = "",
-    prompt_fn: Callable[..., str] = _common.prompt_value,
-) -> str:
-    """Prompt until ``validator`` accepts the value.
-
-    Args:
-        prompt: Text to display before the input cursor.
-        validator: Callable that raises :class:`ValueError` on invalid input.
-        default: Value used when the user presses Enter without typing.
-        prompt_fn: Reads one value (injectable for tests).
-
-    Returns:
-        The first value the validator accepts.
-    """
-    while True:
-        value = prompt_fn(prompt, default=default)
-        try:
-            validator(value)
-        except ValueError as exc:
-            print(f"  {exc}")
-            continue
-        return value
-
-
-def _require_value(value: str) -> str:
-    """Reject empty input.
-
-    Args:
-        value: User-supplied value.
-
-    Returns:
-        The value unchanged.
-
-    Raises:
-        ValueError: If the value is empty or whitespace.
-    """
-    if not value.strip():
-        raise ValueError("A value is required.")
+    value = raw.get(name)
+    if not isinstance(value, dict):
+        problems.append(f"[{name}] is missing or is not a table.")
+        return {}
     return value
 
 
-def _gather_nothing(root: Path) -> dict[str, Any]:
-    """Gather nothing, for steps that take no parameters.
+def _require_str(table: dict[str, Any], key: str, table_name: str, problems: list[str]) -> str:
+    """Return ``table[key]`` as a string, recording a problem if it's missing or invalid.
 
     Args:
-        root: Project root directory (unused).
+        table: Parsed contents of one TOML table.
+        key: Key to look up within the table.
+        table_name: The table's name, for the problem message.
+        problems: Problem list to append to.
 
     Returns:
-        An empty kwargs mapping.
+        The value, or ``""`` if it is missing or not a string.
     """
-    return {}
+    value = table.get(key)
+    if not isinstance(value, str):
+        problems.append(f"[{table_name}].{key} is missing or is not a string.")
+        return ""
+    return value
 
 
-def _gather_rename(root: Path) -> dict[str, Any]:
-    """Prompt for the new project name.
+def _require_bool(table: dict[str, Any], key: str, table_name: str, problems: list[str]) -> bool:
+    """Return ``table[key]`` as a bool, recording a problem if it's missing or invalid.
 
     Args:
-        root: Project root directory (unused).
+        table: Parsed contents of one TOML table.
+        key: Key to look up within the table.
+        table_name: The table's name, for the problem message.
+        problems: Problem list to append to.
 
     Returns:
-        Kwargs for :func:`rename_project.run`.
+        The value, or ``False`` if it is missing or not a boolean.
     """
-    name = _prompt_valid("New project name (e.g. my-project)", rename_project.derive_names)
-    return {"name": name}
+    value = table.get(key)
+    if not isinstance(value, bool):
+        problems.append(f"[{table_name}].{key} is missing or is not a true/false value.")
+        return False
+    return value
 
 
-def _gather_github_user(root: Path) -> dict[str, Any]:
-    """Prompt for the GitHub username.
+def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, list[str]]:
+    """Validate every field in ``raw`` and build a :class:`Config` if there are no problems.
+
+    Scope: config value correctness only -- schema shape (required
+    tables/keys present, correct types), per-field validity (reusing each
+    step's own existing validator), cross-field constraints, and (only when
+    ``git.reinit`` is true) the git pristine-clone guard. Deliberately does
+    NOT check repo/filesystem state per step (e.g. whether a license
+    candidate file still exists) -- that idempotency handling already lives
+    in each step's own ``run()`` and stays there unchanged.
 
     Args:
-        root: Project root directory (unused).
+        root: Project root directory (used only by the git-reinit guard).
+        raw: Parsed TOML content.
 
     Returns:
-        Kwargs for :func:`set_github_user.run`.
+        A ``(config, problems)`` tuple. ``config`` is ``None`` whenever
+        ``problems`` is non-empty; otherwise every field is valid and
+        ``problems == []``.
     """
-    return {"username": _prompt_valid("Your GitHub username", _require_value)}
+    problems: list[str] = []
 
+    project = _table(raw, "project", problems)
+    license_table = _table(raw, "license", problems)
+    claude = _table(raw, "claude", problems)
+    features = _table(raw, "features", problems)
+    git = _table(raw, "git", problems)
 
-def _gather_python_version(root: Path) -> dict[str, Any]:
-    """Prompt for the Python version.
+    name = _require_str(project, "name", "project", problems)
+    github_user = _require_str(project, "github_user", "project", problems)
+    python_version = _require_str(project, "python_version", "project", problems)
+    version = _require_str(project, "version", "project", problems)
 
-    Args:
-        root: Project root directory (unused).
+    license_key = _require_str(license_table, "key", "license", problems)
+    license_year = _require_str(license_table, "year", "license", problems)
+    license_name = _require_str(license_table, "name", "license", problems)
+    license_company = _require_str(license_table, "company", "license", problems)
 
-    Returns:
-        Kwargs for :func:`set_python_version.run`.
-    """
-    version = _prompt_valid(
-        "Python version",
-        set_python_version.version_forms,
-        default=set_python_version.DEFAULT_VERSION,
-    )
-    return {"version": version}
+    shell = _require_str(claude, "shell", "claude", problems)
+    no_chained_commands = _require_bool(claude, "no_chained_commands", "claude", problems)
+    canonical_commands = _require_bool(claude, "canonical_commands", "claude", problems)
+    auto_memory_guard = _require_bool(claude, "auto_memory_guard", "claude", problems)
 
+    mkdocs = _require_bool(features, "mkdocs", "features", problems)
+    keyring = _require_bool(features, "keyring", "features", problems)
+    azure_keyvault = _require_bool(features, "azure_keyvault", "features", problems)
 
-def _gather_version(root: Path) -> dict[str, Any]:
-    """Prompt for the project version.
+    reinit = _require_bool(git, "reinit", "git", problems)
+    branch = _require_str(git, "branch", "git", problems)
 
-    Args:
-        root: Project root directory (unused).
+    if name:
+        try:
+            rename_project.derive_names(name)
+        except ValueError as exc:
+            problems.append(f"[project].name: {exc}")
 
-    Returns:
-        Kwargs for :func:`set_version.run`.
-    """
-    version = _prompt_valid(
-        "Project version", set_version.validate, default=set_version.DEFAULT_VERSION
-    )
-    return {"version": version}
+    if github_user and not github_user.strip():
+        problems.append("[project].github_user is empty.")
 
+    if python_version:
+        try:
+            set_python_version.version_forms(python_version)
+        except ValueError as exc:
+            problems.append(f"[project].python_version: {exc}")
 
-def _gather_shell(root: Path) -> dict[str, Any]:
-    """Ask whether to install the command hooks and, if so, for which shell.
+    if version:
+        try:
+            set_version.validate(version)
+        except ValueError as exc:
+            problems.append(f"[project].version: {exc}")
 
-    Declining is a real choice, not a confirmation: it makes the step remove
-    the hook files entirely (that script's standalone behavior).
-
-    Args:
-        root: Project root directory (unused).
-
-    Returns:
-        Kwargs for :func:`choose_shell.run`.
-    """
-    install = choose_shell._prompt_install()
-    shell = choose_shell._prompt_choice() if install else None
-    return {"install": install, "shell": shell}
-
-
-def _gather_memory_guard(root: Path) -> dict[str, Any]:
-    """Ask whether to enable the auto-memory guard (declining removes it).
-
-    Args:
-        root: Project root directory (unused).
-
-    Returns:
-        Kwargs for :func:`protect_auto_memory.run`.
-    """
-    return {"install": protect_auto_memory._prompt_install()}
-
-
-def _gather_license(root: Path) -> dict[str, Any]:
-    """Prompt for the license choice and its copyright details.
-
-    Passing every field the chosen license needs means the step itself never
-    prompts. When no license candidates remain (already chosen), nothing is
-    asked and the step reports that on its own.
-
-    Args:
-        root: Project root directory.
-
-    Returns:
-        Kwargs for :func:`choose_license.run`.
-    """
-    available = choose_license._available(root)
-    if not available:
-        return {}
-    key = choose_license._prompt_choice(available)
-    params: dict[str, Any] = {"key": key}
-    if key in choose_license._NEEDS_HOLDER:
-        params["year"] = _common.prompt_value(
-            "Copyright year", default=str(datetime.date.today().year)
+    if license_key and license_key not in choose_license.CANDIDATES:
+        problems.append(
+            f"[license].key {license_key!r} is not one of: "
+            f"{', '.join(sorted(choose_license.CANDIDATES))}."
         )
-        params["name"] = _common.prompt_value("Copyright holder name")
-    if key in choose_license._NEEDS_COMPANY:
-        params["company"] = _common.prompt_value("Company name")
-    return params
+    elif license_key:
+        if license_key in choose_license._NEEDS_HOLDER:
+            if not license_year.strip():
+                problems.append("[license].year is required for this license.")
+            if not license_name.strip():
+                problems.append("[license].name is required for this license.")
+        if license_key in choose_license._NEEDS_COMPANY and not license_company.strip():
+            problems.append("[license].company is required for the proprietary license.")
+
+    if shell and shell not in choose_shell._SHELL_META:
+        problems.append(
+            f"[claude].shell {shell!r} is not one of: "
+            f"{', '.join(sorted(choose_shell._SHELL_META))}."
+        )
+
+    if branch and not branch.strip():
+        problems.append("[git].branch is empty.")
+
+    if reinit and not reinit_git._is_pristine_template_clone(root):
+        problems.append(
+            "[git].reinit=true, but this no longer looks like a pristine template clone "
+            "(git history doesn't start at the template's own root commit). "
+            "Set [git].reinit=false, or investigate before re-running."
+        )
+
+    if problems:
+        return None, problems
+
+    return (
+        Config(
+            name=name,
+            github_user=github_user,
+            python_version=python_version,
+            version=version,
+            license_key=license_key,
+            license_year=license_year,
+            license_name=license_name,
+            license_company=license_company,
+            shell=shell,
+            no_chained_commands=no_chained_commands,
+            canonical_commands=canonical_commands,
+            auto_memory_guard=auto_memory_guard,
+            mkdocs=mkdocs,
+            keyring=keyring,
+            azure_keyvault=azure_keyvault,
+            reinit=reinit,
+            branch=branch,
+        ),
+        [],
+    )
 
 
-def _gather_branch(root: Path) -> dict[str, Any]:
-    """Prompt for the initial branch name of the re-initialized repository.
+def _step_strip_headers() -> PlannedStep:
+    """Build the strip-template-headers step (always runs)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return strip_template_headers.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("strip_template_headers", "Strip template headers", call)
+
+
+def _step_rename(config: Config) -> PlannedStep:
+    """Build the project-rename step, bound to ``config.name``."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return rename_project.run(root, config.name, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("rename_project", f"Rename project to '{config.name}'", call)
+
+
+def _step_github_user(config: Config) -> PlannedStep:
+    """Build the GitHub-username step, bound to ``config.github_user``."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return set_github_user.run(root, config.github_user, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("set_github_user", f"Set GitHub username to '{config.github_user}'", call)
+
+
+def _step_python_version(config: Config) -> PlannedStep:
+    """Build the Python-version step, bound to ``config.python_version``."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return set_python_version.run(root, config.python_version, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("set_python_version", f"Set Python version to {config.python_version}", call)
+
+
+def _step_version(config: Config) -> PlannedStep:
+    """Build the project-version step, bound to ``config.version``."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return set_version.run(root, config.version, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("set_version", f"Set project version to {config.version}", call)
+
+
+def _step_reset_changelog() -> PlannedStep:
+    """Build the changelog-reset step (always runs)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return reset_changelog.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("reset_changelog", "Reset the changelog", call)
+
+
+def _shell_label(config: Config) -> str:
+    """Build the one-line label for the Claude command hooks step.
 
     Args:
-        root: Project root directory (unused).
+        config: The validated configuration.
 
     Returns:
-        Kwargs for :func:`reinit_git.run`.
+        A summary naming which hook kinds (if any) are wanted and, if so,
+        which shell they're wired to.
     """
-    return {"branch": _common.prompt_value("Initial branch name", default="main")}
+    kinds = [
+        name
+        for name, wanted in (
+            ("no-chained-commands", config.no_chained_commands),
+            ("canonical-commands", config.canonical_commands),
+        )
+        if wanted
+    ]
+    if not kinds:
+        return "Claude command hooks: none"
+    return f"Claude command hooks ({config.shell}): {', '.join(kinds)}"
 
 
-def _execute_strip(root: Path, params: dict[str, Any]) -> int:
-    """Run the template-header strip step.
+def _step_choose_shell(config: Config) -> PlannedStep:
+    """Build the Claude command hooks step, bound to the ``claude`` config fields."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return choose_shell.run(
+            root,
+            config.shell,
+            no_chained_commands=config.no_chained_commands,
+            canonical_commands=config.canonical_commands,
+            assume_yes=True,
+            dry_run=dry_run,
+        )
+
+    return PlannedStep("choose_shell", _shell_label(config), call)
+
+
+def _step_memory_guard(config: Config) -> PlannedStep:
+    """Build the auto-memory-guard step, bound to ``config.auto_memory_guard``."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return protect_auto_memory.run(
+            root, install=config.auto_memory_guard, assume_yes=True, dry_run=dry_run
+        )
+
+    state = "on" if config.auto_memory_guard else "off"
+    return PlannedStep("protect_auto_memory", f"Claude auto-memory guard: {state}", call)
+
+
+def _step_license(config: Config) -> PlannedStep:
+    """Build the license step, bound to the ``license`` config fields."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return choose_license.run(
+            root,
+            key=config.license_key,
+            year=config.license_year,
+            name=config.license_name,
+            company=config.license_company,
+            assume_yes=True,
+            dry_run=dry_run,
+        )
+
+    return PlannedStep("choose_license", f"Choose license: {config.license_key}", call)
+
+
+def _step_remove_mkdocs() -> PlannedStep:
+    """Build the mkdocs-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_mkdocs.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_mkdocs", "Remove mkdocs (documentation site)", call)
+
+
+def _step_remove_keyring() -> PlannedStep:
+    """Build the keyring-backend-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_keyring.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_keyring", "Remove keyring credential backend", call)
+
+
+def _step_remove_keyvault() -> PlannedStep:
+    """Build the KeyVault-backend-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_keyvault.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_keyvault", "Remove Azure KeyVault backend", call)
+
+
+def _step_remove_credentials() -> PlannedStep:
+    """Build the dispatcher-removal step (only included when both backends are declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_credentials.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_credentials", "Remove the credentials dispatcher", call)
+
+
+def _step_reinit_git(config: Config) -> PlannedStep:
+    """Build the git re-initialization step (only included when requested), destructive."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return reinit_git.run(root, branch=config.branch, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep(
+        "reinit_git", f"Re-initialize git (branch '{config.branch}')", call, destructive=True
+    )
+
+
+def build_steps(config: Config) -> tuple[PlannedStep, ...]:
+    """Build the ordered, config-bound steps for one run.
+
+    Every step except the three removable features and ``reinit_git`` always
+    runs. ``find_fixmes`` is intentionally not included here -- it is
+    read-only and always runs once, separately, after a successful apply,
+    never gated by the confirmation.
+
+    Args:
+        config: The fully validated configuration.
+
+    Returns:
+        Steps in canonical execution order.
+    """
+    steps = [
+        _step_strip_headers(),
+        _step_rename(config),
+        _step_github_user(config),
+        _step_python_version(config),
+        _step_version(config),
+        _step_reset_changelog(),
+        _step_choose_shell(config),
+        _step_memory_guard(config),
+        _step_license(config),
+    ]
+    if not config.mkdocs:
+        steps.append(_step_remove_mkdocs())
+    if not config.keyring:
+        steps.append(_step_remove_keyring())
+    if not config.azure_keyvault:
+        steps.append(_step_remove_keyvault())
+    if not config.keyring and not config.azure_keyvault:
+        steps.append(_step_remove_credentials())
+    if config.reinit:
+        steps.append(_step_reinit_git(config))
+    return tuple(steps)
+
+
+def preview_steps(root: Path, steps: Sequence[PlannedStep]) -> None:
+    """Print every step's dry-run preview, in canonical order, under one summary.
 
     Args:
         root: Project root directory.
-        params: Gathered kwargs (empty).
-
-    Returns:
-        The step's exit code.
+        steps: Steps to preview, in canonical order.
     """
-    return strip_template_headers.run(root, assume_yes=True)
+    _common.section("Preview")
+    for step in steps:
+        step.call(root, True)
 
 
-def _execute_rename(root: Path, params: dict[str, Any]) -> int:
-    """Run the project-rename step.
+def apply_steps(root: Path, steps: Sequence[PlannedStep]) -> list[str]:
+    """Run every step for real, in canonical order.
+
+    Failures are collected, not fatal: these are independent file
+    operations, not config-validity problems, so one failing does not block
+    the rest.
 
     Args:
         root: Project root directory.
-        params: Gathered kwargs (``name``).
-
-    Returns:
-        The step's exit code.
-    """
-    return rename_project.run(root, params["name"], assume_yes=True)
-
-
-def _execute_github_user(root: Path, params: dict[str, Any]) -> int:
-    """Run the GitHub-username step.
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (``username``).
-
-    Returns:
-        The step's exit code.
-    """
-    return set_github_user.run(root, params["username"], assume_yes=True)
-
-
-def _execute_python_version(root: Path, params: dict[str, Any]) -> int:
-    """Run the Python-version step.
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (``version``).
-
-    Returns:
-        The step's exit code.
-    """
-    return set_python_version.run(root, params["version"], assume_yes=True)
-
-
-def _execute_version(root: Path, params: dict[str, Any]) -> int:
-    """Run the project-version step.
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (``version``).
-
-    Returns:
-        The step's exit code.
-    """
-    return set_version.run(root, params["version"], assume_yes=True)
-
-
-def _execute_reset_changelog(root: Path, params: dict[str, Any]) -> int:
-    """Run the changelog-reset step.
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (empty).
-
-    Returns:
-        The step's exit code.
-    """
-    return reset_changelog.run(root, assume_yes=True)
-
-
-def _execute_shell(root: Path, params: dict[str, Any]) -> int:
-    """Run the command-hooks step.
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (``install``, ``shell``).
-
-    Returns:
-        The step's exit code.
-    """
-    return choose_shell.run(root, params["shell"], install=params["install"], assume_yes=True)
-
-
-def _execute_memory_guard(root: Path, params: dict[str, Any]) -> int:
-    """Run the auto-memory-guard step.
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (``install``).
-
-    Returns:
-        The step's exit code.
-    """
-    return protect_auto_memory.run(root, install=params["install"], assume_yes=True)
-
-
-def _execute_license(root: Path, params: dict[str, Any]) -> int:
-    """Run the license step.
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (``key``/``year``/``name``/``company``, or
-            empty when no candidates remain).
-
-    Returns:
-        The step's exit code.
-    """
-    return choose_license.run(root, assume_yes=True, **params)
-
-
-def _execute_remove_mkdocs(root: Path, params: dict[str, Any]) -> int:
-    """Run the mkdocs-removal step.
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (empty).
-
-    Returns:
-        The step's exit code.
-    """
-    return remove_mkdocs.run(root, assume_yes=True)
-
-
-def _execute_find_fixmes(root: Path, params: dict[str, Any]) -> int:
-    """Run the FIXME report (read-only).
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (empty).
-
-    Returns:
-        The step's exit code (always 0).
-    """
-    return find_fixmes.run(root)
-
-
-def _execute_reinit_git(root: Path, params: dict[str, Any]) -> int:
-    """Run the git re-initialization step (destructive).
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (``branch``).
-
-    Returns:
-        The step's exit code.
-    """
-    return reinit_git.run(root, branch=params["branch"], assume_yes=True)
-
-
-def _execute_cleanup(root: Path, params: dict[str, Any]) -> int:
-    """Run the scaffolding-removal step (destructive).
-
-    Args:
-        root: Project root directory.
-        params: Gathered kwargs (empty).
-
-    Returns:
-        The step's exit code.
-    """
-    return cleanup.run(root, assume_yes=True)
-
-
-STEPS: tuple[Step, ...] = (
-    Step("strip_template_headers", "Strip template headers", _gather_nothing, _execute_strip),
-    Step("rename_project", "Rename the project", _gather_rename, _execute_rename),
-    Step("set_github_user", "Set the GitHub username", _gather_github_user, _execute_github_user),
-    Step(
-        "set_python_version",
-        "Set the Python version",
-        _gather_python_version,
-        _execute_python_version,
-    ),
-    Step("set_version", "Set the project version", _gather_version, _execute_version),
-    Step("reset_changelog", "Reset the changelog", _gather_nothing, _execute_reset_changelog),
-    Step(
-        "choose_shell",
-        "Claude command hooks (choose shell, or remove)",
-        _gather_shell,
-        _execute_shell,
-    ),
-    Step(
-        "protect_auto_memory",
-        "Claude auto-memory guard (enable, or remove)",
-        _gather_memory_guard,
-        _execute_memory_guard,
-    ),
-    Step("choose_license", "Choose a license", _gather_license, _execute_license),
-    Step(
-        "remove_mkdocs",
-        "Remove mkdocs (documentation site)",
-        _gather_nothing,
-        _execute_remove_mkdocs,
-    ),
-    Step(
-        "find_fixmes", "Report remaining FIXMEs (read-only)", _gather_nothing, _execute_find_fixmes
-    ),
-    Step(
-        "reinit_git",
-        "Re-initialize git (deletes history)",
-        _gather_branch,
-        _execute_reinit_git,
-        destructive=True,
-    ),
-    Step(
-        "cleanup",
-        "Remove the template-setup scaffolding",
-        _gather_nothing,
-        _execute_cleanup,
-        destructive=True,
-    ),
-)
-
-
-def execute_steps(root: Path, steps: Sequence[Step], selected: frozenset[int]) -> list[str]:
-    """Run the selected steps in canonical order, gathering inputs just in time.
-
-    Each step's inputs are prompted for immediately before it executes, so a
-    long run never front-loads every question. Failures are collected rather
-    than fatal: the remaining steps still run.
-
-    Args:
-        root: Project root directory.
-        steps: All steps, in canonical order.
-        selected: Step numbers to run.
+        steps: Steps to apply, in canonical order.
 
     Returns:
         Keys of the steps that returned a nonzero exit code.
     """
     failed: list[str] = []
-    for index, step in enumerate(steps, start=1):
-        if index not in selected:
-            continue
-        params = step.gather(root)
-        if step.execute(root, params) != 0:
+    for step in steps:
+        if step.call(root, False) != 0:
             failed.append(step.key)
     return failed
 
 
-def main() -> None:
-    """Run the checklist-driven, end-to-end project setup."""
-    root = _common.find_root()
+def run_setup(
+    root: Path, config_path: Path, *, assume_yes: bool = False, dry_run: bool = False
+) -> int:
+    """Load, validate, preview, confirm (unless ``assume_yes``), and apply ``setup.toml``.
 
-    _common.section("New project setup")
-    print("  This converts the cloned template into your own project.")
-    _common.info("Project root", str(root))
+    Args:
+        root: Project root directory.
+        config_path: Path to the ``setup.toml`` config file.
+        assume_yes: Skip the confirmation prompt.
+        dry_run: Preview every step without applying anything.
+
+    Returns:
+        ``2`` if the config file is missing/unreadable/invalid TOML (nothing
+        was validated); ``1`` if validation found problems, the user
+        declined the confirmation, or the apply ran but one or more steps
+        reported a problem; ``0`` on a clean dry run or an apply where every
+        step succeeded.
+    """
+    raw, load_error = _load_toml(config_path)
+    if load_error:
+        print(f"ERROR: {load_error}")
+        return 2
+
+    config, problems = validate_config(root, raw)
+    if config is None:
+        _common.section("Config problems")
+        for problem in problems:
+            print(f"  - {problem}")
+        print(f"\n  {len(problems)} problem(s) found in {config_path}; nothing changed.")
+        return 1
+
+    steps = build_steps(config)
+    preview_steps(root, steps)
+
+    if dry_run:
+        print("\n  (dry run -- nothing changed)")
+        return 0
+
     print()
-    print("  Checked steps run in the listed order, prompting for their inputs")
-    print("  right before each one executes. Typing 'run' is the only")
-    print("  confirmation -- steps apply their changes without asking again.")
+    if not _common.confirm("Apply the setup above?", assume_yes=assume_yes):
+        print("  Aborted; nothing changed.")
+        return 1
 
-    selected = menu_loop(STEPS)
-    if selected is None:
-        sys.exit("Aborted; nothing changed.")
+    _common.section("Applying")
+    failed = apply_steps(root, steps)
 
-    failed = execute_steps(root, STEPS, selected)
+    find_fixmes.run(root)
 
     _common.section("Setup complete")
     if failed:
         print("  Steps that reported a problem: " + ", ".join(failed))
         print("  Review their output above; each can be re-run on its own.")
-    else:
-        print("  Review the changes, then write some code!")
+        return 1
+    print("  Review the changes, then write some code!")
+    print("  scripts/template_setup/ is yours to remove whenever you're ready --")
+    print("  run cleanup.py, or delete the folder yourself.")
+    return 0
+
+
+def main() -> None:
+    """Parse arguments and run the config-driven setup."""
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt.")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Preview every change without applying anything."
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to setup.toml (default: setup.toml next to this script).",
+    )
+    args = parser.parse_args()
+
+    root = _common.find_root()
+    config_path = args.config or (_common.SETUP_DIR / CONFIG_FILENAME)
+    sys.exit(run_setup(root, config_path, assume_yes=args.yes, dry_run=args.dry_run))
 
 
 if __name__ == "__main__":
