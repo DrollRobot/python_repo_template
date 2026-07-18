@@ -22,16 +22,11 @@
         "files.exclude": {
             "**/__pycache__": true,
             "**/.cache": true,
-            "**/.coverage.*": true,
-            "**/.coverage": true,
-            "**/.env": true,
-            "**/.hypothesis": true,
             "**/.mypy_cache": true,
             "**/.nox": true,
             "**/.pytest_cache": true,
             "**/.ruff_cache": true,
             "**/.tox": true,
-            "**/secrets/**": true,
         },
 
         // -- GIT --------------------------------------------------
@@ -105,18 +100,6 @@
             "markdown": true,
             "python": true,
             "toml": true,
-        },
-        // "chat.tools.urls.autoApprove": { // FIXME a set of tool related websites to automatically allow
-        //     "https://code.visualstudio.com": true,
-        //     "https://github.com/microsoft/vscode/wiki/*": true,
-        //     "https://docs.astral.sh": true,
-        //     "https://docs.github.com": {
-        //         "approveRequest": true,
-        //         "approveResponse": true
-        //     }
-        // },
-        // "chat.tools.terminal.autoApprove": { # FIXME preapprove specific tools for agents to run in the terminal
-        //     "uv": true
-        // }
+        }
     }
 }
