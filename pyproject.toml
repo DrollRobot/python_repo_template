@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.11.26,<0.12.0"]
+requires = ["uv_build>=0.11.29,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv_build]
@@ -18,8 +18,8 @@ dependencies = [
 [dependency-groups]
 docs = [
     "mkdocs>=1.6,<2",
-    "mkdocs-material>=9.7,<10",
-    "mkdocstrings[python]>=1.0.4,<2",
+    "mkdocs-material>=9.7.7,<10",
+    "mkdocstrings[python]>=1.0.6,<2",
 ]
 keyvault = [
     # Azure KeyVault backend (opt-in). To remove: delete this group, and the
@@ -39,9 +39,9 @@ dev = [
     {include-group = "keyvault"},
     "debugpy>=1.8,<2",
     "keyring>=25.0,<26",  # credentials feature (keyring backend)
-    "mypy>=2.1,<3",
+    "mypy>=2.3.0,<3",
     "pre-commit>=4.6,<5",
-    "ruff>=0.15,<1",
+    "ruff>=0.15.22,<1",
     #"other-project", # FIXME add any local/github dependencies here, or remove if not needed
 ]
 
