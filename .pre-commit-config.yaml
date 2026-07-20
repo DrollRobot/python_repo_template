@@ -30,7 +30,9 @@
 # Pre-push hooks (run once on `git push`, slower whole-repo gates):
 #   uv-lock-check     -- fails if uv.lock is out of sync with pyproject.toml
 #   uv-audit          -- fails on known-vulnerable dependencies (needs network)
-#   pytest-offline    -- runs the offline test suite (`-m "not live"`)
+#   pytest-prepush    -- runs the pre-push test suite
+#                        (`-m "not live and not slow and not destructive_local
+#                        and not destructive_remote"`)
 # =============================================================================
 
 default_language_version:
@@ -111,9 +113,9 @@ repos:
         pass_filenames: false
         always_run: true
 
-      - id: pytest-offline
-        name: pytest (offline)
-        entry: uv run pytest -m "not live"
+      - id: pytest-prepush
+        name: pytest (prepush)
+        entry: uv run pytest -m "not live and not slow and not destructive_local and not destructive_remote"
         language: system
         stages: [pre-push]
         pass_filenames: false
