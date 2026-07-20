@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.12.0] - 2026-07-18
+## [1.12.0] - 2026-07-20
 
 ### Added
 
@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reinit) lives in one file that `setup_new_project.py` validates all at
   once, previews, and applies with a single confirmation.
 - Pre-commit gained a pre-push stage that runs `uv lock --locked`, `uv audit`,
-  and the offline test suite; the existing commit-time hooks now run only at
-  commit time instead of re-running on push.
+  and the test suite excluding live, slow, and destructive tests; the
+  existing commit-time hooks now run only at commit time instead of
+  re-running on push.
 - Destructive tests are now split into `destructive_local` and
   `destructive_remote` markers, each gated independently
   (`--run-destructive-local` / `--run-destructive-remote` plus its own
@@ -34,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/setup.toml` moved from `scripts/template_setup/setup.toml` to
   `scripts/setup.toml` so it survives `cleanup.py` and stays available after
   template setup is done.
+- The committed VS Code workspace file
+  (`python_repo_template.code-workspace.FIXME.jsonc`) no longer hides
+  `.env`, coverage files, `.hypothesis`, or `secrets/` from the file
+  explorer, and drops the commented-out tool-autoapprove FIXME stubs, so it
+  starts less opinionated about what a project wants hidden or auto-approved.
 
 ### Fixed
 
