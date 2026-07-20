@@ -25,6 +25,9 @@ conventions, required checks, and how to run tests.
 - Line length limit: 100 characters.
 - Use type hints for all function signatures.
 
+## Commit Messages
+Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
+
 ## Testing
 For instructions on writing and running tests: [AGENTS.TESTING.md](AGENTS.TESTING.md).
 ALWAYS READ BEFORE WRITING NEW CODE.
