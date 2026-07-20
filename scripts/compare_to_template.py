@@ -177,6 +177,7 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".env.example", required=False, strict=False),  # project env vars
     # Agent and contributor docs.
     BaselineFile("AGENTS.md", strict=False),  # holds the project's own rules
+    BaselineFile("AGENTS.COMMITTING.md"),
     BaselineFile("AGENTS.RELEASING.md"),
     BaselineFile("AGENTS.TESTING.md"),
     BaselineFile("AGENTS.WORKTREE.md"),
