@@ -75,6 +75,7 @@ uv sync
 6. **Install and update pre-commit hooks:**
 ```powershell
 uv run pre-commit install
+uv run pre-commit install --hook-type pre-push
 uv run pre-commit autoupdate
 ```
 

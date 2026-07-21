@@ -35,12 +35,18 @@
 #                        and not destructive_remote"`)
 # =============================================================================
 
+# .pre-commit-config.yaml
+
+# configure pre-commit checks
+# install uv: https://docs.astral.sh/uv/
+# uv sync
+# uv run pre-commit install
+# uv run pre-commit install --hook-type pre-push
+# uv run pre-commit autoupdate
+
 default_language_version:
   python: python3.14
 
-# Hooks with no explicit `stages` run at this stage only, so the commit-time
-# suite below does not also re-run on `git push`. The pre-push block sets its
-# own `stages: [pre-push]`.
 default_stages: [pre-commit]
 
 ci:
@@ -57,7 +63,14 @@ repos:
       - id: check-toml
       - id: check-added-large-files
       - id: mixed-line-ending
-        args: [--fix=lf]  # since you work cross-platform
+        args: [--fix=lf]  # for cross-platform support
+
+  # detect-secrets
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
 
   # Ruff: lint + format
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -85,16 +98,7 @@ repos:
         files: ^pyproject\.toml$
         pass_filenames: false
 
-  # detect-secrets
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.5.0
-    hooks:
-      - id: detect-secrets
-        args: ['--baseline', '.secrets.baseline']
-
-  # Pre-push checks: slower, whole-repo gates that run once before `git push`
-  # rather than on every commit. Install with:
-  #   uv run pre-commit install --hook-type pre-push
+  # Pre-push checks
   - repo: local
     hooks:
       - id: uv-lock-check
