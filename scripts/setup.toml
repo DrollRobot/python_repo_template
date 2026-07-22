@@ -62,6 +62,11 @@ auto_memory_guard = false
 mkdocs = true
 keyring = true
 azure_keyvault = true
+# The commented-out "mint a GitHub App token" steps in .github/workflows/
+# {ci,audit,docs}.yml, for cloning private git dependencies in CI. false
+# deletes those steps outright instead of leaving them commented out -- see
+# README's "GitHub App tokens" section to fill them back in by hand later.
+private_repo_deps = true
 
 [git]
 # DESTRUCTIVE: deletes .git and runs `git init`. Refused (as a validation

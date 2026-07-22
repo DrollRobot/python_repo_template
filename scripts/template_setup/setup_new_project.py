@@ -23,8 +23,9 @@ Python version -> set project version -> reset changelog -> Claude command
 hooks -> Claude auto-memory guard -> choose license -> remove mkdocs (if
 declined) -> remove keyring backend (if declined) -> remove KeyVault backend
 (if declined) -> remove the credentials dispatcher (only once both backends
-above are declined) -> re-initialize git (if requested). A read-only FIXME
-report always runs last, whether or not anything failed.
+above are declined) -> remove private-repo-deps workflow steps (if declined)
+-> re-initialize git (if requested). A read-only FIXME report always runs
+last, whether or not anything failed.
 
 Each step is also runnable on its own with its own prompts/flags -- see that
 script's module docstring (e.g. ``remove_mkdocs.py``). This script does NOT
@@ -58,6 +59,7 @@ import remove_credentials
 import remove_keyring
 import remove_keyvault
 import remove_mkdocs
+import remove_private_repo_deps
 import rename_project
 import reset_changelog
 import set_github_user
@@ -87,6 +89,7 @@ class Config:
     mkdocs: bool
     keyring: bool
     azure_keyvault: bool
+    private_repo_deps: bool
     reinit: bool
     branch: str
 
@@ -233,6 +236,7 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
     mkdocs = _require_bool(features, "mkdocs", "features", problems)
     keyring = _require_bool(features, "keyring", "features", problems)
     azure_keyvault = _require_bool(features, "azure_keyvault", "features", problems)
+    private_repo_deps = _require_bool(features, "private_repo_deps", "features", problems)
 
     reinit = _require_bool(git, "reinit", "git", problems)
     branch = _require_str(git, "branch", "git", problems)
@@ -308,6 +312,7 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
             mkdocs=mkdocs,
             keyring=keyring,
             azure_keyvault=azure_keyvault,
+            private_repo_deps=private_repo_deps,
             reinit=reinit,
             branch=branch,
         ),
@@ -473,6 +478,17 @@ def _step_remove_credentials() -> PlannedStep:
     return PlannedStep("remove_credentials", "Remove the credentials dispatcher", call)
 
 
+def _step_remove_private_repo_deps() -> PlannedStep:
+    """Build the private-repo-deps-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_private_repo_deps.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep(
+        "remove_private_repo_deps", "Remove private-repo-deps workflow steps", call
+    )
+
+
 def _step_reinit_git(config: Config) -> PlannedStep:
     """Build the git re-initialization step (only included when requested), destructive."""
 
@@ -487,7 +503,7 @@ def _step_reinit_git(config: Config) -> PlannedStep:
 def build_steps(config: Config) -> tuple[PlannedStep, ...]:
     """Build the ordered, config-bound steps for one run.
 
-    Every step except the three removable features and ``reinit_git`` always
+    Every step except the four removable features and ``reinit_git`` always
     runs. ``find_fixmes`` is intentionally not included here -- it is
     read-only and always runs once, separately, after a successful apply,
     never gated by the confirmation.
@@ -517,6 +533,8 @@ def build_steps(config: Config) -> tuple[PlannedStep, ...]:
         steps.append(_step_remove_keyvault())
     if not config.keyring and not config.azure_keyvault:
         steps.append(_step_remove_credentials())
+    if not config.private_repo_deps:
+        steps.append(_step_remove_private_repo_deps())
     if config.reinit:
         steps.append(_step_reinit_git(config))
     return tuple(steps)

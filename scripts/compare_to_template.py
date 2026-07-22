@@ -12,6 +12,8 @@ so that only real drift is reported:
   - the "TEMPLATE SETUP NOTES" banner comments -> stripped from both sides
   - the pinned Python version -> the project's (from `.python-version`)
   - the template-only pyproject.toml config -> dropped, as cleanup.py does
+  - the commented-out private-repo-deps workflow steps -> stripped, as
+    remove_private_repo_deps.py does, when the project declined them
 
 Each baseline file is strict (drift is an error) or lenient (expected to
 diverge; reported for review only), and required or optional (optional
@@ -28,7 +30,11 @@ project declined is left out of the comparison, the version preflight, and
 ``--diff`` entirely: it is never reported and never offered for copy, exactly
 like a file the project simply doesn't have. A feature the project kept is
 compared like any other required file, so an accidentally deleted one is
-reported as drift instead of silently ignored.
+reported as drift instead of silently ignored. The private-repo-deps feature
+is different: it is not a ``gate`` on any file (ci.yml/audit.yml/docs.yml
+stay required and strict either way) -- instead its commented-out steps are
+replayed away from the template side before comparing, per
+``replay_private_repo_deps()``.
 
 Before comparing, the script checks the version of every versioned file (the
 dev helper scripts ``scripts/*.py`` and the ``mypy`` stub-guard test) on both
@@ -76,7 +82,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -252,6 +258,19 @@ EXCLUDED_GLOBS = (
 # side still carries the mkdocs sections.
 MKDOCS_EDITED = ("CONTRIBUTING.md", "AGENTS.RELEASING.md")
 
+# Workflow files that carry the commented-out private-repo-deps GitHub
+# Actions steps (see scripts/template_setup/remove_private_repo_deps.py).
+# Unlike MKDOCS_EDITED, these stay strictly compared -- the block is stripped
+# from the template side by replay_private_repo_deps() before comparing, so a
+# project that declined the feature still needs to match byte-for-byte.
+_PRIVATE_REPO_DEPS_PATHS = (
+    ".github/workflows/ci.yml",
+    ".github/workflows/audit.yml",
+    ".github/workflows/docs.yml",
+)
+_PRIVATE_REPO_DEPS_START = "# <private-repo-deps>"
+_PRIVATE_REPO_DEPS_END = "</private-repo-deps>"
+
 
 @dataclass(frozen=True)
 class ProjectNames:
@@ -284,6 +303,14 @@ class FeatureFlags:
         keyvault: Azure KeyVault backend kept (``[features].azure_keyvault``).
         credentials: Shared credentials dispatcher kept -- ``True`` whenever
             ``keyring`` or ``keyvault`` is, since either backend needs it.
+        private_repo_deps: Commented-out private-git-deps GitHub Actions
+            steps kept in ci.yml/audit.yml/docs.yml
+            (``[features].private_repo_deps``). Not a ``gate`` on any
+            :class:`BaselineFile` -- those workflow files are always
+            required/strict; when this is ``False``,
+            :func:`normalize_template_text` strips the block from the
+            template side before comparing, via
+            :func:`replay_private_repo_deps`.
         hook_no_chained_pwsh: ``no-chained-commands`` hook, PowerShell flavor.
         hook_no_chained_bash: ``no-chained-commands`` hook, bash flavor.
         hook_canonical_pwsh: ``canonical-commands`` hook, PowerShell flavor.
@@ -299,6 +326,7 @@ class FeatureFlags:
     keyring: bool
     keyvault: bool
     credentials: bool
+    private_repo_deps: bool
     hook_no_chained_pwsh: bool
     hook_no_chained_bash: bool
     hook_canonical_pwsh: bool
@@ -589,6 +617,43 @@ def replay_cleanup_pyproject(text: str) -> str:
     )
 
 
+def replay_private_repo_deps(rel: str, text: str) -> str:
+    """Strip the commented-out private-repo-deps GitHub Actions block.
+
+    Mirrors scripts/template_setup/remove_private_repo_deps.py: removes the
+    ``# <private-repo-deps>`` ... ``# </private-repo-deps>`` block (and the
+    blank line immediately before it) from a workflow file's template-side
+    text, so a project that declined ``[features].private_repo_deps``
+    compares byte-equal instead of showing permanent drift. A no-op for any
+    other file, or for one of the three workflows if the block is somehow
+    already gone.
+
+    Args:
+        rel: Template-relative path of the file.
+        text: Template-side file contents (LF line endings).
+
+    Returns:
+        The contents with the block removed, or unchanged.
+    """
+    if rel not in _PRIVATE_REPO_DEPS_PATHS:
+        return text
+    lines = text.splitlines(keepends=True)
+    start = next(
+        (i for i, line in enumerate(lines) if line.strip() == _PRIVATE_REPO_DEPS_START), None
+    )
+    if start is None:
+        return text
+    end = next(
+        (i for i in range(start, len(lines)) if _PRIVATE_REPO_DEPS_END in lines[i]), None
+    )
+    if end is None:
+        return text
+    if start > 0 and not lines[start - 1].strip():
+        start -= 1
+    del lines[start : end + 1]
+    return "".join(lines)
+
+
 def map_project_path(rel: str, names: ProjectNames) -> str:
     """Map a template-relative path to its project-relative counterpart.
 
@@ -613,6 +678,7 @@ def normalize_template_text(
     dotted: str | None = None,
     compact: str | None = None,
     ran_cleanup: bool = False,
+    private_repo_deps: bool = True,
 ) -> str:
     """Replay the template-setup transformations onto template-side content.
 
@@ -626,6 +692,10 @@ def normalize_template_text(
         dotted: Project Python version as ``MAJOR.MINOR`` (skip when ``None``).
         compact: Project Python version as ``pyMAJORMINOR`` (skip when ``None``).
         ran_cleanup: Whether to drop the template-only pyproject.toml lines.
+        private_repo_deps: Whether the project kept the private-repo-deps
+            workflow steps (``[features].private_repo_deps``); ``False``
+            strips them from the template side too, mirroring
+            ``remove_private_repo_deps.py``.
 
     Returns:
         The normalized contents.
@@ -635,6 +705,8 @@ def normalize_template_text(
         text = replay_python_version(rel, text, dotted, compact)
     if rel == "pyproject.toml" and ran_cleanup:
         text = replay_cleanup_pyproject(text)
+    if not private_repo_deps:
+        text = replay_private_repo_deps(rel, text)
     text = text.replace(TEMPLATE_SNAKE, names.snake).replace(TEMPLATE_KEBAB, names.kebab)
     if names.github_user is not None:
         text = replace_case_insensitive(text, TEMPLATE_USER, names.github_user)
@@ -816,6 +888,7 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
         keyring=keyring,
         keyvault=keyvault,
         credentials=keyring or keyvault,
+        private_repo_deps=bool(features.get("private_repo_deps", True)),
         hook_no_chained_pwsh=(shell == "powershell" and no_chained_commands),
         hook_no_chained_bash=(shell == "bash" and no_chained_commands),
         hook_canonical_pwsh=(shell == "powershell" and canonical_commands),
@@ -823,6 +896,26 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
         hook_auto_memory=bool(claude.get("auto_memory_guard", False)),
         source=SETUP_CONFIG_REL,
     )
+
+
+def _has_private_repo_deps_block(project_root: Path) -> bool:
+    """Whether ``ci.yml`` still carries the private-repo-deps marker comment.
+
+    Args:
+        project_root: Root of the project checkout.
+
+    Returns:
+        ``True`` if ``.github/workflows/ci.yml`` exists, is readable, and
+        still contains :data:`_PRIVATE_REPO_DEPS_START`.
+    """
+    path = project_root / ".github" / "workflows" / "ci.yml"
+    if not path.is_file():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return _PRIVATE_REPO_DEPS_START in text
 
 
 def infer_feature_flags(project_root: Path) -> FeatureFlags:
@@ -847,6 +940,7 @@ def infer_feature_flags(project_root: Path) -> FeatureFlags:
         keyring=keyring,
         keyvault=keyvault,
         credentials=(project_root / "tests" / "_bootstrap.py").is_file(),
+        private_repo_deps=_has_private_repo_deps_block(project_root),
         hook_no_chained_pwsh=(hooks_dir / "no-chained-commands-pwsh.py").is_file(),
         hook_no_chained_bash=(hooks_dir / "no-chained-commands-bash.py").is_file(),
         hook_canonical_pwsh=(hooks_dir / "canonical-commands-pwsh.py").is_file(),
@@ -975,6 +1069,7 @@ def compare_one(entry: BaselineFile, ctx: CompareContext) -> Comparison:
         dotted=ctx.dotted,
         compact=ctx.compact,
         ran_cleanup=ctx.ran_cleanup,
+        private_repo_deps=ctx.flags.private_repo_deps,
     )
     project_norm = normalize_project_text(project_text)
     if template_norm == project_norm:
@@ -1492,6 +1587,7 @@ _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("keyring", "keyring backend"),
     ("keyvault", "Azure KeyVault backend"),
     ("credentials", "credentials dispatcher"),
+    ("private_repo_deps", "private-repo-deps workflow steps"),
     ("hook_no_chained_pwsh", "no-chained-commands hook (powershell)"),
     ("hook_no_chained_bash", "no-chained-commands hook (bash)"),
     ("hook_canonical_pwsh", "canonical-commands hook (powershell)"),

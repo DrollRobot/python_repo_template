@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from compare_to_template import (
     _MARKER,
+    _PRIVATE_REPO_DEPS_END,
+    _PRIVATE_REPO_DEPS_START,
     MANIFEST,
     SETUP_CONFIG_REL,
     TEMPLATE_KEBAB,
@@ -48,6 +50,7 @@ from compare_to_template import (
     python_version_forms,
     replace_case_insensitive,
     replay_cleanup_pyproject,
+    replay_private_repo_deps,
     replay_python_version,
     resolve_code,
     resolve_feature_flags,
@@ -83,6 +86,7 @@ def make_flags(
     keyring: bool = True,
     keyvault: bool = True,
     credentials: bool = True,
+    private_repo_deps: bool = True,
     hook_no_chained_pwsh: bool = True,
     hook_no_chained_bash: bool = True,
     hook_canonical_pwsh: bool = True,
@@ -96,6 +100,7 @@ def make_flags(
         keyring=keyring,
         keyvault=keyvault,
         credentials=credentials,
+        private_repo_deps=private_repo_deps,
         hook_no_chained_pwsh=hook_no_chained_pwsh,
         hook_no_chained_bash=hook_no_chained_bash,
         hook_canonical_pwsh=hook_canonical_pwsh,
@@ -303,6 +308,41 @@ def test_replay_cleanup_pyproject_drops_template_only_lines() -> None:
 def test_replay_cleanup_pyproject_tolerates_missing_snippets() -> None:
     text = "unrelated = true\n"
     assert replay_cleanup_pyproject(text) == text
+
+
+_PRIVATE_REPO_DEPS_BLOCK = (
+    f"      {_PRIVATE_REPO_DEPS_START}\n"
+    "      # FIXME uncomment if using Github app tokens to access private repos\n"
+    "      # - name: Mint a token for private git deps\n"
+    f"      # {_PRIVATE_REPO_DEPS_END}\n"
+)
+
+
+@pytest.mark.unit
+def test_replay_private_repo_deps_strips_block_from_known_workflow() -> None:
+    text = (
+        "      - name: Install uv\n"
+        "\n"
+        + _PRIVATE_REPO_DEPS_BLOCK
+        + "\n"
+        + "      - name: Sync dependencies\n"
+    )
+    result = replay_private_repo_deps(".github/workflows/ci.yml", text)
+    assert result == (
+        "      - name: Install uv\n\n      - name: Sync dependencies\n"
+    )
+
+
+@pytest.mark.unit
+def test_replay_private_repo_deps_leaves_unrelated_files_alone() -> None:
+    text = "      - name: Install uv\n\n" + _PRIVATE_REPO_DEPS_BLOCK + "\n"
+    assert replay_private_repo_deps("README.md", text) == text
+
+
+@pytest.mark.unit
+def test_replay_private_repo_deps_tolerates_missing_block() -> None:
+    text = "      - name: Install uv\n      - name: Sync dependencies\n"
+    assert replay_private_repo_deps(".github/workflows/ci.yml", text) == text
 
 
 # --- token mapping -------------------------------------------------------------
@@ -537,6 +577,39 @@ def test_compare_one_demotes_mkdocs_edited_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_compare_one_matches_after_private_repo_deps_removal(tmp_path: Path) -> None:
+    # Unlike mkdocs (demoted to "review"), a declined private_repo_deps still
+    # compares as a clean "match": the template side is stripped down to what
+    # remove_private_repo_deps.py leaves in the project, byte-for-byte.
+    ctx = make_ctx(tmp_path, flags=make_flags(private_repo_deps=False))
+    template = (
+        "      - name: Install uv\n\n" + _PRIVATE_REPO_DEPS_BLOCK + "\n"
+        "      - name: Sync dependencies\n"
+    )
+    project = "      - name: Install uv\n\n      - name: Sync dependencies\n"
+    write(ctx.template_root, ".github/workflows/ci.yml", template)
+    write(ctx.project_root, ".github/workflows/ci.yml", project)
+    result = compare_one(BaselineFile(".github/workflows/ci.yml"), ctx)
+    assert result.status == "match"
+
+
+@pytest.mark.unit
+def test_compare_one_reports_drift_when_private_repo_deps_kept_but_edited(tmp_path: Path) -> None:
+    # With the feature kept (the default), the block is never stripped from
+    # the template side, so a project that hand-edited it still shows drift.
+    ctx = make_ctx(tmp_path, flags=make_flags(private_repo_deps=True))
+    template = (
+        "      - name: Install uv\n\n" + _PRIVATE_REPO_DEPS_BLOCK + "\n"
+        "      - name: Sync dependencies\n"
+    )
+    project = "      - name: Install uv\n\n      - name: Sync dependencies\n"
+    write(ctx.template_root, ".github/workflows/ci.yml", template)
+    write(ctx.project_root, ".github/workflows/ci.yml", project)
+    result = compare_one(BaselineFile(".github/workflows/ci.yml"), ctx)
+    assert result.status == "modified"
+
+
+@pytest.mark.unit
 def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     rel = f"docs/reference/{TEMPLATE_SNAKE}.md"
@@ -590,7 +663,12 @@ def test_compare_one_missing_is_drift_when_feature_kept(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     raw = {
-        "features": {"mkdocs": False, "keyring": True, "azure_keyvault": False},
+        "features": {
+            "mkdocs": False,
+            "keyring": True,
+            "azure_keyvault": False,
+            "private_repo_deps": False,
+        },
         "claude": {
             "shell": "bash",
             "no_chained_commands": True,
@@ -603,6 +681,7 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     assert flags.keyring is True
     assert flags.keyvault is False
     assert flags.credentials is True  # keyring alone is enough
+    assert flags.private_repo_deps is False
     assert flags.hook_no_chained_bash is True
     assert flags.hook_no_chained_pwsh is False
     assert flags.hook_canonical_bash is False
@@ -625,6 +704,7 @@ def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
     assert flags.keyring is True
     assert flags.keyvault is True
     assert flags.credentials is True
+    assert flags.private_repo_deps is True
     assert flags.hook_no_chained_pwsh is False
     assert flags.hook_auto_memory is False
 
@@ -647,7 +727,20 @@ def test_infer_feature_flags_reads_file_presence(tmp_path: Path) -> None:
     assert flags.mkdocs is False
     assert flags.hook_canonical_bash is True
     assert flags.hook_canonical_pwsh is False
+    assert flags.private_repo_deps is False  # no ci.yml at all
     assert flags.source == "inferred from file presence"
+
+
+@pytest.mark.unit
+def test_infer_feature_flags_private_repo_deps_true_when_marker_present(tmp_path: Path) -> None:
+    write(tmp_path, ".github/workflows/ci.yml", f"      {_PRIVATE_REPO_DEPS_START}\n")
+    assert infer_feature_flags(tmp_path).private_repo_deps is True
+
+
+@pytest.mark.unit
+def test_infer_feature_flags_private_repo_deps_false_when_marker_absent(tmp_path: Path) -> None:
+    write(tmp_path, ".github/workflows/ci.yml", "      - name: Sync dependencies\n")
+    assert infer_feature_flags(tmp_path).private_repo_deps is False
 
 
 @pytest.mark.unit

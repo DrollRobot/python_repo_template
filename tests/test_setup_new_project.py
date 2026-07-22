@@ -30,6 +30,7 @@ import remove_credentials
 import remove_keyring
 import remove_keyvault
 import remove_mkdocs
+import remove_private_repo_deps
 import rename_project
 import reset_changelog
 import set_github_user
@@ -61,6 +62,7 @@ auto_memory_guard = false
 mkdocs = true
 keyring = true
 azure_keyvault = true
+private_repo_deps = true
 
 [git]
 reinit = false
@@ -84,7 +86,12 @@ def _valid_raw() -> dict[str, Any]:
             "canonical_commands": True,
             "auto_memory_guard": False,
         },
-        "features": {"mkdocs": True, "keyring": True, "azure_keyvault": True},
+        "features": {
+            "mkdocs": True,
+            "keyring": True,
+            "azure_keyvault": True,
+            "private_repo_deps": True,
+        },
         "git": {"reinit": False, "branch": "main"},
     }
 
@@ -107,6 +114,7 @@ def _make_config(**overrides: Any) -> setup_new_project.Config:
         "mkdocs": True,
         "keyring": True,
         "azure_keyvault": True,
+        "private_repo_deps": True,
         "reinit": False,
         "branch": "main",
     }
@@ -385,6 +393,13 @@ def test_build_steps_includes_remove_credentials_only_when_both_declined() -> No
 
 
 @pytest.mark.unit
+def test_build_steps_includes_remove_private_repo_deps_when_declined() -> None:
+    """private_repo_deps=false adds the remove_private_repo_deps step."""
+    steps = setup_new_project.build_steps(_make_config(private_repo_deps=False))
+    assert steps[-1].key == "remove_private_repo_deps"
+
+
+@pytest.mark.unit
 def test_build_steps_includes_reinit_when_requested() -> None:
     """reinit=true adds the destructive reinit_git step last."""
     steps = setup_new_project.build_steps(_make_config(reinit=True))
@@ -566,6 +581,18 @@ def test_step_remove_credentials_forwards_assume_yes(
 
 
 @pytest.mark.unit
+def test_step_remove_private_repo_deps_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_private_repo_deps, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(private_repo_deps=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
 def test_step_reinit_git_forwards_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(reinit_git, "run", _recording_run(calls))
@@ -643,6 +670,7 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
         remove_keyring,
         remove_keyvault,
         remove_credentials,
+        remove_private_repo_deps,
         reinit_git,
     ]
     for module in modules:
