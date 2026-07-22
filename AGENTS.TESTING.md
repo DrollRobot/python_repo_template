@@ -44,7 +44,7 @@ uv run mypy --platform linux        # type check as Linux
 
 # tests (destructive tests are skipped by default; see note below)
 uv run pytest -m "not live"         # offline tests
-uv run pytest                       # online and offline tests (when credentialed)
+uv run pytest                       # live and not-live tests (when credentialed)
 ```
 
 ## Destructive tests
