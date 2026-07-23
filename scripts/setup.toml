@@ -67,6 +67,13 @@ azure_keyvault = true
 # deletes those steps outright instead of leaving them commented out -- see
 # README's "GitHub App tokens" section to fill them back in by hand later.
 private_repo_deps = true
+# The scripts/mark_remote_disposable.py + tests/verify_remote_disposable.py
+# stub pair that gates @pytest.mark.destructive_remote tests (see
+# AGENTS.TESTING.md). Keep them only if this project will have tests that
+# mutate a remote system; false deletes both stubs (and the unit test for the
+# read half). The marker, conftest.py's gate, and the docs stay either way --
+# with the read half gone the gate simply fails closed.
+remote_disposable_scripts = true
 
 [git]
 # DESTRUCTIVE: deletes .git and runs `git init`. Refused (as a validation

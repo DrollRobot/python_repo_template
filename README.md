@@ -37,7 +37,8 @@ git clone https://github.com/DrollRobot/python_repo_template.git YOUR-PROJECT-NA
 2. **Edit `scripts/setup.toml`** with your values: project name,
    GitHub username, Python/project version, license choice, which optional
    features to keep (`mkdocs`, `keyring`, `azure_keyvault`, `private_repo_deps`,
-   Claude command hooks), and whether to re-initialize git.
+   `remote_disposable_scripts`, Claude command hooks), and whether to
+   re-initialize git.
 
 3. **Run the setup script:**
 ```powershell

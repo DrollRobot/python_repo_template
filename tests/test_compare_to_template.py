@@ -86,6 +86,7 @@ def make_flags(
     keyvault: bool = True,
     credentials: bool = True,
     private_repo_deps: bool = True,
+    remote_disposable_scripts: bool = True,
     hook_no_chained_pwsh: bool = True,
     hook_no_chained_bash: bool = True,
     hook_canonical_pwsh: bool = True,
@@ -100,6 +101,7 @@ def make_flags(
         keyvault=keyvault,
         credentials=credentials,
         private_repo_deps=private_repo_deps,
+        remote_disposable_scripts=remote_disposable_scripts,
         hook_no_chained_pwsh=hook_no_chained_pwsh,
         hook_no_chained_bash=hook_no_chained_bash,
         hook_canonical_pwsh=hook_canonical_pwsh,
@@ -321,15 +323,10 @@ _PRIVATE_REPO_DEPS_BLOCK = (
 def test_replay_private_repo_deps_strips_block_from_known_workflow() -> None:
     text = (
         "      - name: Install uv\n"
-        "\n"
-        + _PRIVATE_REPO_DEPS_BLOCK
-        + "\n"
-        + "      - name: Sync dependencies\n"
+        "\n" + _PRIVATE_REPO_DEPS_BLOCK + "\n" + "      - name: Sync dependencies\n"
     )
     result = replay_private_repo_deps(".github/workflows/ci.yml", text)
-    assert result == (
-        "      - name: Install uv\n\n      - name: Sync dependencies\n"
-    )
+    assert result == ("      - name: Install uv\n\n      - name: Sync dependencies\n")
 
 
 @pytest.mark.unit
@@ -667,6 +664,7 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
             "keyring": True,
             "azure_keyvault": False,
             "private_repo_deps": False,
+            "remote_disposable_scripts": False,
         },
         "claude": {
             "shell": "bash",
@@ -681,6 +679,7 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     assert flags.keyvault is False
     assert flags.credentials is True  # keyring alone is enough
     assert flags.private_repo_deps is False
+    assert flags.remote_disposable_scripts is False
     assert flags.hook_no_chained_bash is True
     assert flags.hook_no_chained_pwsh is False
     assert flags.hook_canonical_bash is False
@@ -704,6 +703,7 @@ def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
     assert flags.keyvault is True
     assert flags.credentials is True
     assert flags.private_repo_deps is True
+    assert flags.remote_disposable_scripts is True
     assert flags.hook_no_chained_pwsh is False
     assert flags.hook_auto_memory is False
 
@@ -828,6 +828,19 @@ def test_manifest_setup_config_is_required_existence_only_and_ungated() -> None:
 
 
 @pytest.mark.unit
+def test_manifest_remote_disposable_pair_is_gated_and_lenient() -> None:
+    # Both halves are deleted together by
+    # remove_remote_disposable_scripts.py, and their marker mechanism is
+    # filled in per project, so drift is reported for review, not as an error.
+    paths = ("scripts/mark_remote_disposable.py", "tests/verify_remote_disposable.py")
+    entries = [e for e in MANIFEST if e.path in paths]
+    assert len(entries) == len(paths)
+    for entry in entries:
+        assert entry.gate == "remote_disposable_scripts"
+        assert entry.strict is False
+
+
+@pytest.mark.unit
 def test_manifest_gates_match_feature_flags_fields() -> None:
     # Every gate string must resolve to a real FeatureFlags field (else
     # FeatureFlags.wanted() raises at runtime), and every field should be
@@ -837,6 +850,7 @@ def test_manifest_gates_match_feature_flags_fields() -> None:
         "keyring",
         "keyvault",
         "credentials",
+        "remote_disposable_scripts",
         "hook_no_chained_pwsh",
         "hook_no_chained_bash",
         "hook_canonical_pwsh",

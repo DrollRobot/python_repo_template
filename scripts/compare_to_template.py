@@ -23,7 +23,8 @@ the project rewrites their contents wholesale. Files the project adds on top
 of the template are ignored.
 
 Files belonging to a config-driven optional feature (mkdocs, the keyring/
-KeyVault credential backends, the Claude Code command hooks) are gated on
+KeyVault credential backends, the remote-disposability scripts, the Claude
+Code command hooks) are gated on
 that project's own choices, read from ``scripts/setup.toml`` (a missing or
 unparsable file is a hard error, not a cue to guess). A feature the
 project declined is left out of the comparison, the version preflight, and
@@ -82,7 +83,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.9.0"
+__version__ = "1.10.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -212,9 +213,10 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # target disposable. Its read half (verify_remote_disposable.py) lives in
     # tests/, next to the conftest.py gate that is its only automatic caller.
     # The marker mechanism is expected to be filled in per project, so drift
-    # (customization) is not an error. Not config-driven (no setup.toml
-    # field for it), so it stays optional rather than gated.
-    BaselineFile("scripts/mark_remote_disposable.py", required=False, strict=False),
+    # (customization) is not an error.
+    BaselineFile(
+        "scripts/mark_remote_disposable.py", strict=False, gate="remote_disposable_scripts"
+    ),
     # Documentation site (mkdocs feature; content is the project's own).
     BaselineFile("mkdocs.yml", gate="mkdocs", strict=False),
     # The docs landing page is rewritten wholesale per project (it is always
@@ -233,7 +235,9 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # scripts/mark_remote_disposable.py above; the marker mechanism is
     # expected to be filled in per project, so drift (customization) is not
     # an error.
-    BaselineFile("tests/verify_remote_disposable.py", required=False, strict=False),
+    BaselineFile(
+        "tests/verify_remote_disposable.py", strict=False, gate="remote_disposable_scripts"
+    ),
     # The mypy stub-guard test ships to projects (cleanup.py keeps it: no
     # matching script) and must track the template, so it is compared here
     # despite the blanket tests/test_*.py exclusion, and carries a __version__.
@@ -313,6 +317,10 @@ class FeatureFlags:
             :func:`normalize_template_text` strips the block from the
             template side before comparing, via
             :func:`replay_private_repo_deps`.
+        remote_disposable_scripts: The mark/verify remote-disposability stub
+            pair kept (``[features].remote_disposable_scripts``). Gates both
+            ``scripts/mark_remote_disposable.py`` and
+            ``tests/verify_remote_disposable.py``.
         hook_no_chained_pwsh: ``no-chained-commands`` hook, PowerShell flavor.
         hook_no_chained_bash: ``no-chained-commands`` hook, bash flavor.
         hook_canonical_pwsh: ``canonical-commands`` hook, PowerShell flavor.
@@ -328,6 +336,7 @@ class FeatureFlags:
     keyvault: bool
     credentials: bool
     private_repo_deps: bool
+    remote_disposable_scripts: bool
     hook_no_chained_pwsh: bool
     hook_no_chained_bash: bool
     hook_canonical_pwsh: bool
@@ -644,9 +653,7 @@ def replay_private_repo_deps(rel: str, text: str) -> str:
     )
     if start is None:
         return text
-    end = next(
-        (i for i in range(start, len(lines)) if _PRIVATE_REPO_DEPS_END in lines[i]), None
-    )
+    end = next((i for i in range(start, len(lines)) if _PRIVATE_REPO_DEPS_END in lines[i]), None)
     if end is None:
         return text
     if start > 0 and not lines[start - 1].strip():
@@ -890,6 +897,7 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
         keyvault=keyvault,
         credentials=keyring or keyvault,
         private_repo_deps=bool(features.get("private_repo_deps", True)),
+        remote_disposable_scripts=bool(features.get("remote_disposable_scripts", True)),
         hook_no_chained_pwsh=(shell == "powershell" and no_chained_commands),
         hook_no_chained_bash=(shell == "bash" and no_chained_commands),
         hook_canonical_pwsh=(shell == "powershell" and canonical_commands),
@@ -1555,6 +1563,7 @@ _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("keyvault", "Azure KeyVault backend"),
     ("credentials", "credentials dispatcher"),
     ("private_repo_deps", "private-repo-deps workflow steps"),
+    ("remote_disposable_scripts", "remote-disposability scripts"),
     ("hook_no_chained_pwsh", "no-chained-commands hook (powershell)"),
     ("hook_no_chained_bash", "no-chained-commands hook (bash)"),
     ("hook_canonical_pwsh", "canonical-commands hook (powershell)"),
