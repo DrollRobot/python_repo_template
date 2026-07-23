@@ -87,6 +87,8 @@ def make_flags(
     credentials: bool = True,
     private_repo_deps: bool = True,
     remote_disposable_scripts: bool = True,
+    security_policy: bool = True,
+    contributing_guide: bool = True,
     hook_no_chained_pwsh: bool = True,
     hook_no_chained_bash: bool = True,
     hook_canonical_pwsh: bool = True,
@@ -102,6 +104,8 @@ def make_flags(
         credentials=credentials,
         private_repo_deps=private_repo_deps,
         remote_disposable_scripts=remote_disposable_scripts,
+        security_policy=security_policy,
+        contributing_guide=contributing_guide,
         hook_no_chained_pwsh=hook_no_chained_pwsh,
         hook_no_chained_bash=hook_no_chained_bash,
         hook_canonical_pwsh=hook_canonical_pwsh,
@@ -381,7 +385,7 @@ def test_effective_strict_demotes_mkdocs_edited_files_when_removed() -> None:
 
 @pytest.mark.unit
 def test_effective_strict_keeps_other_files_strict() -> None:
-    entry = BaselineFile("SECURITY.md")
+    entry = BaselineFile("CLAUDE.md")
     assert effective_strict(entry, has_mkdocs=False) is True
 
 
@@ -621,7 +625,7 @@ def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_is_applicable_true_for_ungated_entries() -> None:
-    assert is_applicable(BaselineFile("SECURITY.md"), make_flags(mkdocs=False)) is True
+    assert is_applicable(BaselineFile("CLAUDE.md"), make_flags(mkdocs=False)) is True
 
 
 @pytest.mark.unit
@@ -634,7 +638,7 @@ def test_is_applicable_follows_the_matching_flag() -> None:
 @pytest.mark.unit
 def test_effective_required_uses_static_field_when_ungated() -> None:
     flags = make_flags()
-    assert effective_required(BaselineFile("SECURITY.md"), flags) is True
+    assert effective_required(BaselineFile("CLAUDE.md"), flags) is True
     assert effective_required(BaselineFile("extra.md", required=False), flags) is False
 
 
@@ -665,6 +669,8 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
             "azure_keyvault": False,
             "private_repo_deps": False,
             "remote_disposable_scripts": False,
+            "security_policy": False,
+            "contributing_guide": False,
         },
         "claude": {
             "shell": "bash",
@@ -680,6 +686,8 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     assert flags.credentials is True  # keyring alone is enough
     assert flags.private_repo_deps is False
     assert flags.remote_disposable_scripts is False
+    assert flags.security_policy is False
+    assert flags.contributing_guide is False
     assert flags.hook_no_chained_bash is True
     assert flags.hook_no_chained_pwsh is False
     assert flags.hook_canonical_bash is False
@@ -704,6 +712,8 @@ def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
     assert flags.credentials is True
     assert flags.private_repo_deps is True
     assert flags.remote_disposable_scripts is True
+    assert flags.security_policy is True
+    assert flags.contributing_guide is True
     assert flags.hook_no_chained_pwsh is False
     assert flags.hook_auto_memory is False
 
@@ -841,6 +851,19 @@ def test_manifest_remote_disposable_pair_is_gated_and_lenient() -> None:
 
 
 @pytest.mark.unit
+def test_manifest_community_docs_are_gated_separately() -> None:
+    # SECURITY.md and CONTRIBUTING.md are independently removable at setup
+    # time, so each is gated on its own flag and compared strictly whenever
+    # the project kept it.
+    expected = {"SECURITY.md": "security_policy", "CONTRIBUTING.md": "contributing_guide"}
+    entries = [e for e in MANIFEST if e.path in expected]
+    assert len(entries) == len(expected)
+    for entry in entries:
+        assert entry.gate == expected[entry.path]
+        assert entry.strict is True
+
+
+@pytest.mark.unit
 def test_manifest_gates_match_feature_flags_fields() -> None:
     # Every gate string must resolve to a real FeatureFlags field (else
     # FeatureFlags.wanted() raises at runtime), and every field should be
@@ -851,6 +874,8 @@ def test_manifest_gates_match_feature_flags_fields() -> None:
         "keyvault",
         "credentials",
         "remote_disposable_scripts",
+        "security_policy",
+        "contributing_guide",
         "hook_no_chained_pwsh",
         "hook_no_chained_bash",
         "hook_canonical_pwsh",

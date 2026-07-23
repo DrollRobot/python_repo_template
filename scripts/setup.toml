@@ -74,6 +74,16 @@ private_repo_deps = true
 # read half). The marker, conftest.py's gate, and the docs stay either way --
 # with the read half gone the gate simply fails closed.
 remote_disposable_scripts = true
+# SECURITY.md, GitHub's private vulnerability-disclosure page (shown on the
+# repo's Security tab, linked from any issue that looks like a vulnerability
+# report). false deletes the file; GitHub then simply stops offering the
+# "Report a vulnerability" flow. Worth keeping for anything public.
+security_policy = true
+# CONTRIBUTING.md, linked by GitHub in the sidebar of every new issue and pull
+# request. false deletes the file. Nothing else references it, but note it
+# also carries this project's dev-environment setup and PR checklist, so a
+# solo project that drops it may want those notes somewhere else.
+contributing_guide = true
 
 [git]
 # DESTRUCTIVE: deletes .git and runs `git init`. Refused (as a validation

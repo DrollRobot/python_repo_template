@@ -34,11 +34,7 @@ Based on some personal preference, and what I understand are the most widely use
 git clone https://github.com/DrollRobot/python_repo_template.git YOUR-PROJECT-NAME
 ```
 
-2. **Edit `scripts/setup.toml`** with your values: project name,
-   GitHub username, Python/project version, license choice, which optional
-   features to keep (`mkdocs`, `keyring`, `azure_keyvault`, `private_repo_deps`,
-   `remote_disposable_scripts`, Claude command hooks), and whether to
-   re-initialize git.
+2. **Edit `scripts/setup.toml`** to determine which features you want to keep.
 
 3. **Run the setup script:**
 ```powershell
@@ -58,15 +54,6 @@ uv run scripts/template_setup/setup_new_project.py
    This does **not** delete `scripts/template_setup/` — that stays a
    separate, manual step (`cleanup.py`, or just delete the folder) once
    you're done with it.
-
-4. **If you don't want the remaining optional features, delete them by hand**
-   — these aren't config-driven:
-
-   | Feature | Delete | Remove from config |
-   | --- | --- | --- |
-   | **Worktree scripts** | `scripts/new_worktree.py`, `scripts/complete_worktree.py`, `scripts/remove_worktree.py`, and their `tests/test_*.py` | — (`scripts/_cli.py` stays; the release script uses it) |
-   | **Template drift check** | `scripts/compare_to_template.py`, `tests/test_compare_to_template.py` | — |
-   | **Release script** | `scripts/push_new_tag_to_main.py` | — (also delete `scripts/_cli.py` if nothing else uses it) |
 
 5. **Create the venv and install dev/test dependencies:**
 ```powershell

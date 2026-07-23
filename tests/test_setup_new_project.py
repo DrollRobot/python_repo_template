@@ -26,12 +26,14 @@ import choose_shell
 import find_fixmes
 import protect_auto_memory
 import reinit_git
+import remove_contributing_guide
 import remove_credentials
 import remove_keyring
 import remove_keyvault
 import remove_mkdocs
 import remove_private_repo_deps
 import remove_remote_disposable_scripts
+import remove_security_policy
 import rename_project
 import reset_changelog
 import set_github_user
@@ -65,6 +67,8 @@ keyring = true
 azure_keyvault = true
 private_repo_deps = true
 remote_disposable_scripts = true
+security_policy = true
+contributing_guide = true
 
 [git]
 reinit = false
@@ -94,6 +98,8 @@ def _valid_raw() -> dict[str, Any]:
             "azure_keyvault": True,
             "private_repo_deps": True,
             "remote_disposable_scripts": True,
+            "security_policy": True,
+            "contributing_guide": True,
         },
         "git": {"reinit": False, "branch": "main"},
     }
@@ -119,6 +125,8 @@ def _make_config(**overrides: Any) -> setup_new_project.Config:
         "azure_keyvault": True,
         "private_repo_deps": True,
         "remote_disposable_scripts": True,
+        "security_policy": True,
+        "contributing_guide": True,
         "reinit": False,
         "branch": "main",
     }
@@ -411,6 +419,32 @@ def test_build_steps_includes_remove_remote_disposable_scripts_when_declined() -
 
 
 @pytest.mark.unit
+def test_build_steps_includes_remove_security_policy_when_declined() -> None:
+    """security_policy=false adds the remove_security_policy step."""
+    steps = setup_new_project.build_steps(_make_config(security_policy=False))
+    assert steps[-1].key == "remove_security_policy"
+
+
+@pytest.mark.unit
+def test_build_steps_includes_remove_contributing_guide_when_declined() -> None:
+    """contributing_guide=false adds the remove_contributing_guide step."""
+    steps = setup_new_project.build_steps(_make_config(contributing_guide=False))
+    assert steps[-1].key == "remove_contributing_guide"
+
+
+@pytest.mark.unit
+def test_build_steps_orders_both_community_doc_removals() -> None:
+    """Both community docs declined: SECURITY.md is removed before CONTRIBUTING.md."""
+    steps = setup_new_project.build_steps(
+        _make_config(security_policy=False, contributing_guide=False)
+    )
+    assert [step.key for step in steps[-2:]] == [
+        "remove_security_policy",
+        "remove_contributing_guide",
+    ]
+
+
+@pytest.mark.unit
 def test_build_steps_includes_reinit_when_requested() -> None:
     """reinit=true adds the destructive reinit_git step last."""
     steps = setup_new_project.build_steps(_make_config(reinit=True))
@@ -616,6 +650,30 @@ def test_step_remove_remote_disposable_scripts_forwards_assume_yes(
 
 
 @pytest.mark.unit
+def test_step_remove_security_policy_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_security_policy, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(security_policy=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
+def test_step_remove_contributing_guide_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_contributing_guide, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(contributing_guide=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
 def test_step_reinit_git_forwards_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(reinit_git, "run", _recording_run(calls))
@@ -695,6 +753,8 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
         remove_credentials,
         remove_private_repo_deps,
         remove_remote_disposable_scripts,
+        remove_security_policy,
+        remove_contributing_guide,
         reinit_git,
     ]
     for module in modules:

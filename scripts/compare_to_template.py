@@ -23,8 +23,8 @@ the project rewrites their contents wholesale. Files the project adds on top
 of the template are ignored.
 
 Files belonging to a config-driven optional feature (mkdocs, the keyring/
-KeyVault credential backends, the remote-disposability scripts, the Claude
-Code command hooks) are gated on
+KeyVault credential backends, the remote-disposability scripts, SECURITY.md,
+CONTRIBUTING.md, the Claude Code command hooks) are gated on
 that project's own choices, read from ``scripts/setup.toml`` (a missing or
 unparsable file is a hard error, not a cue to guess). A feature the
 project declined is left out of the comparison, the version preflight, and
@@ -83,7 +83,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.10.0"
+__version__ = "1.11.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -189,8 +189,9 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("AGENTS.TESTING.md"),
     BaselineFile("AGENTS.WORKTREE.md"),
     BaselineFile("CLAUDE.md"),
-    BaselineFile("CONTRIBUTING.md"),
-    BaselineFile("SECURITY.md"),
+    # GitHub community docs, each independently removable at setup time.
+    BaselineFile("CONTRIBUTING.md", gate="contributing_guide"),
+    BaselineFile("SECURITY.md", gate="security_policy"),
     BaselineFile("README.md", compare_content=False),  # rewritten per project: only check it exists
     # Project configuration: always diverges (version, description, deps).
     BaselineFile("pyproject.toml", strict=False),
@@ -321,6 +322,9 @@ class FeatureFlags:
             pair kept (``[features].remote_disposable_scripts``). Gates both
             ``scripts/mark_remote_disposable.py`` and
             ``tests/verify_remote_disposable.py``.
+        security_policy: ``SECURITY.md`` kept (``[features].security_policy``).
+        contributing_guide: ``CONTRIBUTING.md`` kept
+            (``[features].contributing_guide``).
         hook_no_chained_pwsh: ``no-chained-commands`` hook, PowerShell flavor.
         hook_no_chained_bash: ``no-chained-commands`` hook, bash flavor.
         hook_canonical_pwsh: ``canonical-commands`` hook, PowerShell flavor.
@@ -337,6 +341,8 @@ class FeatureFlags:
     credentials: bool
     private_repo_deps: bool
     remote_disposable_scripts: bool
+    security_policy: bool
+    contributing_guide: bool
     hook_no_chained_pwsh: bool
     hook_no_chained_bash: bool
     hook_canonical_pwsh: bool
@@ -898,6 +904,8 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
         credentials=keyring or keyvault,
         private_repo_deps=bool(features.get("private_repo_deps", True)),
         remote_disposable_scripts=bool(features.get("remote_disposable_scripts", True)),
+        security_policy=bool(features.get("security_policy", True)),
+        contributing_guide=bool(features.get("contributing_guide", True)),
         hook_no_chained_pwsh=(shell == "powershell" and no_chained_commands),
         hook_no_chained_bash=(shell == "bash" and no_chained_commands),
         hook_canonical_pwsh=(shell == "powershell" and canonical_commands),
@@ -1564,6 +1572,8 @@ _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("credentials", "credentials dispatcher"),
     ("private_repo_deps", "private-repo-deps workflow steps"),
     ("remote_disposable_scripts", "remote-disposability scripts"),
+    ("security_policy", "SECURITY.md"),
+    ("contributing_guide", "CONTRIBUTING.md"),
     ("hook_no_chained_pwsh", "no-chained-commands hook (powershell)"),
     ("hook_no_chained_bash", "no-chained-commands hook (bash)"),
     ("hook_canonical_pwsh", "canonical-commands hook (powershell)"),

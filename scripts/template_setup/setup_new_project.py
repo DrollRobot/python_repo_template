@@ -24,9 +24,10 @@ hooks -> Claude auto-memory guard -> choose license -> remove mkdocs (if
 declined) -> remove keyring backend (if declined) -> remove KeyVault backend
 (if declined) -> remove the credentials dispatcher (only once both backends
 above are declined) -> remove private-repo-deps workflow steps (if declined)
--> remove the remote-disposability scripts (if declined) -> re-initialize git
-(if requested). A read-only FIXME report always runs last, whether or not
-anything failed.
+-> remove the remote-disposability scripts (if declined) -> remove SECURITY.md
+(if declined) -> remove CONTRIBUTING.md (if declined) -> re-initialize git (if
+requested). A read-only FIXME report always runs last, whether or not anything
+failed.
 
 Each step is also runnable on its own with its own prompts/flags -- see that
 script's module docstring (e.g. ``remove_mkdocs.py``). This script does NOT
@@ -56,12 +57,14 @@ import choose_shell
 import find_fixmes
 import protect_auto_memory
 import reinit_git
+import remove_contributing_guide
 import remove_credentials
 import remove_keyring
 import remove_keyvault
 import remove_mkdocs
 import remove_private_repo_deps
 import remove_remote_disposable_scripts
+import remove_security_policy
 import rename_project
 import reset_changelog
 import set_github_user
@@ -93,6 +96,8 @@ class Config:
     azure_keyvault: bool
     private_repo_deps: bool
     remote_disposable_scripts: bool
+    security_policy: bool
+    contributing_guide: bool
     reinit: bool
     branch: str
 
@@ -243,6 +248,8 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
     remote_disposable_scripts = _require_bool(
         features, "remote_disposable_scripts", "features", problems
     )
+    security_policy = _require_bool(features, "security_policy", "features", problems)
+    contributing_guide = _require_bool(features, "contributing_guide", "features", problems)
 
     reinit = _require_bool(git, "reinit", "git", problems)
     branch = _require_str(git, "branch", "git", problems)
@@ -320,6 +327,8 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
             azure_keyvault=azure_keyvault,
             private_repo_deps=private_repo_deps,
             remote_disposable_scripts=remote_disposable_scripts,
+            security_policy=security_policy,
+            contributing_guide=contributing_guide,
             reinit=reinit,
             branch=branch,
         ),
@@ -505,6 +514,24 @@ def _step_remove_remote_disposable_scripts() -> PlannedStep:
     )
 
 
+def _step_remove_security_policy() -> PlannedStep:
+    """Build the security-policy-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_security_policy.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_security_policy", "Remove SECURITY.md", call)
+
+
+def _step_remove_contributing_guide() -> PlannedStep:
+    """Build the contributor-guide-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_contributing_guide.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_contributing_guide", "Remove CONTRIBUTING.md", call)
+
+
 def _step_reinit_git(config: Config) -> PlannedStep:
     """Build the git re-initialization step (only included when requested), destructive."""
 
@@ -519,7 +546,7 @@ def _step_reinit_git(config: Config) -> PlannedStep:
 def build_steps(config: Config) -> tuple[PlannedStep, ...]:
     """Build the ordered, config-bound steps for one run.
 
-    Every step except the five removable features and ``reinit_git`` always
+    Every step except the seven removable features and ``reinit_git`` always
     runs. ``find_fixmes`` is intentionally not included here -- it is
     read-only and always runs once, separately, after a successful apply,
     never gated by the confirmation.
@@ -553,6 +580,10 @@ def build_steps(config: Config) -> tuple[PlannedStep, ...]:
         steps.append(_step_remove_private_repo_deps())
     if not config.remote_disposable_scripts:
         steps.append(_step_remove_remote_disposable_scripts())
+    if not config.security_policy:
+        steps.append(_step_remove_security_policy())
+    if not config.contributing_guide:
+        steps.append(_step_remove_contributing_guide())
     if config.reinit:
         steps.append(_step_reinit_git(config))
     return tuple(steps)
