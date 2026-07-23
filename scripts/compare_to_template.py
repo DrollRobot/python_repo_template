@@ -24,8 +24,8 @@ of the template are ignored.
 
 Files belonging to a config-driven optional feature (mkdocs, the keyring/
 KeyVault credential backends, the Claude Code command hooks) are gated on
-that project's own choices, read from ``scripts/setup.toml`` -- or, if that
-file is missing, inferred from which feature files exist. A feature the
+that project's own choices, read from ``scripts/setup.toml`` (a missing or
+unparsable file is a hard error, not a cue to guess). A feature the
 project declined is left out of the comparison, the version preflight, and
 ``--diff`` entirely: it is never reported and never offered for copy, exactly
 like a file the project simply doesn't have. A feature the project kept is
@@ -82,7 +82,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.6.0"
+__version__ = "1.9.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -217,7 +217,9 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("scripts/mark_remote_disposable.py", required=False, strict=False),
     # Documentation site (mkdocs feature; content is the project's own).
     BaselineFile("mkdocs.yml", gate="mkdocs", strict=False),
-    BaselineFile("docs/index.md", gate="mkdocs", strict=False),
+    # The docs landing page is rewritten wholesale per project (it is always
+    # completely different), so only its existence is checked, like README.md.
+    BaselineFile("docs/index.md", gate="mkdocs", compare_content=False),
     BaselineFile(f"docs/reference/{TEMPLATE_SNAKE}.md", gate="mkdocs", strict=False),
     # Test infrastructure (credential feature is removable; conftest grows
     # project fixtures).
@@ -317,9 +319,8 @@ class FeatureFlags:
         hook_canonical_bash: ``canonical-commands`` hook, bash flavor.
         hook_auto_memory: Auto-memory write-guard hook
             (``[claude].auto_memory_guard``).
-        source: Where these flags came from -- :data:`SETUP_CONFIG_REL` or
-            ``"inferred from file presence"`` -- shown in the report so it's
-            clear which one produced a given run's results.
+        source: Where these flags came from -- always :data:`SETUP_CONFIG_REL`,
+            the only supported source -- shown in the report for provenance.
     """
 
     mkdocs: bool
@@ -845,8 +846,8 @@ def load_setup_config(project_root: Path) -> dict[str, Any] | None:
 
     Returns:
         The parsed TOML content, or ``None`` when the file is missing,
-        unreadable, or not valid TOML -- callers then fall back to
-        :func:`infer_feature_flags`.
+        unreadable, or not valid TOML -- :func:`resolve_feature_flags` then
+        errors out.
     """
     path = project_root / SETUP_CONFIG_REL
     if not path.is_file():
@@ -898,76 +899,37 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
     )
 
 
-def _has_private_repo_deps_block(project_root: Path) -> bool:
-    """Whether ``ci.yml`` still carries the private-repo-deps marker comment.
-
-    Args:
-        project_root: Root of the project checkout.
-
-    Returns:
-        ``True`` if ``.github/workflows/ci.yml`` exists, is readable, and
-        still contains :data:`_PRIVATE_REPO_DEPS_START`.
-    """
-    path = project_root / ".github" / "workflows" / "ci.yml"
-    if not path.is_file():
-        return False
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    return _PRIVATE_REPO_DEPS_START in text
-
-
-def infer_feature_flags(project_root: Path) -> FeatureFlags:
-    """Derive :class:`FeatureFlags` from which optional files are present.
-
-    Fallback for when :data:`SETUP_CONFIG_REL` is missing or unreadable (for
-    example a project generated before this file was tracked). Mirrors what
-    each template-setup step's removal script leaves behind, so the result
-    matches what a present config would have said.
-
-    Args:
-        project_root: Root of the project checkout.
-
-    Returns:
-        The resolved flags, tagged ``"inferred from file presence"``.
-    """
-    hooks_dir = project_root / ".claude" / "hooks"
-    keyring = (project_root / "tests" / "_keyring.py").is_file()
-    keyvault = (project_root / "tests" / "_keyvault.py").is_file()
-    return FeatureFlags(
-        mkdocs=(project_root / "mkdocs.yml").is_file(),
-        keyring=keyring,
-        keyvault=keyvault,
-        credentials=(project_root / "tests" / "_bootstrap.py").is_file(),
-        private_repo_deps=_has_private_repo_deps_block(project_root),
-        hook_no_chained_pwsh=(hooks_dir / "no-chained-commands-pwsh.py").is_file(),
-        hook_no_chained_bash=(hooks_dir / "no-chained-commands-bash.py").is_file(),
-        hook_canonical_pwsh=(hooks_dir / "canonical-commands-pwsh.py").is_file(),
-        hook_canonical_bash=(hooks_dir / "canonical-commands-bash.py").is_file(),
-        hook_auto_memory=(hooks_dir / "protect-auto-memory.py").is_file(),
-        source="inferred from file presence",
-    )
-
-
 def resolve_feature_flags(project_root: Path) -> FeatureFlags:
     """Determine which config-driven optional files this project kept.
 
-    Reads :data:`SETUP_CONFIG_REL` when it is present and parses cleanly --
-    the normal case, since ``setup_new_project.py`` leaves it behind on
-    purpose (see its module docstring) -- and falls back to inferring from
-    which feature files exist otherwise.
+    Reads :data:`SETUP_CONFIG_REL`, which ``setup_new_project.py`` leaves
+    behind on purpose (see its module docstring) so it is always available
+    here. Its absence or an unparsable body is a hard error, not a cue to
+    guess: inferring the feature set from which files happen to exist would
+    silently mask a genuinely deleted or broken config, and every gated file
+    of a wrongly-guessed feature would then be mis-reported.
 
     Args:
         project_root: Root of the project checkout.
 
     Returns:
         The resolved flags.
+
+    Raises:
+        SystemExit: If :data:`SETUP_CONFIG_REL` is missing or cannot be
+            parsed as TOML.
     """
+    path = project_root / SETUP_CONFIG_REL
+    if not path.is_file():
+        cli.die(
+            f"No {SETUP_CONFIG_REL} in the project ({path}). It records which "
+            "optional features the project kept; setup_new_project.py leaves it "
+            "in place on purpose. Restore it before comparing."
+        )
     raw = load_setup_config(project_root)
-    if raw is not None:
-        return feature_flags_from_config(raw)
-    return infer_feature_flags(project_root)
+    if raw is None:
+        cli.die(f"Could not parse {path} as TOML; fix it before comparing.")
+    return feature_flags_from_config(raw)
 
 
 def carries_version(entry: BaselineFile) -> bool:
@@ -1324,10 +1286,12 @@ def check_versioned_files(
     Runs before the main comparison so outdated copies (whose manifest and
     replay logic may lag the template) are refreshed first. When a script this
     program is running from -- this file or the ``_cli`` module it imports -- is
-    itself replaced, the script exits afterwards so the user re-runs the updated
-    version (with its current manifest). Entries tied to a declined feature
-    (:func:`is_applicable` is ``False``) are skipped entirely -- never offered
-    for copy, same as they're never reported as drift in the main comparison.
+    itself replaced, the script stops right then, before offering to update the
+    remaining versioned files or running the comparison, so the user re-runs the
+    updated version (with its current manifest and replay logic). Entries tied to
+    a declined feature (:func:`is_applicable` is ``False``) are skipped entirely
+    -- never offered for copy, same as they're never reported as drift in the
+    main comparison.
 
     Args:
         template_root: Root of the template checkout.
@@ -1342,7 +1306,6 @@ def check_versioned_files(
         normcase(normpath(str(Path(cli.__file__).resolve()))),
     }
     updated = 0
-    replaced_running = False
     for entry in versioned_entries():
         if not is_applicable(entry, flags):
             continue
@@ -1357,12 +1320,16 @@ def check_versioned_files(
         updated += 1
         project_path = normcase(normpath(str((project_root / entry.path).resolve())))
         if project_path in running_files:
-            replaced_running = True
+            # This script (or the _cli module it imports) was just replaced.
+            # Stop before touching the remaining versioned files or running the
+            # comparison: both rely on this file's now-stale manifest and replay
+            # logic. The freshly copied version re-checks everything next run.
+            print()
+            cli.warn(f"  Updated {entry.path}, which this program is running from.")
+            print("  Stopping now; re-run the script to use the new version.")
+            sys.exit(0)
     if updated == 0:
         cli.success("  All versioned files are up to date with the template.")
-    if replaced_running:
-        print("  A script this program runs from was updated; re-run it to use the new version.")
-        sys.exit(0)
 
 
 def build_context(

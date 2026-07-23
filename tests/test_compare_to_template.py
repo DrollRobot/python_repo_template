@@ -39,7 +39,6 @@ from compare_to_template import (
     effective_strict,
     feature_flags_from_config,
     github_user_from_url,
-    infer_feature_flags,
     is_applicable,
     is_excluded,
     load_setup_config,
@@ -717,33 +716,6 @@ def test_feature_flags_from_config_tolerates_malformed_tables() -> None:
 
 
 @pytest.mark.unit
-def test_infer_feature_flags_reads_file_presence(tmp_path: Path) -> None:
-    write(tmp_path, "tests/_keyvault.py", "x\n")
-    write(tmp_path, ".claude/hooks/canonical-commands-bash.py", "x\n")
-
-    flags = infer_feature_flags(tmp_path)
-    assert flags.keyvault is True
-    assert flags.keyring is False
-    assert flags.mkdocs is False
-    assert flags.hook_canonical_bash is True
-    assert flags.hook_canonical_pwsh is False
-    assert flags.private_repo_deps is False  # no ci.yml at all
-    assert flags.source == "inferred from file presence"
-
-
-@pytest.mark.unit
-def test_infer_feature_flags_private_repo_deps_true_when_marker_present(tmp_path: Path) -> None:
-    write(tmp_path, ".github/workflows/ci.yml", f"      {_PRIVATE_REPO_DEPS_START}\n")
-    assert infer_feature_flags(tmp_path).private_repo_deps is True
-
-
-@pytest.mark.unit
-def test_infer_feature_flags_private_repo_deps_false_when_marker_absent(tmp_path: Path) -> None:
-    write(tmp_path, ".github/workflows/ci.yml", "      - name: Sync dependencies\n")
-    assert infer_feature_flags(tmp_path).private_repo_deps is False
-
-
-@pytest.mark.unit
 def test_load_setup_config_missing_file_is_none(tmp_path: Path) -> None:
     assert load_setup_config(tmp_path) is None
 
@@ -763,10 +735,9 @@ def test_load_setup_config_parses_valid_toml(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_resolve_feature_flags_prefers_config_over_inference(tmp_path: Path) -> None:
-    # The config says mkdocs is on even though no mkdocs.yml exists on disk
-    # yet (e.g. setup.toml was hand-edited without re-running
-    # setup_new_project.py) -- the config wins.
+def test_resolve_feature_flags_reads_config(tmp_path: Path) -> None:
+    # The config drives the result: mkdocs is on even though no mkdocs.yml
+    # exists on disk (the file presence is never consulted).
     write(tmp_path, SETUP_CONFIG_REL, "[features]\nmkdocs = true\n")
     flags = resolve_feature_flags(tmp_path)
     assert flags.source == SETUP_CONFIG_REL
@@ -774,11 +745,19 @@ def test_resolve_feature_flags_prefers_config_over_inference(tmp_path: Path) -> 
 
 
 @pytest.mark.unit
-def test_resolve_feature_flags_falls_back_when_config_absent(tmp_path: Path) -> None:
+def test_resolve_feature_flags_errors_when_config_absent(tmp_path: Path) -> None:
+    # A missing setup.toml is a hard error, not a cue to guess from file
+    # presence -- even when feature files exist on disk.
     write(tmp_path, "mkdocs.yml", "site_name: x\n")
-    flags = resolve_feature_flags(tmp_path)
-    assert flags.source == "inferred from file presence"
-    assert flags.mkdocs is True
+    with pytest.raises(SystemExit):
+        resolve_feature_flags(tmp_path)
+
+
+@pytest.mark.unit
+def test_resolve_feature_flags_errors_when_config_unparsable(tmp_path: Path) -> None:
+    write(tmp_path, SETUP_CONFIG_REL, "not [ valid toml")
+    with pytest.raises(SystemExit):
+        resolve_feature_flags(tmp_path)
 
 
 # --- manifest ------------------------------------------------------------------------
@@ -828,6 +807,16 @@ def test_manifest_readme_is_required_but_existence_only() -> None:
     (readme,) = [entry for entry in MANIFEST if entry.path == "README.md"]
     assert readme.required is True
     assert readme.compare_content is False
+
+
+@pytest.mark.unit
+def test_manifest_index_md_is_existence_only_and_gated_on_mkdocs() -> None:
+    # The docs landing page is rewritten wholesale per project, so its
+    # contents are never compared -- only its existence, and only when the
+    # project kept mkdocs.
+    (entry,) = [e for e in MANIFEST if e.path == "docs/index.md"]
+    assert entry.gate == "mkdocs"
+    assert entry.compare_content is False
 
 
 @pytest.mark.unit
