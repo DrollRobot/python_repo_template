@@ -14,6 +14,7 @@
 # .github/workflows/docs.yml
 
 name: Docs
+run-name: Docs on ${{ github.ref_name }} ${{ github.event_name }} by @${{ github.actor }}
 
 on:
   push:
