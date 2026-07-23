@@ -1,6 +1,10 @@
 
+# ignore environment files
 *.env.*
 !.env.example
+
+# ignore .local files
+*.local*
 
 
 # Byte-compiled / optimized / DLL files
