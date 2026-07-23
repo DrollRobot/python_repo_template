@@ -796,6 +796,17 @@ def test_carries_version_false_for_plain_files() -> None:
 
 
 @pytest.mark.unit
+def test_carries_version_false_for_existence_only_entries() -> None:
+    # A file whose contents are never compared must not be offered for
+    # overwrite by the version pre-flight either, whatever its path or flag.
+    assert carries_version(BaselineFile("scripts/helper.py", compare_content=False)) is False
+    assert (
+        carries_version(BaselineFile("tests/test_guard.py", versioned=True, compare_content=False))
+        is False
+    )
+
+
+@pytest.mark.unit
 def test_manifest_tracks_versioned_stub_guard() -> None:
     (guard,) = [e for e in MANIFEST if e.path == "tests/test_mypy_stub_guard.py"]
     assert guard.required is True
@@ -838,16 +849,18 @@ def test_manifest_setup_config_is_required_existence_only_and_ungated() -> None:
 
 
 @pytest.mark.unit
-def test_manifest_remote_disposable_pair_is_gated_and_lenient() -> None:
+def test_manifest_remote_disposable_pair_is_gated_and_existence_only() -> None:
     # Both halves are deleted together by
     # remove_remote_disposable_scripts.py, and their marker mechanism is
-    # filled in per project, so drift is reported for review, not as an error.
+    # filled in per project, so their contents always differ by design: only
+    # existence is checked, and they stay out of the version pre-flight.
     paths = ("scripts/mark_remote_disposable.py", "tests/verify_remote_disposable.py")
     entries = [e for e in MANIFEST if e.path in paths]
     assert len(entries) == len(paths)
     for entry in entries:
         assert entry.gate == "remote_disposable_scripts"
-        assert entry.strict is False
+        assert entry.compare_content is False
+        assert carries_version(entry) is False
 
 
 @pytest.mark.unit

@@ -18,9 +18,9 @@ so that only real drift is reported:
 Each baseline file is strict (drift is an error) or lenient (expected to
 diverge; reported for review only), and required or optional (optional
 features such as mkdocs or the credential helpers may be deleted from a
-project). A few files (e.g. the README) are checked for existence only, as
-the project rewrites their contents wholesale. Files the project adds on top
-of the template are ignored.
+project). A few files (e.g. the README and the remote-disposability stub
+pair) are checked for existence only, as the project rewrites their contents
+wholesale. Files the project adds on top of the template are ignored.
 
 Files belonging to a config-driven optional feature (mkdocs, the keyring/
 KeyVault credential backends, the remote-disposability scripts, SECURITY.md,
@@ -38,10 +38,11 @@ replayed away from the template side before comparing, per
 ``replay_private_repo_deps()``.
 
 Before comparing, the script checks the version of every versioned file (the
-dev helper scripts ``scripts/*.py`` and the ``mypy`` stub-guard test) on both
-sides and offers to copy over any that are out of date or missing in the
-project, so those files -- and the manifest and replay logic this script
-compares against -- match the template's current ones.
+dev helper scripts ``scripts/*.py`` and the ``mypy`` stub-guard test, minus
+the existence-only ones) on both sides and offers to copy over any that are
+out of date or missing in the project, so those files -- and the manifest
+and replay logic this script compares against -- match the template's
+current ones.
 
 Run it from either repository; the other repository is given as the
 positional path (default: a sibling folder with the template's name):
@@ -83,7 +84,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.11.0"
+__version__ = "1.12.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -213,10 +214,12 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # Remote-destructive-test feature, write half: run manually to mark a
     # target disposable. Its read half (verify_remote_disposable.py) lives in
     # tests/, next to the conftest.py gate that is its only automatic caller.
-    # The marker mechanism is expected to be filled in per project, so drift
-    # (customization) is not an error.
+    # The marker mechanism is filled in per project, so the contents are
+    # always different by design: only existence is checked, like README.md.
     BaselineFile(
-        "scripts/mark_remote_disposable.py", strict=False, gate="remote_disposable_scripts"
+        "scripts/mark_remote_disposable.py",
+        compare_content=False,
+        gate="remote_disposable_scripts",
     ),
     # Documentation site (mkdocs feature; content is the project's own).
     BaselineFile("mkdocs.yml", gate="mkdocs", strict=False),
@@ -233,11 +236,13 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("tests/_keyvault.py", gate="keyvault"),
     # Remote-destructive-test feature, read half: run automatically by
     # conftest.py's destructive_remote gate. Paired with
-    # scripts/mark_remote_disposable.py above; the marker mechanism is
-    # expected to be filled in per project, so drift (customization) is not
-    # an error.
+    # scripts/mark_remote_disposable.py above; the marker mechanism is filled
+    # in per project, so the contents are always different by design: only
+    # existence is checked.
     BaselineFile(
-        "tests/verify_remote_disposable.py", strict=False, gate="remote_disposable_scripts"
+        "tests/verify_remote_disposable.py",
+        compare_content=False,
+        gate="remote_disposable_scripts",
     ),
     # The mypy stub-guard test ships to projects (cleanup.py keeps it: no
     # matching script) and must track the template, so it is compared here
@@ -952,7 +957,12 @@ def carries_version(entry: BaselineFile) -> bool:
     """Whether an entry declares a ``__version__`` the comparison tracks.
 
     True for the dev helper scripts (``scripts/*.py``, by path) and for any
-    entry explicitly flagged ``versioned``.
+    entry explicitly flagged ``versioned`` -- except for existence-only
+    entries (``compare_content=False``), whose project-side contents are the
+    project's own by design. Tracking their version would offer to overwrite
+    a deliberately customized file from the template (see
+    :func:`check_versioned_file`), which is the same mistake as reporting
+    their contents as drift.
 
     Args:
         entry: The manifest entry.
@@ -961,6 +971,8 @@ def carries_version(entry: BaselineFile) -> bool:
         ``True`` when the file participates in the version pre-flight and the
         drift note.
     """
+    if not entry.compare_content:
+        return False
     if entry.versioned:
         return True
     return entry.path.startswith("scripts/") and entry.path.endswith(".py")
