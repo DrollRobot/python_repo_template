@@ -98,6 +98,62 @@ def resolve_settings(
         ConfigError: When a required value is missing from every layer, the
             config file is malformed, or a value has the wrong type.
     """
+    instance, _, _ = _resolve(schema, profile, overrides, config_path)
+    return instance
+
+
+def resolve_with_sources(
+    schema: type[Any],
+    *,
+    profile: str | None = None,
+    overrides: Mapping[str, object] | None = None,
+    config_path: Path | None = None,
+) -> tuple[Any, dict[str, str], str | None]:
+    """Resolve *schema* and report where each value came from.
+
+    Used by the config CLI's ``show`` command so "which tenant am I about to
+    hit, and why" is answerable in one step.
+
+    Args:
+        schema: Frozen dataclass defining the options.
+        profile: Explicit profile name, or None to auto-select.
+        overrides: Highest-precedence values keyed by field name.
+        config_path: Config file location; defaults to the standard path.
+
+    Returns:
+        ``(instance, sources, profile_name)`` where ``sources`` maps each
+        field name to a provenance label (``override``, ``env:<VAR>``, the
+        backend name, ``file:profiles.<name>``, ``file:top-level``, or
+        ``default``) and ``profile_name`` is the active profile, if any.
+
+    Raises:
+        ConfigError: As for :func:`resolve_settings`.
+    """
+    return _resolve(schema, profile, overrides, config_path)
+
+
+def _resolve(
+    schema: type[Any],
+    profile: str | None,
+    overrides: Mapping[str, object] | None,
+    config_path: Path | None,
+) -> tuple[Any, dict[str, str], str | None]:
+    """Shared resolution engine returning the instance, sources, and profile.
+
+    Args:
+        schema: Frozen dataclass defining the options.
+        profile: Explicit profile name, or None to auto-select.
+        overrides: Highest-precedence values keyed by field name.
+        config_path: Config file location, or None for the standard path.
+
+    Returns:
+        ``(instance, sources, profile_name)`` as documented on
+        :func:`resolve_with_sources`.
+
+    Raises:
+        ConfigError: When a required value is missing from every layer, the
+            config file is malformed, or a value has the wrong type.
+    """
     path = config_path if config_path is not None else paths.config_path()
     overrides = overrides or {}
 
@@ -105,62 +161,65 @@ def resolve_settings(
     config = document if document is not None else {}
     config_file.validate_config(config, schema, path)
 
-    profile_name = _select_profile_name(profile, config, path)
+    profile_name = select_profile_name(profile, config, path)
     profile_values = config_file.profile_table(config, profile_name, path)
-
-    # Reserved keys configuring the secret backend: top-level values act as
-    # shared fallbacks, the profile table wins.
-    backend_config: dict[str, Any] = {
-        key: value for key, value in config.items() if key in config_file.RESERVED_PROFILE_KEYS
-    }
-    backend_config.update(
-        {k: v for k, v in profile_values.items() if k in config_file.RESERVED_PROFILE_KEYS}
-    )
+    backend_config = config_file.reserved_config(config, profile_values)
 
     hints = get_type_hints(schema)
     secret_names = {f.name for f in fields(schema) if is_secret(f)}
     values: dict[str, Any] = {}
+    sources: dict[str, str] = {}
     missing: list[str] = []
     for f in fields(schema):
         if f.name in overrides:
             values[f.name] = _check_type(f.name, overrides[f.name], hints[f.name], "overrides")
+            sources[f.name] = "override"
             continue
         env_name = ENV_PREFIX + f.name.upper()
         env_raw = os.environ.get(env_name)
         if env_raw is not None:
-            values[f.name] = _coerce_env(env_name, env_raw, hints[f.name])
+            values[f.name] = coerce_string(env_name, env_raw, hints[f.name])
+            sources[f.name] = f"env:{env_name}"
             continue
         if is_secret(f):
             secret = secrets.get_secret(f.name, profile_name, backend_config)
             if secret is not None:
                 values[f.name] = secret
+                sources[f.name] = secrets.backend_name(backend_config)
                 continue
         else:
             if f.name in profile_values:
                 where = f"profile 'profiles.{profile_name}' in {path}"
                 values[f.name] = _check_type(f.name, profile_values[f.name], hints[f.name], where)
+                sources[f.name] = f"file:profiles.{profile_name}"
                 continue
             if f.name in config:
                 where = f"the top level of {path}"
                 values[f.name] = _check_type(f.name, config[f.name], hints[f.name], where)
+                sources[f.name] = "file:top-level"
                 continue
         if is_required(f):
             missing.append(f.name)
+        else:
+            sources[f.name] = "default"
 
     if missing:
         missing_secrets = [name for name in missing if name in secret_names]
         raise ConfigError(
             _missing_message(missing, missing_secrets, document is not None, path, profile_name)
         )
-    return schema(**values)
+    return schema(**values), sources, profile_name
 
 
-def _select_profile_name(
+def select_profile_name(
     explicit: str | None,
     config: dict[str, Any],
     path: Path,
 ) -> str | None:
     """Pick the active profile name, or None for bare top-level mode.
+
+    Selection order: *explicit* argument, then the ``PYTHON_REPO_TEMPLATE_PROFILE``
+    environment variable, then ``default_profile`` in the config file.
 
     Args:
         explicit: Profile name passed by the caller, if any.
@@ -184,17 +243,18 @@ def _select_profile_name(
     return cast("str | None", name)
 
 
-def _coerce_env(env_name: str, raw: str, tp: Any) -> Any:
-    """Convert the env-var string *raw* to the field type *tp*.
+def coerce_string(name: str, raw: str, tp: Any) -> Any:
+    """Convert the string *raw* to the field type *tp*.
 
-    Environment variables are the only untyped layer (TOML values arrive
-    typed; overrides come from typed code), so this is the only place string
-    conversion happens. Supported types: ``str``, ``int``, ``float``,
-    ``bool`` (``true``/``false``, case-insensitive), and ``list[str]``
-    (comma-separated).
+    Environment variables and CLI arguments are the only untyped layers (TOML
+    values arrive typed; overrides come from typed code), so this is the only
+    place string conversion happens. Supported types: ``str``, ``int``,
+    ``float``, ``bool`` (``true``/``false``, case-insensitive), and
+    ``list[str]`` (comma-separated).
 
     Args:
-        env_name: Full environment-variable name, for error messages.
+        name: Where the string came from (env-var name or CLI argument), for
+            error messages.
         raw: The raw string value.
         tp: The field's resolved type annotation.
 
@@ -203,7 +263,7 @@ def _coerce_env(env_name: str, raw: str, tp: Any) -> Any:
 
     Raises:
         ConfigError: When the string cannot be converted to *tp*, or *tp* is
-            not supported for env-var overrides.
+            not supported for string input.
     """
     if tp is str:
         return raw
@@ -211,20 +271,20 @@ def _coerce_env(env_name: str, raw: str, tp: Any) -> Any:
         lowered = raw.strip().lower()
         if lowered in ("true", "false"):
             return lowered == "true"
-        raise ConfigError(f"{env_name} must be 'true' or 'false', got {raw!r}.")
+        raise ConfigError(f"{name} must be 'true' or 'false', got {raw!r}.")
     if tp is int:
         try:
             return int(raw.strip())
         except ValueError as exc:
-            raise ConfigError(f"{env_name} must be an integer, got {raw!r}.") from exc
+            raise ConfigError(f"{name} must be an integer, got {raw!r}.") from exc
     if tp is float:
         try:
             return float(raw.strip())
         except ValueError as exc:
-            raise ConfigError(f"{env_name} must be a number, got {raw!r}.") from exc
+            raise ConfigError(f"{name} must be a number, got {raw!r}.") from exc
     if get_origin(tp) is list and get_args(tp) == (str,):
         return [item.strip() for item in raw.split(",") if item.strip()]
-    raise ConfigError(f"{env_name}: type {tp!r} does not support environment-variable overrides.")
+    raise ConfigError(f"{name}: type {tp!r} does not support string input.")
 
 
 def _check_type(name: str, value: Any, tp: Any, where: str) -> Any:

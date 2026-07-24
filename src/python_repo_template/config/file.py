@@ -118,6 +118,27 @@ def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> No
         check_keys(table, RESERVED_PROFILE_KEYS, f"profile 'profiles.{name}'")
 
 
+def reserved_config(config: dict[str, Any], profile_values: dict[str, Any]) -> dict[str, Any]:
+    """Return the merged reserved-key table for the active profile.
+
+    Reserved keys (``credential_backend``, ``keyvault_url``) configure the
+    secret backend. Top-level values act as shared fallbacks; the profile
+    table wins where both define a key.
+
+    Args:
+        config: Parsed TOML document.
+        profile_values: The active profile's table (may be empty).
+
+    Returns:
+        The merged reserved-key mapping.
+    """
+    merged = {key: value for key, value in config.items() if key in RESERVED_PROFILE_KEYS}
+    merged.update(
+        {key: value for key, value in profile_values.items() if key in RESERVED_PROFILE_KEYS}
+    )
+    return merged
+
+
 def profile_table(config: dict[str, Any], name: str | None, path: Path) -> dict[str, Any]:
     """Return the table for profile *name*, or an empty dict when *name* is None.
 
