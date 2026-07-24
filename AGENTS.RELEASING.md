@@ -1,14 +1,14 @@
 # Agent releasing instructions
 
-## Commit
-- Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
-- Commit all untracked files.
-
 ## Update precommit
 ```
 # update precommit dependencies
 uv run pre-commit autoupdate
 ```
+
+## Commit
+- Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
+- Commit all untracked files.
 
 ## Refresh and audit dependencies
 
