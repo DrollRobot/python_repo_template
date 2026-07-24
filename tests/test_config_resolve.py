@@ -28,6 +28,19 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.delenv(key)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub the secret-backend layer to 'nothing stored'.
+
+    Keeps these resolver tests off the host's real keyring; the dispatcher
+    and backends have their own tests in test_config_secrets.py.
+    """
+    monkeypatch.setattr(
+        "python_repo_template.config.secrets.get_secret",
+        lambda key, profile, config: None,
+    )
+
+
 @pytest.fixture
 def config_path(tmp_path: Path) -> Path:
     return tmp_path / "config.toml"

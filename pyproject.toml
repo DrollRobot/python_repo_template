@@ -14,6 +14,18 @@ requires-python = ">=3.14"
 dependencies = [
     # FIXME add depencencies
     "platformdirs>=4.3,<5",  # config feature: OS-standard config.toml location
+    # keyring credential backend (default). To remove: delete this line and
+    # src/python_repo_template/config/keyring_backend.py.
+    "keyring>=25.0,<26",
+]
+
+[project.optional-dependencies]
+keyvault = [
+    # Azure Key Vault credential backend (opt-in, read-only). To remove: delete
+    # this extra, src/python_repo_template/config/keyvault_backend.py, and the
+    # azure lines in the dev group below.
+    "azure-identity>=1.17,<2",
+    "azure-keyvault-secrets>=4.8,<5",
 ]
 
 [dependency-groups]
@@ -21,12 +33,6 @@ docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.7,<10",
     "mkdocstrings[python]>=1.0.4,<2",
-]
-keyvault = [
-    # Azure KeyVault backend (opt-in). To remove: delete this group, and the
-    # dev include-group below
-    "azure-identity>=1.17,<2",
-    "azure-keyvault-secrets>=4.8,<5",
 ]
 test = [
     "pytest>=9.0.3,<10",
@@ -37,9 +43,11 @@ test = [
 dev = [
     {include-group = "docs"},
     {include-group = "test"},
-    {include-group = "keyvault"},
+    # Key Vault backend for contributors; keep in sync with the 'keyvault'
+    # extra above (delete both together).
+    "azure-identity>=1.17,<2",
+    "azure-keyvault-secrets>=4.8,<5",
     "debugpy>=1.8,<2",
-    "keyring>=25.0,<26",  # credentials feature (keyring backend)
     "mypy>=2.1,<3",
     "pre-commit>=4.6,<5",
     "ruff>=0.15,<1",

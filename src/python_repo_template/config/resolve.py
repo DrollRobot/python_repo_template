@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, cast, get_args, get_origin, get_type_hints
 
 from python_repo_template.config import file as config_file
-from python_repo_template.config import paths
+from python_repo_template.config import paths, secrets
 from python_repo_template.config.schema import (
     CLI_NAME,
     ENV_PREFIX,
@@ -108,7 +108,17 @@ def resolve_settings(
     profile_name = _select_profile_name(profile, config, path)
     profile_values = config_file.profile_table(config, profile_name, path)
 
+    # Reserved keys configuring the secret backend: top-level values act as
+    # shared fallbacks, the profile table wins.
+    backend_config: dict[str, Any] = {
+        key: value for key, value in config.items() if key in config_file.RESERVED_PROFILE_KEYS
+    }
+    backend_config.update(
+        {k: v for k, v in profile_values.items() if k in config_file.RESERVED_PROFILE_KEYS}
+    )
+
     hints = get_type_hints(schema)
+    secret_names = {f.name for f in fields(schema) if is_secret(f)}
     values: dict[str, Any] = {}
     missing: list[str] = []
     for f in fields(schema):
@@ -120,10 +130,12 @@ def resolve_settings(
         if env_raw is not None:
             values[f.name] = _coerce_env(env_name, env_raw, hints[f.name])
             continue
-        # --- secret backend layer (keyring / Key Vault) inserted here in a
-        # --- later phase; secret fields below this line resolve from the
-        # --- config file only via validate_config's rejection, i.e. never.
-        if not is_secret(f):
+        if is_secret(f):
+            secret = secrets.get_secret(f.name, profile_name, backend_config)
+            if secret is not None:
+                values[f.name] = secret
+                continue
+        else:
             if f.name in profile_values:
                 where = f"profile 'profiles.{profile_name}' in {path}"
                 values[f.name] = _check_type(f.name, profile_values[f.name], hints[f.name], where)
@@ -136,7 +148,10 @@ def resolve_settings(
             missing.append(f.name)
 
     if missing:
-        raise ConfigError(_missing_message(missing, document is not None, path, profile_name))
+        missing_secrets = [name for name in missing if name in secret_names]
+        raise ConfigError(
+            _missing_message(missing, missing_secrets, document is not None, path, profile_name)
+        )
     return schema(**values)
 
 
@@ -255,6 +270,7 @@ def _check_type(name: str, value: Any, tp: Any, where: str) -> Any:
 
 def _missing_message(
     missing: list[str],
+    missing_secrets: list[str],
     file_exists: bool,
     path: Path,
     profile_name: str | None,
@@ -263,22 +279,28 @@ def _missing_message(
 
     Args:
         missing: Field names that no layer provided.
+        missing_secrets: The subset of *missing* that are secret fields.
         file_exists: Whether the config file was found at all.
         path: Config file path.
         profile_name: The active profile, or None for bare top-level mode.
 
     Returns:
         A single-string message naming every missing field, its env var, and
-        the ``init`` command that creates the config interactively.
+        the CLI command that provides it.
     """
     env_vars = ", ".join(ENV_PREFIX + name.upper() for name in missing)
     if file_exists:
         source = f"config file {path} (profile: {profile_name or 'none — top-level keys'})"
     else:
         source = f"no config file found at {path}"
-    return (
+    message = (
         f"Missing required configuration value(s): {', '.join(missing)}. "
-        f"Searched overrides, environment ({env_vars}), and {source}. "
+        f"Searched overrides, environment ({env_vars}), secret backend (secret fields), "
+        f"and {source}. "
         f"Run '{CLI_NAME} init' to create the config interactively, or set the "
         "environment variable(s) above."
     )
+    if missing_secrets:
+        stores = " ".join(f"'{CLI_NAME} set-secret {name}'" for name in missing_secrets)
+        message += f" Store missing secret(s) with: {stores}."
+    return message

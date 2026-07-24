@@ -242,6 +242,9 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("tests/_bootstrap.py", gate="credentials"),
     BaselineFile("tests/_keyring.py", gate="keyring"),
     BaselineFile("tests/_keyvault.py", gate="keyvault"),
+    # Toy schema shared by the config-package tests (kept schema-independent
+    # so downstream edits to Settings don't break them).
+    BaselineFile("tests/_toy_config.py"),
     # Remote-destructive-test feature, read half: run automatically by
     # conftest.py's destructive_remote gate. Paired with
     # scripts/mark_remote_disposable.py above; the marker mechanism is filled
