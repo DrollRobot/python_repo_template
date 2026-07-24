@@ -1,7 +1,7 @@
 """Unit tests for the protect-auto-memory PreToolUse hook itself.
 
-Distinct from test_protect_auto_memory.py, which tests the *setup helper* that
-wires the hook in and out of settings. This drives Write/Edit payloads through
+Covers the hook's runtime behavior only; wiring it into settings belongs to
+wire_hook.py (see test_wire_hook.py). This drives Write/Edit payloads through
 the hook's main() and checks the runtime decision: an `ask` on stdout for a
 path inside a Claude auto-memory directory, silence for anything else.
 

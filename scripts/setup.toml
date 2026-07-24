@@ -54,6 +54,11 @@ canonical_commands = true
 # Off until you opt in (matches the committed .claude/settings.json today,
 # which wires neither hook pair nor the memory guard).
 auto_memory_guard = false
+# Blocks writes whose content adds a detect-secrets allowlist pragma, pointing
+# the agent at .secrets.baseline instead (no-inline-secret-suppressions.py).
+# Steering for agents only -- the detect-secrets pre-commit hook and CI stay the
+# real gate either way. Off until you opt in; false deletes the hook script.
+no_inline_secret_suppressions = false
 
 [features]
 # Each false removes that feature. All default true ("keep everything") so
