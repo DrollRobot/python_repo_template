@@ -104,7 +104,7 @@ convention = "google"
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["src", "tests", "scripts"]
+files = ["src", "tests", "scripts", ".claude/hooks"]
 mypy_path = ["scripts", "scripts/template_setup"]
 
 # [[tool.mypy.overrides]] # FIXME add if imports don't provide type hints and throw mypy errors
