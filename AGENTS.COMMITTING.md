@@ -17,7 +17,7 @@
    ---
    AGENTS.md
    AGENTS.TESTING.md
-   tests/_bootstrap.py
+   tests/conftest.py
 
    docs(testing): condense test instructions
 

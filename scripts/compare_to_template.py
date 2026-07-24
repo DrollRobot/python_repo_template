@@ -17,14 +17,14 @@ so that only real drift is reported:
 
 Each baseline file is strict (drift is an error) or lenient (expected to
 diverge; reported for review only), and required or optional (optional
-features such as mkdocs or the credential helpers may be deleted from a
+features such as mkdocs may be deleted from a
 project). A few files (e.g. the README and the remote-disposability stub
 pair) are checked for existence only, as the project rewrites their contents
 wholesale. Files the project adds on top of the template are ignored.
 
-Files belonging to a config-driven optional feature (mkdocs, the keyring/
-KeyVault credential backends, the remote-disposability scripts, SECURITY.md,
-CONTRIBUTING.md, the Claude Code command hooks) are gated on
+Files belonging to a config-driven optional feature (mkdocs, the
+remote-disposability scripts, SECURITY.md, CONTRIBUTING.md, the Claude Code
+command hooks) are gated on
 that project's own choices, read from ``scripts/setup.toml`` (a missing or
 unparsable file is a hard error, not a cue to guess). A feature the
 project declined is left out of the comparison, the version preflight, and
@@ -84,7 +84,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.12.0"
+__version__ = "1.13.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -139,7 +139,7 @@ class BaselineFile:
             explicitly for any other versioned file.
         gate: Name of the matching :class:`FeatureFlags` field, for a file
             that belongs to one config-driven optional feature (mkdocs, a
-            credentials backend, a Claude command hook). ``None`` for files
+            Claude command hook). ``None`` for files
             that are always part of the baseline. See :func:`is_applicable`
             and :func:`effective_required`.
     """
@@ -190,7 +190,6 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".gitattributes"),
     BaselineFile(".pre-commit-config.yaml"),
     BaselineFile(".gitignore", strict=False),  # projects append their own ignores
-    BaselineFile(".env.example", required=False, strict=False),  # project env vars
     # Agent and contributor docs.
     BaselineFile("AGENTS.md", strict=False),  # holds the project's own rules
     BaselineFile("AGENTS.COMMITTING.md"),
@@ -218,7 +217,6 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("scripts/push_new_tag_to_main.py"),
     BaselineFile("scripts/remove_worktree.py"),
     BaselineFile("scripts/update_floors.py"),
-    BaselineFile("scripts/setup_credentials.py", gate="keyring"),
     # Remote-destructive-test feature, write half: run manually to mark a
     # target disposable. Its read half (verify_remote_disposable.py) lives in
     # tests/, next to the conftest.py gate that is its only automatic caller.
@@ -235,13 +233,9 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # completely different), so only its existence is checked, like README.md.
     BaselineFile("docs/index.md", gate="mkdocs", compare_content=False),
     BaselineFile(f"docs/reference/{TEMPLATE_SNAKE}.md", gate="mkdocs", strict=False),
-    # Test infrastructure (credential feature is removable; conftest grows
-    # project fixtures).
+    # Test infrastructure (conftest grows project fixtures).
     BaselineFile("tests/__init__.py", required=False),
     BaselineFile("tests/conftest.py", required=False, strict=False),
-    BaselineFile("tests/_bootstrap.py", gate="credentials"),
-    BaselineFile("tests/_keyring.py", gate="keyring"),
-    BaselineFile("tests/_keyvault.py", gate="keyvault"),
     # Toy schema shared by the config-package tests (kept schema-independent
     # so downstream edits to Settings don't break them).
     BaselineFile("tests/_toy_config.py"),
@@ -327,10 +321,6 @@ class FeatureFlags:
 
     Attributes:
         mkdocs: Documentation site kept (``[features].mkdocs``).
-        keyring: OS-keyring credentials backend kept (``[features].keyring``).
-        keyvault: Azure KeyVault backend kept (``[features].azure_keyvault``).
-        credentials: Shared credentials dispatcher kept -- ``True`` whenever
-            ``keyring`` or ``keyvault`` is, since either backend needs it.
         private_repo_deps: Commented-out private-git-deps GitHub Actions
             steps kept in ci.yml/audit.yml/docs.yml
             (``[features].private_repo_deps``). Not a ``gate`` on any
@@ -359,9 +349,6 @@ class FeatureFlags:
     """
 
     mkdocs: bool
-    keyring: bool
-    keyvault: bool
-    credentials: bool
     private_repo_deps: bool
     remote_disposable_scripts: bool
     security_policy: bool
@@ -918,17 +905,12 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
     claude_raw = raw.get("claude")
     claude = claude_raw if isinstance(claude_raw, dict) else {}
 
-    keyring = bool(features.get("keyring", True))
-    keyvault = bool(features.get("azure_keyvault", True))
     shell = claude.get("shell")
     no_chained_commands = bool(claude.get("no_chained_commands", False))
     canonical_commands = bool(claude.get("canonical_commands", False))
 
     return FeatureFlags(
         mkdocs=bool(features.get("mkdocs", True)),
-        keyring=keyring,
-        keyvault=keyvault,
-        credentials=keyring or keyvault,
         private_repo_deps=bool(features.get("private_repo_deps", True)),
         remote_disposable_scripts=bool(features.get("remote_disposable_scripts", True)),
         security_policy=bool(features.get("security_policy", True)),
@@ -1602,9 +1584,6 @@ def open_diffs_in_vscode(
 # "Feature configuration" section.
 _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("mkdocs", "mkdocs"),
-    ("keyring", "keyring backend"),
-    ("keyvault", "Azure KeyVault backend"),
-    ("credentials", "credentials dispatcher"),
     ("private_repo_deps", "private-repo-deps workflow steps"),
     ("remote_disposable_scripts", "remote-disposability scripts"),
     ("security_policy", "SECURITY.md"),

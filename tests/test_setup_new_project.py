@@ -26,9 +26,6 @@ import choose_shell
 import find_fixmes
 import reinit_git
 import remove_contributing_guide
-import remove_credentials
-import remove_keyring
-import remove_keyvault
 import remove_mkdocs
 import remove_private_repo_deps
 import remove_remote_disposable_scripts
@@ -64,8 +61,6 @@ no_inline_secret_suppressions = false
 
 [features]
 mkdocs = true
-keyring = true
-azure_keyvault = true
 private_repo_deps = true
 remote_disposable_scripts = true
 security_policy = true
@@ -96,8 +91,6 @@ def _valid_raw() -> dict[str, Any]:
         },
         "features": {
             "mkdocs": True,
-            "keyring": True,
-            "azure_keyvault": True,
             "private_repo_deps": True,
             "remote_disposable_scripts": True,
             "security_policy": True,
@@ -124,8 +117,6 @@ def _make_config(**overrides: Any) -> setup_new_project.Config:
         "auto_memory_guard": False,
         "no_inline_secret_suppressions": False,
         "mkdocs": True,
-        "keyring": True,
-        "azure_keyvault": True,
         "private_repo_deps": True,
         "remote_disposable_scripts": True,
         "security_policy": True,
@@ -379,36 +370,6 @@ def test_build_steps_includes_remove_mkdocs_when_declined() -> None:
 
 
 @pytest.mark.unit
-def test_build_steps_includes_remove_keyring_when_declined() -> None:
-    """keyring=false adds the remove_keyring step."""
-    steps = setup_new_project.build_steps(_make_config(keyring=False))
-    keys = [step.key for step in steps]
-    assert "remove_keyring" in keys
-    assert "remove_keyvault" not in keys
-    assert "remove_credentials" not in keys
-
-
-@pytest.mark.unit
-def test_build_steps_includes_remove_keyvault_when_declined() -> None:
-    """azure_keyvault=false adds the remove_keyvault step, independent of keyring."""
-    steps = setup_new_project.build_steps(_make_config(azure_keyvault=False))
-    keys = [step.key for step in steps]
-    assert "remove_keyvault" in keys
-    assert "remove_keyring" not in keys
-    assert "remove_credentials" not in keys
-
-
-@pytest.mark.unit
-def test_build_steps_includes_remove_credentials_only_when_both_declined() -> None:
-    """remove_credentials only appears once both backends are declined."""
-    steps = setup_new_project.build_steps(_make_config(keyring=False, azure_keyvault=False))
-    keys = [step.key for step in steps]
-    assert keys.index("remove_keyring") < keys.index("remove_credentials")
-    assert keys.index("remove_keyvault") < keys.index("remove_credentials")
-    assert keys[-1] == "remove_credentials"
-
-
-@pytest.mark.unit
 def test_build_steps_includes_remove_private_repo_deps_when_declined() -> None:
     """private_repo_deps=false adds the remove_private_repo_deps step."""
     steps = setup_new_project.build_steps(_make_config(private_repo_deps=False))
@@ -614,39 +575,6 @@ def test_step_remove_mkdocs_forwards_assume_yes(
 
 
 @pytest.mark.unit
-def test_step_remove_keyring_forwards_assume_yes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(remove_keyring, "run", _recording_run(calls))
-    steps = setup_new_project.build_steps(_make_config(keyring=False))
-    steps[-1].call(tmp_path, False)
-    assert calls[0]["args"] == (tmp_path,)
-
-
-@pytest.mark.unit
-def test_step_remove_keyvault_forwards_assume_yes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(remove_keyvault, "run", _recording_run(calls))
-    steps = setup_new_project.build_steps(_make_config(azure_keyvault=False))
-    steps[-1].call(tmp_path, False)
-    assert calls[0]["args"] == (tmp_path,)
-
-
-@pytest.mark.unit
-def test_step_remove_credentials_forwards_assume_yes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(remove_credentials, "run", _recording_run(calls))
-    steps = setup_new_project.build_steps(_make_config(keyring=False, azure_keyvault=False))
-    steps[-1].call(tmp_path, False)
-    assert calls[0]["args"] == (tmp_path,)
-
-
-@pytest.mark.unit
 def test_step_remove_private_repo_deps_forwards_assume_yes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -768,9 +696,6 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
         choose_shell,
         choose_license,
         remove_mkdocs,
-        remove_keyring,
-        remove_keyvault,
-        remove_credentials,
         remove_private_repo_deps,
         remove_remote_disposable_scripts,
         remove_security_policy,

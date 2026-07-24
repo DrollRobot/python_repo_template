@@ -82,9 +82,6 @@ def write(root: Path, rel: str, text: str) -> Path:
 def make_flags(
     *,
     mkdocs: bool = True,
-    keyring: bool = True,
-    keyvault: bool = True,
-    credentials: bool = True,
     private_repo_deps: bool = True,
     remote_disposable_scripts: bool = True,
     security_policy: bool = True,
@@ -100,9 +97,6 @@ def make_flags(
     """Build a FeatureFlags with every feature/hook on, unless overridden."""
     return FeatureFlags(
         mkdocs=mkdocs,
-        keyring=keyring,
-        keyvault=keyvault,
-        credentials=credentials,
         private_repo_deps=private_repo_deps,
         remote_disposable_scripts=remote_disposable_scripts,
         security_policy=security_policy,
@@ -650,15 +644,15 @@ def test_effective_required_ignores_the_flag_for_gated_entries() -> None:
     # the entry in play (which implies the flag is True); as a pure function
     # it always reports a gated entry as required, trusting the caller to
     # have filtered out declined features first.
-    entry = BaselineFile("tests/_keyvault.py", gate="keyvault")
-    assert effective_required(entry, make_flags(keyvault=False)) is True
+    entry = BaselineFile("SECURITY.md", gate="security_policy")
+    assert effective_required(entry, make_flags(security_policy=False)) is True
 
 
 @pytest.mark.unit
 def test_compare_one_missing_is_drift_when_feature_kept(tmp_path: Path) -> None:
-    ctx = make_ctx(tmp_path, flags=make_flags(keyvault=True))
-    write(ctx.template_root, "tests/_keyvault.py", "content\n")
-    entry = BaselineFile("tests/_keyvault.py", gate="keyvault")
+    ctx = make_ctx(tmp_path, flags=make_flags(security_policy=True))
+    write(ctx.template_root, "SECURITY.md", "content\n")
+    entry = BaselineFile("SECURITY.md", gate="security_policy")
     assert compare_one(entry, ctx).status == "missing"
 
 
@@ -667,8 +661,6 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     raw = {
         "features": {
             "mkdocs": False,
-            "keyring": True,
-            "azure_keyvault": False,
             "private_repo_deps": False,
             "remote_disposable_scripts": False,
             "security_policy": False,
@@ -683,9 +675,6 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     }
     flags = feature_flags_from_config(raw)
     assert flags.mkdocs is False
-    assert flags.keyring is True
-    assert flags.keyvault is False
-    assert flags.credentials is True  # keyring alone is enough
     assert flags.private_repo_deps is False
     assert flags.remote_disposable_scripts is False
     assert flags.security_policy is False
@@ -698,20 +687,11 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
 
 
 @pytest.mark.unit
-def test_feature_flags_from_config_credentials_needs_at_least_one_backend() -> None:
-    raw = {"features": {"keyring": False, "azure_keyvault": False}}
-    assert feature_flags_from_config(raw).credentials is False
-
-
-@pytest.mark.unit
 def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
     # An unedited config's [features] table is all-true and [claude] hooks
     # are off; a config missing those tables entirely reads the same way.
     flags = feature_flags_from_config({})
     assert flags.mkdocs is True
-    assert flags.keyring is True
-    assert flags.keyvault is True
-    assert flags.credentials is True
     assert flags.private_repo_deps is True
     assert flags.remote_disposable_scripts is True
     assert flags.security_policy is True
@@ -885,9 +865,6 @@ def test_manifest_gates_match_feature_flags_fields() -> None:
     # used by at least one entry, or it's dead code.
     valid_gates = {
         "mkdocs",
-        "keyring",
-        "keyvault",
-        "credentials",
         "remote_disposable_scripts",
         "security_policy",
         "contributing_guide",

@@ -1,19 +1,14 @@
 # python-repo-template
-
 <!-- FIXME: replace badges below with your own CI/PyPI/coverage links -->
 [![CI](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml/badge.svg)](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) # FIXME replace with correct license link
-
 <!-- FIXME: one paragraph describing what this package does and who should use it -->
-
 My goal with this project is to create a baseline for new python projects with the most commonly used tools and community best practices.
 
 It's mostly for personal use. But maybe others will have suggestions? Or find it useful themselves?
 
-
 # Tool choices
-
 Based on some personal preference, and what I understand are the most widely used tools in the Python ecosystem.
 
 - **uv** for dependency management and virtual environments. Fast. Allows very simple package install directly from Github.
@@ -22,10 +17,20 @@ Based on some personal preference, and what I understand are the most widely use
 - **mypy** for static type checking.
 - **pytest** for testing.
 - **mkdocs** for documentation. Integrates easily with GitHub Pages for hosting.
-- **keyring** for credential storage. Cross-platform. Allows never keeping secrets in the repo.
-- **detect-secrets** for scanning for secrets before commits, and again in CI over every tracked file. Helps prevent accidental leaks.
+- **keyring** for local credential storage. Cross-platform. Allows never keeping secrets in the repo.
+- **Azure Keyvault** for remote secret storage.
+- **detect-secrets** for real-time secret scanning. Helps prevent accidental leaks.
 - **GitHub Actions** for CI and docs deployment. Free for public repos, and widely used.
 - **VSCode** for development. Most popular IDE. Lots of documentation. Many extensions.
+- **Claude Code** as the coding agent. Includes some helpful hooks and baseline settings.
+
+# Design choices
+Some of the design choices I've made for this project:
+
+- **No .env** To avoid keeping secrets/environment values within the repo, project
+keeps non-secret environment values and user config options in a config.toml in a
+standard OS-specific location. All secrets are designed to be kept within keyring
+or keyvault.
 
 ## Making a new repo from this template
 
@@ -43,8 +48,7 @@ uv run scripts/template_setup/setup_new_project.py
    It validates every field in the config up front — if anything is wrong,
    nothing runs and every problem is listed at once. It then previews every
    change, asks for a single confirmation, and applies everything, including
-   dropping mkdocs/keyring/KeyVault if you turned them off (and the shared
-   credentials dispatcher too, automatically, once both backends are gone).
+   dropping any optional features you turned off.
    Add `--dry-run` to preview only, or `-y`/`--yes` to skip the confirmation
    (the preview still runs first).
 

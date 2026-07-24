@@ -58,9 +58,6 @@ import choose_shell
 import find_fixmes
 import reinit_git
 import remove_contributing_guide
-import remove_credentials
-import remove_keyring
-import remove_keyvault
 import remove_mkdocs
 import remove_private_repo_deps
 import remove_remote_disposable_scripts
@@ -94,8 +91,6 @@ class Config:
     auto_memory_guard: bool
     no_inline_secret_suppressions: bool
     mkdocs: bool
-    keyring: bool
-    azure_keyvault: bool
     private_repo_deps: bool
     remote_disposable_scripts: bool
     security_policy: bool
@@ -246,8 +241,6 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
     no_inline_secrets = _require_bool(claude, "no_inline_secret_suppressions", "claude", problems)
 
     mkdocs = _require_bool(features, "mkdocs", "features", problems)
-    keyring = _require_bool(features, "keyring", "features", problems)
-    azure_keyvault = _require_bool(features, "azure_keyvault", "features", problems)
     private_repo_deps = _require_bool(features, "private_repo_deps", "features", problems)
     remote_disposable_scripts = _require_bool(
         features, "remote_disposable_scripts", "features", problems
@@ -328,8 +321,6 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
             auto_memory_guard=auto_memory_guard,
             no_inline_secret_suppressions=no_inline_secrets,
             mkdocs=mkdocs,
-            keyring=keyring,
-            azure_keyvault=azure_keyvault,
             private_repo_deps=private_repo_deps,
             remote_disposable_scripts=remote_disposable_scripts,
             security_policy=security_policy,
@@ -479,33 +470,6 @@ def _step_remove_mkdocs() -> PlannedStep:
     return PlannedStep("remove_mkdocs", "Remove mkdocs (documentation site)", call)
 
 
-def _step_remove_keyring() -> PlannedStep:
-    """Build the keyring-backend-removal step (only included when declined)."""
-
-    def call(root: Path, dry_run: bool) -> int:
-        return remove_keyring.run(root, assume_yes=True, dry_run=dry_run)
-
-    return PlannedStep("remove_keyring", "Remove keyring credential backend", call)
-
-
-def _step_remove_keyvault() -> PlannedStep:
-    """Build the KeyVault-backend-removal step (only included when declined)."""
-
-    def call(root: Path, dry_run: bool) -> int:
-        return remove_keyvault.run(root, assume_yes=True, dry_run=dry_run)
-
-    return PlannedStep("remove_keyvault", "Remove Azure KeyVault backend", call)
-
-
-def _step_remove_credentials() -> PlannedStep:
-    """Build the dispatcher-removal step (only included when both backends are declined)."""
-
-    def call(root: Path, dry_run: bool) -> int:
-        return remove_credentials.run(root, assume_yes=True, dry_run=dry_run)
-
-    return PlannedStep("remove_credentials", "Remove the credentials dispatcher", call)
-
-
 def _step_remove_private_repo_deps() -> PlannedStep:
     """Build the private-repo-deps-removal step (only included when declined)."""
 
@@ -558,7 +522,7 @@ def _step_reinit_git(config: Config) -> PlannedStep:
 def build_steps(config: Config) -> tuple[PlannedStep, ...]:
     """Build the ordered, config-bound steps for one run.
 
-    Every step except the seven removable features and ``reinit_git`` always
+    Every step except the removable features and ``reinit_git`` always
     runs. ``find_fixmes`` is intentionally not included here -- it is
     read-only and always runs once, separately, after a successful apply,
     never gated by the confirmation.
@@ -583,12 +547,6 @@ def build_steps(config: Config) -> tuple[PlannedStep, ...]:
     ]
     if not config.mkdocs:
         steps.append(_step_remove_mkdocs())
-    if not config.keyring:
-        steps.append(_step_remove_keyring())
-    if not config.azure_keyvault:
-        steps.append(_step_remove_keyvault())
-    if not config.keyring and not config.azure_keyvault:
-        steps.append(_step_remove_credentials())
     if not config.private_repo_deps:
         steps.append(_step_remove_private_repo_deps())
     if not config.remote_disposable_scripts:

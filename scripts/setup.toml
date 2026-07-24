@@ -62,11 +62,8 @@ no_inline_secret_suppressions = false
 
 [features]
 # Each false removes that feature. All default true ("keep everything") so
-# an unedited config changes nothing here. keyring and azure_keyvault are
-# independent -- either can be true without the other.
+# an unedited config changes nothing here.
 mkdocs = true
-keyring = true
-azure_keyvault = true
 # The commented-out "mint a GitHub App token" steps in .github/workflows/
 # {ci,audit,docs}.yml, for cloning private git dependencies in CI. false
 # deletes those steps outright instead of leaving them commented out -- see

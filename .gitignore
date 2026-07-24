@@ -1,8 +1,4 @@
 
-# ignore environment files
-*.env.*
-!.env.example
-
 # ignore .local files
 *.local*
 
@@ -144,7 +140,6 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
 .envrc
 .venv
 env/
