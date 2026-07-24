@@ -13,6 +13,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     # FIXME add depencencies
+    "platformdirs>=4.3,<5",  # config feature: OS-standard config.toml location
 ]
 
 [dependency-groups]
@@ -51,7 +52,7 @@ dev = [
 # other-project = { path = "/PATH/TO/PROJECT", editable = true }
 
 [project.scripts]
-# python-repo-template = "python_repo_template.main:cli" # FIXME add a CLI entry point if needed
+python-repo-template = "python_repo_template.main:cli"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

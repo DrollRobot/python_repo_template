@@ -953,6 +953,9 @@ wheels = [
 name = "python-repo-template"
 version = "1.12.0"
 source = { editable = "." }
+dependencies = [
+    { name = "platformdirs" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -986,6 +989,7 @@ test = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "platformdirs", specifier = ">=4.3,<5" }]
 
 [package.metadata.requires-dev]
 dev = [
