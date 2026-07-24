@@ -61,7 +61,7 @@ dev = [
 # other-project = { path = "/PATH/TO/PROJECT", editable = true }
 
 [project.scripts]
-python-repo-template = "python_repo_template.main:cli"
+python-repo-template = "python_repo_template.main:main"
 python-repo-template-config = "python_repo_template.config.cli:main"
 
 [tool.pytest.ini_options]

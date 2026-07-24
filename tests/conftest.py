@@ -4,13 +4,12 @@ Tests are tagged with the marker taxonomy documented in AGENTS.TESTING.md.
 The dependency axis is what gates external resources:
 
 Live tests (marked @pytest.mark.live) require a real external resource --
-network, secrets, a live tenant, or a third-party API -- and a populated .env
-file at the project root. Select on that axis with:
+network, secrets, a live tenant, or a third-party API -- configured through
+the config system (config.toml + the credential backend; see
+src/python_repo_template/config/). Select on that axis with:
 
     pytest -m "not live"   # offline tests only (the default pre-commit run)
     pytest -m live         # live tests only
-
-See AGENTS.md for the list of required environment variables.
 """
 
 from __future__ import annotations
@@ -21,7 +20,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from dotenv import load_dotenv
+
+from python_repo_template.config import Settings, load_settings
 
 # ---------------------------------------------------------------------------
 # Destructive-test opt-in gates
@@ -159,52 +159,29 @@ def _require_disposable_remote(request: pytest.FixtureRequest) -> None:
 
 
 # ---------------------------------------------------------------------------
-# .env loader
+# Settings
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
-def test_settings() -> dict[str, str]:
-    """Load variables from .env and return them as a plain dict.
+def settings() -> Settings:
+    """Resolved configuration for live tests.
 
-    Raises RuntimeError when the file is missing so live tests fail
-    with a clear message instead of a confusing KeyError.
+    Resolves through the config system: env vars > credential backend >
+    config.toml > schema defaults. Profile selection via the
+    PYTHON_REPO_TEMPLATE_PROFILE env var, else default_profile in
+    config.toml. Fails with an actionable ConfigError (naming the init
+    command and env vars) when required values are missing.
     """
-    env_file = ".env"
-    if not os.path.exists(env_file):
-        raise RuntimeError(
-            f"{env_file} not found. "
-            "Copy .env.example to .env and fill in the values. "
-            "See AGENTS.md for details."
-        )
-    load_dotenv(env_file, override=True)
-    # Return only the variables defined in the file so callers can
-    # distinguish "set in .env" from "already in the environment".
-    with open(env_file) as fh:
-        keys = [
-            line.split("=", 1)[0].strip()
-            for line in fh
-            if line.strip() and not line.startswith("#")
-        ]
-    return {k: os.environ[k] for k in keys if k in os.environ}
+    return load_settings()
 
 
 # ---------------------------------------------------------------------------
 # FIXME: add project-specific fixtures below
 # ---------------------------------------------------------------------------
-# Example:
+# Example (secrets resolve through the credential backend automatically):
 #
 # @pytest.fixture(scope="session")
-# def client(test_settings: dict[str, str]) -> MyClient:
+# def client(settings: Settings) -> MyClient:
 #     """Return a client configured for live tests."""
-#     return MyClient(api_key=test_settings["MY_API_KEY"])
-#
-# Credentials via the configured backend (CREDENTIAL_BACKEND in .env: keyring by
-# default, keyvault when you flip it). The call is backend-agnostic:
-#
-# from tests._bootstrap import get_user_pass
-#
-# @pytest.fixture(scope="session")
-# def credentials(test_settings: dict[str, str]) -> tuple[str, str]:
-#     """Username/password from keyring (dev) or KeyVault (prod) per .env."""
-#     return get_user_pass(test_settings)
+#     return MyClient(base_url=settings.api_url, secret=settings.client_secret)
