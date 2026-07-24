@@ -23,7 +23,7 @@ Based on some personal preference, and what I understand are the most widely use
 - **pytest** for testing.
 - **mkdocs** for documentation. Integrates easily with GitHub Pages for hosting.
 - **keyring** for credential storage. Cross-platform. Allows never keeping secrets in the repo.
-- **detect-secrets** for scanning for secrets before commits. Helps prevent accidental leaks.
+- **detect-secrets** for scanning for secrets before commits, and again in CI over every tracked file. Helps prevent accidental leaks.
 - **GitHub Actions** for CI and docs deployment. Free for public repos, and widely used.
 - **VSCode** for development. Most popular IDE. Lots of documentation. Many extensions.
 

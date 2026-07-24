@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `secret-scan` job in `.github/workflows/audit.yml`, so detect-secrets is
+  finally a CI gate and not only a local one. Until now the pre-commit hook was
+  the entire enforcement story, and it sees only staged files on a developer
+  machine and is skippable with `git commit --no-verify`. The job runs
+  `detect-secrets-hook` over every tracked file, and pins the same version as
+  the `rev:` in `.pre-commit-config.yaml` so local and CI results agree. It
+  lives in `audit.yml` rather than `ci.yml` because `ci.yml` is a three-OS
+  matrix that would run the scan three times for one answer, and it is its own
+  job, driven by `uvx`, so it still runs when dependency resolution or
+  `uv audit` fails. Add the `secret-scan` status to branch protection or it
+  reports without blocking.
+- A second gate in that job, on `.secrets.baseline` itself: every entry must be
+  audited and marked a false positive. Without it the baseline is a bypass --
+  add a real secret, run `scan`, and the file scan above goes green. This
+  catches both `UNVERIFIED` entries nobody reviewed and `VERIFIED_TRUE` entries
+  a human confirmed are real. It is enforced by parsing
+  `detect-secrets audit --report`, because that command always exits 0; the
+  `--fail-on-unaudited` flag belongs to IBM's detect-secrets fork, not the Yelp
+  one this template pins.
+
 - New Claude Code hook, `.claude/hooks/no-inline-secret-suppressions.py`: blocks
   a write whose content adds a detect-secrets allowlist pragma and points the
   agent at `.secrets.baseline` instead. Opt in with
