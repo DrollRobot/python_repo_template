@@ -13,13 +13,11 @@ hint when asked to write to a keyvault profile.
 Key Vault secret names cannot contain underscores, so schema field names are
 mapped ``client_secret`` -> ``client-secret`` for lookup.
 
-This is the only module in the package that imports ``azure-*``, and the
-dependency is an optional extra. To remove the Key Vault backend entirely:
-delete this file, the ``keyvault`` extra in ``pyproject.toml``, and the
-marked azure lines in the ``dev`` dependency group (then run ``uv lock`` and
-``uv sync``). With this file gone there are no ``azure`` imports anywhere.
-
-Requires ``pip install python-repo-template[keyvault]`` (or the dev group).
+This is the only module in the package that imports ``azure-*``. To remove
+the Key Vault backend entirely: delete this file and the two azure lines in
+``pyproject.toml`` (in ``[project] dependencies`` and the ``dev`` group),
+then run ``uv lock`` and ``uv sync``. With this file gone there are no
+``azure`` imports anywhere.
 """
 
 from __future__ import annotations
@@ -65,8 +63,8 @@ def get(key: str, service: str, config: Mapping[str, Any]) -> str | None:
         from azure.keyvault.secrets import SecretClient
     except ModuleNotFoundError as exc:
         raise ConfigError(
-            "The Key Vault backend needs the azure packages. Install the 'keyvault' extra: "
-            "pip install python-repo-template[keyvault] (or 'uv sync' with the dev group)."
+            "The Key Vault backend needs the azure-identity and azure-keyvault-secrets "
+            "packages; run 'uv sync' (they are regular dependencies)."
         ) from exc
 
     client = SecretClient(vault_url=vault_url, credential=DefaultAzureCredential())
