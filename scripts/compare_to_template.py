@@ -256,11 +256,11 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # matching script) and must track the template, so it is compared here
     # despite the blanket tests/test_*.py exclusion, and carries a __version__.
     BaselineFile("tests/test_mypy_stub_guard.py", versioned=True),
-    # Same deal for the committed-secret-suppression gate: it ships to every
-    # project (ungated -- unlike the steering hook it backs up, which
+    # Same deal for the inline-suppression gate: it ships to every project
+    # (ungated -- unlike the steering hook it backs up, which
     # [claude].no_inline_secret_suppressions can decline) and carries a
     # __version__.
-    BaselineFile("tests/test_no_committed_secret_suppressions.py", versioned=True),
+    BaselineFile("tests/test_no_inline_suppressions_for_secrets.py", versioned=True),
 )
 
 # Tracked template paths deliberately not compared. Prefixes cover the

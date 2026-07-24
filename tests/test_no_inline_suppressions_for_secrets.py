@@ -14,12 +14,16 @@ decline the hook at setup time (``[claude].no_inline_secret_suppressions`` in
 ``scripts/setup.toml`` deletes the file): the CI gate must not disappear with
 it.
 
-File list: ``git ls-files`` when git is available, so what gets scanned is what
-``git add .`` would commit -- tracked files plus untracked ones that are not
-ignored -- and build/venv/cache trees cost nothing. Without git (an extracted
-tarball, say) it falls back to walking the tree minus :data:`_EXCLUDED_DIRS`.
-It never skips silently -- which source was used is printed in the failure
-message.
+File list: ``git ls-files``, so what gets scanned is what ``git add .`` would
+commit -- tracked files plus untracked ones that are not ignored. That keeps
+this test's view identical to a CI checkout's, and makes ``.gitignore`` the one
+place exclusions live: a dependency's vendored pragma under ``.venv/`` is out of
+scope for free, and no second exclusion list has to be maintained here and kept
+in step with the first. There is deliberately no walk-the-tree fallback -- git
+is present in every environment this gate runs in (workstation, the pre-push
+hook, CI), and a fallback would silently scan a different set of files whenever
+git merely errored (a broken index, a dubious-ownership refusal in a container).
+When git cannot answer, this test fails and says so.
 
 Escape hatch: :data:`EXEMPT_PATHS`, deliberately a whole-file list in this
 source rather than an inline marker, so granting one shows up in a diff and
@@ -68,27 +72,6 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 # rule, a test fixture); never to silence a real finding.
 EXEMPT_PATHS: frozenset[str] = frozenset()
 
-# Directory names skipped by the no-git fallback walk. Irrelevant when git
-# lists the files, since none of these are ever tracked.
-_EXCLUDED_DIRS: frozenset[str] = frozenset(
-    {
-        ".git",
-        ".venv",
-        "venv",
-        ".local",
-        "__pycache__",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".pytest_cache",
-        ".tox",
-        "node_modules",
-        "htmlcov",
-        "dist",
-        "build",
-        "site",
-    }
-)
-
 _GUIDANCE = (
     "Inline suppressions are prohibited in this repo -- they silence the line\n"
     "permanently, survive edits that change the value, and leave no audit trail.\n"
@@ -97,7 +80,7 @@ _GUIDANCE = (
     "  uvx detect-secrets audit .secrets.baseline\n"
     "For a whole class of false positives, add a path filter to the baseline.\n"
     "If a file must quote one of these strings verbatim, add its path to\n"
-    "EXEMPT_PATHS in tests/test_no_committed_secret_suppressions.py -- an\n"
+    "EXEMPT_PATHS in tests/test_no_inline_suppressions_for_secrets.py -- an\n"
     "exemption that shows up in the diff, unlike an inline comment."
 )
 
@@ -108,6 +91,10 @@ _HOOK_PATH = _THIS_FILE.parent.parent / ".claude" / "hooks" / "no-inline-secret-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+class GitUnavailableError(RuntimeError):
+    """Raised when git cannot list the files that make up the repo."""
 
 
 @dataclass(frozen=True)
@@ -132,17 +119,28 @@ def _find_root() -> Path:
 _ROOT = _find_root()
 
 
-def _git_files(root: Path) -> list[Path] | None:
-    """List the files git considers part of the repo, or None if git cannot answer.
+def _git_files(root: Path) -> list[Path]:
+    """List the files git considers part of the repo.
 
     Tracked files (``--cached``) plus untracked ones that are not ignored
     (``--others --exclude-standard``), which is exactly the set a ``git add .``
     would commit. Including the untracked half moves the failure to the run
     right after the file is written, rather than the one after it is staged.
+
+    Args:
+        root: Project root directory.
+
+    Returns:
+        Absolute paths, in git's order.
+
+    Raises:
+        GitUnavailableError: If git is not on PATH or ``git ls-files`` fails.
+            Never falls back to another file list: a silently different set of
+            scanned files is the one failure mode this gate cannot afford.
     """
     git = shutil.which("git")
     if git is None:
-        return None
+        raise GitUnavailableError("git is not on PATH")
     result = subprocess.run(  # noqa: S603  (git path resolved via shutil.which)
         [git, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         cwd=root,
@@ -150,30 +148,10 @@ def _git_files(root: Path) -> list[Path] | None:
         check=False,
     )
     if result.returncode != 0:
-        return None
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise GitUnavailableError(f"git ls-files exited {result.returncode} in {root}: {detail}")
     names = result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
     return [root / name for name in names if name]
-
-
-def _walk_files(root: Path) -> list[Path]:
-    """List every file under root, skipping _EXCLUDED_DIRS and egg-info trees."""
-    files: list[Path] = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        parts = path.relative_to(root).parts[:-1]
-        if any(part in _EXCLUDED_DIRS or part.endswith(".egg-info") for part in parts):
-            continue
-        files.append(path)
-    return files
-
-
-def _repo_files(root: Path) -> tuple[list[Path], str]:
-    """Return the files to scan and a label naming where the list came from."""
-    tracked = _git_files(root)
-    if tracked is not None:
-        return tracked, "git ls-files"
-    return _walk_files(root), "filesystem walk (git unavailable)"
 
 
 def _read_text(path: Path) -> str | None:
@@ -236,24 +214,33 @@ PRAGMA_NO_SPACE = "# pragma:allow" + "list secret"
 
 @pytest.mark.integration
 @pytest.mark.functional
-def test_no_committed_secret_suppressions() -> None:
-    paths, source = _repo_files(_ROOT)
+def test_no_inline_suppressions_for_secrets() -> None:
+    try:
+        paths = _git_files(_ROOT)
+    except GitUnavailableError as error:
+        pytest.fail(
+            f"cannot determine which files belong to the repo: {error}.\n"
+            "This gate scans what git would commit and has no fallback file "
+            "list on purpose (see this module's docstring). Run it from a git "
+            "checkout, with git on PATH.",
+            pytrace=False,
+        )
+
     hits = _scan_paths(_ROOT, paths, EXEMPT_PATHS)
     if hits:
         listing = "\n".join(f"  {h.path}:{h.line_number}: {h.label}: {h.text}" for h in hits)
         pytest.fail(
             f"{len(hits)} secret-scanner suppression(s) found "
-            f"in {len(paths)} file(s) from {source}:\n{listing}\n\n{_GUIDANCE}",
+            f"in the {len(paths)} file(s) git would commit:\n{listing}\n\n{_GUIDANCE}",
             pytrace=False,
         )
 
 
 @pytest.mark.integration
 def test_scan_covers_a_real_file_list() -> None:
-    # A gate that silently scans nothing would always pass. This repo has
-    # tracked files, so an empty list means the file source broke.
-    paths, _source = _repo_files(_ROOT)
-    assert _THIS_FILE in [p.resolve() for p in paths]
+    # A gate that silently scans nothing would always pass. This file is in the
+    # repo, so its absence means the file list broke.
+    assert _THIS_FILE in [p.resolve() for p in _git_files(_ROOT)]
 
 
 # ---------------------------------------------------------------------------
@@ -321,19 +308,6 @@ def test_patterns_match_the_steering_hook() -> None:
 
 
 @pytest.mark.unit
-def test_walk_skips_excluded_directories(tmp_path: Path) -> None:
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "a.py").write_text("clean\n", encoding="utf-8")
-    (tmp_path / ".venv").mkdir()
-    (tmp_path / ".venv" / "vendored.py").write_text(f"x = 1  {PRAGMA}\n", encoding="utf-8")
-    (tmp_path / "pkg.egg-info").mkdir()
-    (tmp_path / "pkg.egg-info" / "SOURCES.txt").write_text(f"{PRAGMA}\n", encoding="utf-8")
-
-    found = {p.relative_to(tmp_path).as_posix() for p in _walk_files(tmp_path)}
-    assert found == {"src/a.py"}
-
-
-@pytest.mark.unit
 def test_scan_paths_finds_and_reports_relative_paths(tmp_path: Path) -> None:
     target = tmp_path / "src" / "config.py"
     target.parent.mkdir()
@@ -363,22 +337,28 @@ def test_binary_and_missing_files_are_skipped(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_git_files_returns_none_outside_a_repo(tmp_path: Path) -> None:
+def test_git_files_raises_outside_a_repo(tmp_path: Path) -> None:
+    # Fail loudly rather than scanning some other file list: a gate that
+    # quietly changes what it covers is worse than one that stops.
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
-    assert _git_files(tmp_path) is None
+    with pytest.raises(GitUnavailableError, match="ls-files exited"):
+        _git_files(tmp_path)
 
 
 @pytest.mark.unit
-def test_repo_files_falls_back_when_git_is_missing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_git_files_raises_when_git_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(shutil, "which", lambda _name: None)
-    (tmp_path / "a.py").write_text("clean\n", encoding="utf-8")
+    with pytest.raises(GitUnavailableError, match="not on PATH"):
+        _git_files(_ROOT)
 
-    paths, source = _repo_files(tmp_path)
-    assert [p.name for p in paths] == ["a.py"]
-    assert "git unavailable" in source
+
+@pytest.mark.unit
+def test_gate_fails_loudly_when_git_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The gate must fail, not skip and not pass, when it cannot see the repo.
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    with pytest.raises(pytest.fail.Exception, match="no fallback file list"):
+        test_no_inline_suppressions_for_secrets()
 
 
 @pytest.mark.unit

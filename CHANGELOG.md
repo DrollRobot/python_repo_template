@@ -20,12 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The new hook carries a `__version__`, so `compare_to_template.py` tracks it in
   the version pre-flight and offers to copy a newer template copy into a
   project, the same way it does for the `scripts/` helpers.
-- `tests/test_no_committed_secret_suppressions.py`, the enforcement half of that
-  hook: it scans every file `git add .` would commit (tracked plus untracked and
-  not ignored; a tree walk when git is unavailable) for the same suppression
-  patterns and fails the suite, so a pragma that arrived by a shell heredoc, a
-  hand edit, a merge, or a contributor without the hook installed still fails
-  CI. Unlike the hook it is ungated -- it ships to every project -- and
+- `tests/test_no_inline_suppressions_for_secrets.py`, the enforcement half of
+  that hook: it scans every file `git add .` would commit -- tracked plus
+  untracked and not ignored, so `.gitignore` is the only place exclusions live
+  and the scan matches a CI checkout -- for the same suppression patterns, and
+  fails the suite. A pragma that arrived by a shell heredoc, a hand edit, a
+  merge, or a contributor without the hook installed still fails CI. There is no
+  fallback file list when git cannot answer: the test fails and says why, rather
+  than silently scanning a different set of files. Unlike the hook it is
+  ungated -- it ships to every project -- and
   `test_patterns_match_the_steering_hook` fails if the two pattern lists drift
   apart while both are present. The only escape hatch is `EXEMPT_PATHS`, a
   whole-file allowlist in the test source, so granting one shows up in the diff.
