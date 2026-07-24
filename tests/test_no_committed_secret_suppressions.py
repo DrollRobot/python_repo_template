@@ -1,0 +1,387 @@
+"""Fail the suite when a secret-scanner suppression is committed to the repo.
+
+The ``.claude/hooks/no-inline-secret-suppressions.py`` PreToolUse hook is
+steering: it nudges one agent, on one machine, only for direct write tools, and
+it fails open on anything it cannot parse. This test is the enforcement half.
+It scans every file in the repo for the same patterns, so a suppression that
+arrived by any route -- a shell heredoc, a hand edit, a merge, a contributor
+without the hook installed -- fails ``pytest`` and therefore CI.
+
+The two halves are kept in sync by ``test_patterns_match_the_steering_hook``,
+which compares this module's patterns to the hook's whenever the hook is
+present. The patterns are duplicated rather than imported because a project may
+decline the hook at setup time (``[claude].no_inline_secret_suppressions`` in
+``scripts/setup.toml`` deletes the file): the CI gate must not disappear with
+it.
+
+File list: ``git ls-files`` when git is available, so what gets scanned is what
+``git add .`` would commit -- tracked files plus untracked ones that are not
+ignored -- and build/venv/cache trees cost nothing. Without git (an extracted
+tarball, say) it falls back to walking the tree minus :data:`_EXCLUDED_DIRS`.
+It never skips silently -- which source was used is printed in the failure
+message.
+
+Escape hatch: :data:`EXEMPT_PATHS`, deliberately a whole-file list in this
+source rather than an inline marker, so granting one shows up in a diff and
+gets reviewed. Prose that must quote a suppression verbatim is the expected
+use.
+
+Every suppression literal in this file is assembled from fragments at runtime.
+An intact one in this source would make the file unwritable by any agent with
+the hook wired -- the hook would block edits to its own enforcement test.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import re
+import shutil
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+# Version of this guard test. It ships to projects generated from this template
+# (cleanup.py keeps it: no script or hook shares its name), so bump on every
+# change to let scripts/compare_to_template.py flag stale copies: patch =
+# bugfix, minor = new/loosened check, major = removed or renamed check.
+__version__ = "1.0.0"
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+# Kept identical to _PATTERNS in .claude/hooks/no-inline-secret-suppressions.py
+# (see test_patterns_match_the_steering_hook). Each entry is (compiled pattern,
+# human label used in the failure message).
+_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"pragma:\s*(?:allow|white)list[\s-]+(?:nextline[\s-]+)?secret", re.I),
+        "detect-secrets allowlist pragma",
+    ),
+)
+
+# Repo-relative POSIX paths allowed to contain a suppression string. Add a path
+# here only for a file that must quote one verbatim (documentation of this
+# rule, a test fixture); never to silence a real finding.
+EXEMPT_PATHS: frozenset[str] = frozenset()
+
+# Directory names skipped by the no-git fallback walk. Irrelevant when git
+# lists the files, since none of these are ever tracked.
+_EXCLUDED_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        ".local",
+        "__pycache__",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+        ".tox",
+        "node_modules",
+        "htmlcov",
+        "dist",
+        "build",
+        "site",
+    }
+)
+
+_GUIDANCE = (
+    "Inline suppressions are prohibited in this repo -- they silence the line\n"
+    "permanently, survive edits that change the value, and leave no audit trail.\n"
+    "Record the finding in the baseline and audit it instead:\n"
+    "  uvx detect-secrets scan --baseline .secrets.baseline\n"
+    "  uvx detect-secrets audit .secrets.baseline\n"
+    "For a whole class of false positives, add a path filter to the baseline.\n"
+    "If a file must quote one of these strings verbatim, add its path to\n"
+    "EXEMPT_PATHS in tests/test_no_committed_secret_suppressions.py -- an\n"
+    "exemption that shows up in the diff, unlike an inline comment."
+)
+
+_THIS_FILE = Path(__file__).resolve()
+_HOOK_PATH = _THIS_FILE.parent.parent / ".claude" / "hooks" / "no-inline-secret-suppressions.py"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Hit:
+    """One suppression found in one line of one file."""
+
+    path: str
+    line_number: int
+    label: str
+    text: str
+
+
+def _find_root() -> Path:
+    root = _THIS_FILE.parent
+    while root != root.parent:
+        if (root / "pyproject.toml").exists():
+            return root
+        root = root.parent
+    raise RuntimeError("Could not find project root (no pyproject.toml found)")
+
+
+_ROOT = _find_root()
+
+
+def _git_files(root: Path) -> list[Path] | None:
+    """List the files git considers part of the repo, or None if git cannot answer.
+
+    Tracked files (``--cached``) plus untracked ones that are not ignored
+    (``--others --exclude-standard``), which is exactly the set a ``git add .``
+    would commit. Including the untracked half moves the failure to the run
+    right after the file is written, rather than the one after it is staged.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return None
+    result = subprocess.run(  # noqa: S603  (git path resolved via shutil.which)
+        [git, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    names = result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
+    return [root / name for name in names if name]
+
+
+def _walk_files(root: Path) -> list[Path]:
+    """List every file under root, skipping _EXCLUDED_DIRS and egg-info trees."""
+    files: list[Path] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        parts = path.relative_to(root).parts[:-1]
+        if any(part in _EXCLUDED_DIRS or part.endswith(".egg-info") for part in parts):
+            continue
+        files.append(path)
+    return files
+
+
+def _repo_files(root: Path) -> tuple[list[Path], str]:
+    """Return the files to scan and a label naming where the list came from."""
+    tracked = _git_files(root)
+    if tracked is not None:
+        return tracked, "git ls-files"
+    return _walk_files(root), "filesystem walk (git unavailable)"
+
+
+def _read_text(path: Path) -> str | None:
+    """Return the file's text, or None when it is binary or unreadable."""
+    try:
+        return path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError):  # fmt: skip
+        return None
+
+
+def _scan_text(text: str) -> list[tuple[int, str, str]]:
+    """Return (line number, label, stripped line) for each suppression in text."""
+    found: list[tuple[int, str, str]] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        for pattern, label in _PATTERNS:
+            if pattern.search(line):
+                found.append((number, label, line.strip()))
+    return found
+
+
+def _scan_paths(root: Path, paths: list[Path], exempt: frozenset[str]) -> list[Hit]:
+    """Scan every readable file in paths, skipping the exempt ones."""
+    hits: list[Hit] = []
+    for path in paths:
+        relative = path.relative_to(root).as_posix()
+        if relative in exempt or not path.is_file():
+            continue
+        text = _read_text(path)
+        if text is None:
+            continue
+        hits.extend(
+            Hit(path=relative, line_number=number, label=label, text=line)
+            for number, label, line in _scan_text(text)
+        )
+    return hits
+
+
+def _load_hook() -> Any:
+    """Import the steering hook from its path (its filename is not a module name)."""
+    spec = importlib.util.spec_from_file_location("no_inline_secret_suppressions_hook", _HOOK_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# Split so this source file never contains an intact suppression comment.
+PRAGMA = "# pragma: allow" + "list secret"
+PRAGMA_NEXTLINE = "# pragma: allow" + "list nextline secret"
+PRAGMA_WHITELIST = "# pragma: white" + "list secret"
+PRAGMA_UPPER = "# PRAGMA: ALLOW" + "LIST SECRET"
+PRAGMA_NO_SPACE = "# pragma:allow" + "list secret"
+
+
+# ---------------------------------------------------------------------------
+# The CI gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_no_committed_secret_suppressions() -> None:
+    paths, source = _repo_files(_ROOT)
+    hits = _scan_paths(_ROOT, paths, EXEMPT_PATHS)
+    if hits:
+        listing = "\n".join(f"  {h.path}:{h.line_number}: {h.label}: {h.text}" for h in hits)
+        pytest.fail(
+            f"{len(hits)} secret-scanner suppression(s) found "
+            f"in {len(paths)} file(s) from {source}:\n{listing}\n\n{_GUIDANCE}",
+            pytrace=False,
+        )
+
+
+@pytest.mark.integration
+def test_scan_covers_a_real_file_list() -> None:
+    # A gate that silently scans nothing would always pass. This repo has
+    # tracked files, so an empty list means the file source broke.
+    paths, _source = _repo_files(_ROOT)
+    assert _THIS_FILE in [p.resolve() for p in paths]
+
+
+# ---------------------------------------------------------------------------
+# The patterns
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "suppression",
+    [PRAGMA, PRAGMA_NEXTLINE, PRAGMA_WHITELIST, PRAGMA_UPPER, PRAGMA_NO_SPACE],
+)
+def test_patterns_flag_known_suppressions(suppression: str) -> None:
+    assert _scan_text(f'TOKEN = "abc123"  {suppression}\n')
+
+
+@pytest.mark.unit
+def test_scan_reports_line_and_label() -> None:
+    text = f"a = 1\nb = 2\nTOKEN = 'x'  {PRAGMA}\n"
+    assert _scan_text(text) == [(3, "detect-secrets allowlist pragma", f"TOKEN = 'x'  {PRAGMA}")]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "line",
+    [
+        "import os  # noqa: F401",
+        "# this module handles secret rotation",
+        "# nosecrets are stored here",
+        "TOKEN = os.environ['TOKEN']",
+        "",
+    ],
+)
+def test_clean_lines_are_not_flagged(line: str) -> None:
+    assert _scan_text(line) == []
+
+
+@pytest.mark.unit
+def test_this_file_contains_no_intact_suppression() -> None:
+    # Guards this file itself: with the steering hook wired, an intact literal
+    # in this source would make the file unwritable by any agent.
+    assert _scan_text(_THIS_FILE.read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.unit
+def test_patterns_match_the_steering_hook() -> None:
+    # The hook is optional (a project can decline it at setup time); this gate
+    # is not. When both exist they must agree, or one of them stops catching
+    # what the other does.
+    if not _HOOK_PATH.exists():
+        pytest.skip("steering hook not installed in this project")
+    hook = _load_hook()
+    hook_patterns = [(p.pattern, p.flags, label) for p, label in hook._PATTERNS]
+    own_patterns = [(p.pattern, p.flags, label) for p, label in _PATTERNS]
+    assert own_patterns == hook_patterns, (
+        "the patterns in this test and in "
+        ".claude/hooks/no-inline-secret-suppressions.py have drifted apart; "
+        "update both together"
+    )
+
+
+# ---------------------------------------------------------------------------
+# File selection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_walk_skips_excluded_directories(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("clean\n", encoding="utf-8")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "vendored.py").write_text(f"x = 1  {PRAGMA}\n", encoding="utf-8")
+    (tmp_path / "pkg.egg-info").mkdir()
+    (tmp_path / "pkg.egg-info" / "SOURCES.txt").write_text(f"{PRAGMA}\n", encoding="utf-8")
+
+    found = {p.relative_to(tmp_path).as_posix() for p in _walk_files(tmp_path)}
+    assert found == {"src/a.py"}
+
+
+@pytest.mark.unit
+def test_scan_paths_finds_and_reports_relative_paths(tmp_path: Path) -> None:
+    target = tmp_path / "src" / "config.py"
+    target.parent.mkdir()
+    target.write_text(f"TOKEN = 'x'  {PRAGMA}\n", encoding="utf-8")
+
+    (hit,) = _scan_paths(tmp_path, [target], frozenset())
+    assert (hit.path, hit.line_number) == ("src/config.py", 1)
+
+
+@pytest.mark.unit
+def test_exempt_paths_suppress_a_file(tmp_path: Path) -> None:
+    target = tmp_path / "docs" / "rule.md"
+    target.parent.mkdir()
+    target.write_text(f"never write {PRAGMA}\n", encoding="utf-8")
+
+    assert _scan_paths(tmp_path, [target], frozenset()) != []
+    assert _scan_paths(tmp_path, [target], frozenset({"docs/rule.md"})) == []
+
+
+@pytest.mark.unit
+def test_binary_and_missing_files_are_skipped(tmp_path: Path) -> None:
+    binary = tmp_path / "image.png"
+    binary.write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe" + PRAGMA.encode("utf-16"))
+    deleted = tmp_path / "gone.py"  # tracked-but-deleted files reach _scan_paths
+
+    assert _scan_paths(tmp_path, [binary, deleted], frozenset()) == []
+
+
+@pytest.mark.unit
+def test_git_files_returns_none_outside_a_repo(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    assert _git_files(tmp_path) is None
+
+
+@pytest.mark.unit
+def test_repo_files_falls_back_when_git_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    (tmp_path / "a.py").write_text("clean\n", encoding="utf-8")
+
+    paths, source = _repo_files(tmp_path)
+    assert [p.name for p in paths] == ["a.py"]
+    assert "git unavailable" in source
+
+
+@pytest.mark.unit
+def test_guard_declares_a_version() -> None:
+    # compare_to_template.py tracks this file by __version__.
+    assert __version__
