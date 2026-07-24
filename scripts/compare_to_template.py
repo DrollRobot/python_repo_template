@@ -166,8 +166,8 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".github/workflows/ci.yml"),
     BaselineFile(".github/workflows/docs.yml", gate="mkdocs"),
     # Claude Code configuration. choose_shell.py deletes the unchosen hook
-    # pair (or all hooks) and protect_auto_memory.py deletes its own hook on
-    # decline, so each hook file's presence tracks exactly one [claude]
+    # pair (or all hooks) and wire_hook.py deletes a declined standalone
+    # guard's hook, so each hook file's presence tracks exactly one [claude]
     # config flag. settings.json accumulates per-project permissions on top
     # of whichever hooks are wired in, so it stays optional and lenient
     # instead of gated.
@@ -176,6 +176,14 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".claude/hooks/no-chained-commands-bash.py", gate="hook_no_chained_bash"),
     BaselineFile(".claude/hooks/no-chained-commands-pwsh.py", gate="hook_no_chained_pwsh"),
     BaselineFile(".claude/hooks/protect-auto-memory.py", gate="hook_auto_memory"),
+    # The only hook that carries a __version__, so it joins the version
+    # pre-flight and can be copied forward into a project (the others are
+    # compared by content only).
+    BaselineFile(
+        ".claude/hooks/no-inline-secret-suppressions.py",
+        versioned=True,
+        gate="hook_no_inline_secrets",
+    ),
     BaselineFile(".claude/settings.json", required=False, strict=False),
     # Editor / lint / format / hygiene config.
     BaselineFile(".editorconfig"),
@@ -248,6 +256,11 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # matching script) and must track the template, so it is compared here
     # despite the blanket tests/test_*.py exclusion, and carries a __version__.
     BaselineFile("tests/test_mypy_stub_guard.py", versioned=True),
+    # Same deal for the committed-secret-suppression gate: it ships to every
+    # project (ungated -- unlike the steering hook it backs up, which
+    # [claude].no_inline_secret_suppressions can decline) and carries a
+    # __version__.
+    BaselineFile("tests/test_no_committed_secret_suppressions.py", versioned=True),
 )
 
 # Tracked template paths deliberately not compared. Prefixes cover the
@@ -336,6 +349,8 @@ class FeatureFlags:
         hook_canonical_bash: ``canonical-commands`` hook, bash flavor.
         hook_auto_memory: Auto-memory write-guard hook
             (``[claude].auto_memory_guard``).
+        hook_no_inline_secrets: Inline-secret-suppression guard hook
+            (``[claude].no_inline_secret_suppressions``).
         source: Where these flags came from -- always :data:`SETUP_CONFIG_REL`,
             the only supported source -- shown in the report for provenance.
     """
@@ -353,6 +368,7 @@ class FeatureFlags:
     hook_canonical_pwsh: bool
     hook_canonical_bash: bool
     hook_auto_memory: bool
+    hook_no_inline_secrets: bool
     source: str
 
     def wanted(self, gate: str) -> bool:
@@ -633,8 +649,11 @@ def replay_cleanup_pyproject(text: str) -> str:
         The trimmed contents.
     """
     text = text.replace('    "--cov=scripts",\n', "")
-    return text.replace(
+    text = text.replace(
         'mypy_path = ["scripts", "scripts/template_setup"]', 'mypy_path = ["scripts"]'
+    )
+    return text.replace(
+        'files = ["src", "tests", "scripts", ".claude/hooks"]', 'files = ["src", "tests"]'
     )
 
 
@@ -916,6 +935,7 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
         hook_canonical_pwsh=(shell == "powershell" and canonical_commands),
         hook_canonical_bash=(shell == "bash" and canonical_commands),
         hook_auto_memory=bool(claude.get("auto_memory_guard", False)),
+        hook_no_inline_secrets=bool(claude.get("no_inline_secret_suppressions", False)),
         source=SETUP_CONFIG_REL,
     )
 
@@ -1591,6 +1611,7 @@ _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("hook_canonical_pwsh", "canonical-commands hook (powershell)"),
     ("hook_canonical_bash", "canonical-commands hook (bash)"),
     ("hook_auto_memory", "auto-memory guard hook"),
+    ("hook_no_inline_secrets", "inline-suppression guard hook"),
 )
 
 

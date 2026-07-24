@@ -94,6 +94,7 @@ def make_flags(
     hook_canonical_pwsh: bool = True,
     hook_canonical_bash: bool = True,
     hook_auto_memory: bool = True,
+    hook_no_inline_secrets: bool = True,
     source: str = "test",
 ) -> FeatureFlags:
     """Build a FeatureFlags with every feature/hook on, unless overridden."""
@@ -111,6 +112,7 @@ def make_flags(
         hook_canonical_pwsh=hook_canonical_pwsh,
         hook_canonical_bash=hook_canonical_bash,
         hook_auto_memory=hook_auto_memory,
+        hook_no_inline_secrets=hook_no_inline_secrets,
         source=source,
     )
 
@@ -894,6 +896,7 @@ def test_manifest_gates_match_feature_flags_fields() -> None:
         "hook_canonical_pwsh",
         "hook_canonical_bash",
         "hook_auto_memory",
+        "hook_no_inline_secrets",
     }
     gates = {entry.gate for entry in MANIFEST if entry.gate is not None}
     assert gates == valid_gates
