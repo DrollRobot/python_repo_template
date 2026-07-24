@@ -82,7 +82,7 @@ uv run mkdocs gh-deploy --force
 
 8. **Initialize the secrets baseline:**
 ```powershell
-uvx detect-secrets scan > .secrets.baseline
+uv run detect-secrets scan > .secrets.baseline
 ```
 
 9. **If using GitHub App tokens to access private repos:**

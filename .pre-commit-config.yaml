@@ -23,8 +23,9 @@
 #                        whose type stubs are published on PyPI (install the
 #                        types-* package instead); runs when pyproject.toml
 #                        is staged
-#   detect-secrets    -- prevents secrets from being committed; requires a
-#                        baseline file (.secrets.baseline). Create it once with:
+#   detect-secrets    -- prevents secrets from being committed; runs from the
+#                        project venv (dev dependency, version from uv.lock).
+#                        Requires a baseline file; create it once with:
 #                          uv run detect-secrets scan > .secrets.baseline
 #
 # Pre-push hooks (run once on `git push`, slower whole-repo gates):
@@ -65,12 +66,15 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]  # for cross-platform support
 
-  # detect-secrets
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.5.0
+  # detect-secrets: runs from the project venv so the version comes from
+  # uv.lock (the detect-secrets dev dependency), keeping local and CI scans
+  # on the same release.
+  - repo: local
     hooks:
       - id: detect-secrets
-        args: ['--baseline', '.secrets.baseline']
+        name: Detect secrets
+        entry: uv run detect-secrets-hook --baseline .secrets.baseline
+        language: system
 
   # Ruff: lint + format
   - repo: https://github.com/astral-sh/ruff-pre-commit
