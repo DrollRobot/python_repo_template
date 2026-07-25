@@ -66,9 +66,7 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]  # for cross-platform support
 
-  # detect-secrets: runs from the project venv so the version comes from
-  # uv.lock (the detect-secrets dev dependency), keeping local and CI scans
-  # on the same release.
+  # detect-secrets
   - repo: local
     hooks:
       - id: detect-secrets
