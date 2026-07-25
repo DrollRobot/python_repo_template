@@ -3,16 +3,19 @@
 Precedence, highest wins:
 
 1. Explicit overrides passed by calling code (e.g. from CLI flags).
-2. Environment variables: ``PYTHON_REPO_TEMPLATE_<UPPER_FIELD_NAME>`` — the
+2. Environment variables: ``<ENV_PREFIX><UPPER_FIELD_NAME>`` — the
    CI/headless path; works with zero files and zero keyring.
 3. Secret backend (keyring / Key Vault) — secret fields only.
 4. config.toml: the selected profile table, then bare top-level keys.
 5. Schema field defaults.
 
 Profile selection, first match wins: the explicit ``profile`` argument, the
-``PYTHON_REPO_TEMPLATE_PROFILE`` environment variable, the ``default_profile``
-key in config.toml, else bare top-level keys act as the single unnamed
-profile.
+``<ENV_PREFIX>PROFILE`` environment variable, the ``default_profile`` key in
+config.toml, else bare top-level keys act as the single unnamed profile.
+
+``ENV_PREFIX`` is defined in ``schema.py`` as the app name upper-cased plus
+an underscore; the two variables named above are :data:`PROFILE_ENV` here
+and ``paths.CONFIG_DIR_ENV``.
 
 Missing required values raise ``ConfigError`` with an actionable message; the
 resolver never auto-creates config and never silently defaults.
@@ -40,7 +43,7 @@ from python_repo_template.config.schema import (
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # Environment variable selecting the active profile.
 PROFILE_ENV = ENV_PREFIX + "PROFILE"
@@ -58,8 +61,7 @@ def load_settings(
 
     Args:
         profile: Profile name to resolve, or None to fall back to
-            ``PYTHON_REPO_TEMPLATE_PROFILE`` / ``default_profile`` / bare
-            top-level keys.
+            :data:`PROFILE_ENV` / ``default_profile`` / bare top-level keys.
         overrides: Highest-precedence values (e.g. parsed CLI flags), keyed by
             field name.
 
@@ -223,7 +225,7 @@ def select_profile_name(
 ) -> str | None:
     """Pick the active profile name, or None for bare top-level mode.
 
-    Selection order: *explicit* argument, then the ``PYTHON_REPO_TEMPLATE_PROFILE``
+    Selection order: *explicit* argument, then the :data:`PROFILE_ENV`
     environment variable, then ``default_profile`` in the config file.
 
     Args:

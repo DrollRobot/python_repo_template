@@ -168,10 +168,10 @@ def settings() -> Settings:
     """Resolved configuration for live tests.
 
     Resolves through the config system: env vars > credential backend >
-    config.toml > schema defaults. Profile selection via the
-    PYTHON_REPO_TEMPLATE_PROFILE env var, else default_profile in
-    config.toml. Fails with an actionable ConfigError (naming the init
-    command and env vars) when required values are missing.
+    config.toml > schema defaults. Profile selection via the profile env
+    var (``resolve.PROFILE_ENV``), else default_profile in config.toml.
+    Fails with an actionable ConfigError (naming the init command and env
+    vars) when required values are missing.
     """
     return load_settings()
 

@@ -32,10 +32,11 @@ from typing import Any
 
 # The application name, used for the config directory, env-var prefix, CLI
 # name, and keyring service name. Kept as a literal (not derived from
-# __package__) so the template's rename_project.py find-replace updates it.
+# __package__) so a project-wide find-replace of the package name updates it.
 APP_NAME = "python_repo_template"
 
-# Prefix for all environment-variable overrides, e.g. PYTHON_REPO_TEMPLATE_TENANT_ID.
+# Prefix for every environment-variable override: the app name upper-cased,
+# so the field 'tenant_id' is overridden by <ENV_PREFIX>TENANT_ID.
 ENV_PREFIX = APP_NAME.upper() + "_"
 
 # Name of the config CLI's console script, used in error messages.
