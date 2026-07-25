@@ -1415,7 +1415,6 @@ def check_versioned_file(
         cli.warn(f"  The project is missing {rel} (template {template_version or 'unversioned'}).")
         if allow_update and cli.confirm(f"  Copy {rel} from the template into the project?"):
             install_from_template(entry, ctx)
-            cli.success(f"  Installed {rel}.")
             return True
         return False
 
@@ -1527,7 +1526,6 @@ def offer_missing_installs(
             cli.warn("  Leaving it missing; it will be flagged in the comparison.")
             continue
         install_from_template(result.entry, ctx)
-        cli.success(f"  Installed {result.project_rel}.")
         replacements[result.entry.path] = compare_one(result.entry, ctx)
     return [replacements.get(r.entry.path, r) for r in results]
 
