@@ -14,6 +14,8 @@ so that only real drift is reported:
   - the template-only pyproject.toml config -> dropped, as cleanup.py does
   - the commented-out private-repo-deps workflow steps -> stripped, as
     remove_private_repo_deps.py does, when the project declined them
+  - AGENTS.md's "Package Purpose" section -> stripped from both sides, since
+    every project fills it in with its own description
 
 Each baseline file is strict (drift is an error) or lenient (expected to
 diverge; reported for review only), and required or optional (optional
@@ -42,7 +44,10 @@ dev helper scripts ``scripts/*.py`` and the ``mypy`` stub-guard test, minus
 the existence-only ones) on both sides and offers to copy over any that are
 out of date or missing in the project, so those files -- and the manifest
 and replay logic this script compares against -- match the template's
-current ones.
+current ones. After comparing, any other required file found missing is also
+offered for install. Every install writes the template's *normalized* text
+(banner stripped, names/version/cleanup replayed), so a freshly installed
+file compares as a match; ``--no-update`` suppresses every offer.
 
 Run it from either repository; the other repository is given as the
 positional path (default: a sibling folder with the template's name):
@@ -84,7 +89,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.13.0"
+__version__ = "1.16.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -191,7 +196,10 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".pre-commit-config.yaml"),
     BaselineFile(".gitignore", strict=False),  # projects append their own ignores
     # Agent and contributor docs.
-    BaselineFile("AGENTS.md", strict=False),  # holds the project's own rules
+    # strict=False: holds the project's own rules. Its "Package Purpose"
+    # section is additionally stripped from both sides before comparing (see
+    # strip_package_purpose()), since every project fills it in uniquely.
+    BaselineFile("AGENTS.md", strict=False),
     BaselineFile("AGENTS.COMMITTING.md"),
     BaselineFile("AGENTS.RELEASING.md"),
     BaselineFile("AGENTS.TESTING.md"),
@@ -292,6 +300,12 @@ _PRIVATE_REPO_DEPS_PATHS = (
 )
 _PRIVATE_REPO_DEPS_START = "# <private-repo-deps>"
 _PRIVATE_REPO_DEPS_END = "</private-repo-deps>"
+
+# AGENTS.md's per-project description heading. Every project rewrites this
+# section with its own content in place of the template's FIXME placeholder,
+# so it is stripped from both sides before comparing -- see
+# strip_package_purpose().
+_PACKAGE_PURPOSE_HEADING = "## Package Purpose"
 
 
 @dataclass(frozen=True)
@@ -682,6 +696,38 @@ def replay_private_repo_deps(rel: str, text: str) -> str:
     return "".join(lines)
 
 
+def strip_package_purpose(rel: str, text: str) -> str:
+    """Remove AGENTS.md's "Package Purpose" section from ``text``, if present.
+
+    Every project rewrites this section with its own description in place of
+    the template's FIXME placeholder, so a difference there is never
+    meaningful drift; it is stripped from both the template and project sides
+    before comparing. A no-op for any file other than AGENTS.md, or if the
+    heading is somehow already gone.
+
+    Args:
+        rel: Template- or project-relative path of the file.
+        text: File contents (LF line endings).
+
+    Returns:
+        The contents without the "Package Purpose" section (its heading and
+        body, up to the next heading or end of file), or unchanged.
+    """
+    if rel != "AGENTS.md":
+        return text
+    lines = text.splitlines(keepends=True)
+    start = next(
+        (i for i, line in enumerate(lines) if line.strip() == _PACKAGE_PURPOSE_HEADING), None
+    )
+    if start is None:
+        return text
+    end = start + 1
+    while end < len(lines) and not lines[end].lstrip().startswith("#"):
+        end += 1
+    del lines[start:end]
+    return "".join(lines)
+
+
 def map_project_path(rel: str, names: ProjectNames) -> str:
     """Map a template-relative path to its project-relative counterpart.
 
@@ -729,6 +775,7 @@ def normalize_template_text(
         The normalized contents.
     """
     text = strip_template_header(normalize_eol(text))
+    text = strip_package_purpose(rel, text)
     if dotted is not None and compact is not None:
         text = replay_python_version(rel, text, dotted, compact)
     if rel == "pyproject.toml" and ran_cleanup:
@@ -741,17 +788,20 @@ def normalize_template_text(
     return text
 
 
-def normalize_project_text(text: str) -> str:
+def normalize_project_text(rel: str, text: str) -> str:
     """Normalize project-side content for comparison.
 
     Args:
+        rel: Project-relative path of the file.
         text: Raw project-side contents.
 
     Returns:
-        The contents with line endings normalized and any leftover template
-        banner stripped (in case the setup step was skipped).
+        The contents with line endings normalized, any leftover template
+        banner stripped (in case the setup step was skipped), and AGENTS.md's
+        "Package Purpose" section removed (see :func:`strip_package_purpose`).
     """
-    return strip_template_header(normalize_eol(text))
+    text = strip_template_header(normalize_eol(text))
+    return strip_package_purpose(rel, text)
 
 
 def effective_strict(entry: BaselineFile, *, has_mkdocs: bool) -> bool:
@@ -1066,7 +1116,7 @@ def compare_one(entry: BaselineFile, ctx: CompareContext) -> Comparison:
         ran_cleanup=ctx.ran_cleanup,
         private_repo_deps=ctx.flags.private_repo_deps,
     )
-    project_norm = normalize_project_text(project_text)
+    project_norm = normalize_project_text(entry.path, project_text)
     if template_norm == project_norm:
         return Comparison(entry, project_rel, "match")
 
@@ -1085,6 +1135,42 @@ def compare_one(entry: BaselineFile, ctx: CompareContext) -> Comparison:
         template_norm=template_norm,
         project_norm=project_norm,
     )
+
+
+def install_from_template(entry: BaselineFile, ctx: CompareContext) -> str:
+    """Write the template's normalized content for ``entry`` into the project.
+
+    The installed text is exactly what :func:`compare_one` holds the project's
+    side against (banner stripped, names/version/cleanup replayed), so a
+    freshly installed file compares as a match. The versioned ``scripts/*.py``
+    helpers are unaffected by the normalization by construction -- their
+    template tokens are built from pieces and the replays are path-scoped --
+    so this is the single install path for every baseline file.
+
+    Args:
+        entry: The manifest entry to install; its template file must exist.
+        ctx: Comparison context (roots, names, normalization switches).
+
+    Returns:
+        The project-relative path the file was written to.
+    """
+    template_text = decode_text((ctx.template_root / entry.path).read_bytes())
+    if template_text is None:
+        cli.die(f"The template's {entry.path} is not decodable text; cannot install it.")
+    text = normalize_template_text(
+        entry.path,
+        template_text,
+        ctx.names,
+        dotted=ctx.dotted,
+        compact=ctx.compact,
+        ran_cleanup=ctx.ran_cleanup,
+        private_repo_deps=ctx.flags.private_repo_deps,
+    )
+    project_rel = map_project_path(entry.path, ctx.names)
+    project_path = ctx.project_root / project_rel
+    project_path.parent.mkdir(parents=True, exist_ok=True)
+    project_path.write_text(text, encoding="utf-8", newline="")
+    return project_rel
 
 
 # ---------------------------------------------------------------------------
@@ -1130,7 +1216,10 @@ def parse_args() -> argparse.Namespace:
         help="command used to open --diff pairs (default: 'code'); e.g. 'codium' or 'cursor'",
     )
     parser.add_argument(
-        "--all", action="store_true", help="list every baseline file, including matches"
+        "--all",
+        action="store_true",
+        help="list every baseline file, including matches, and the files skipped for "
+        "declined features",
     )
     parser.add_argument(
         "--github-user",
@@ -1140,7 +1229,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-update",
         action="store_true",
-        help="report the compare-script versions but never offer to update (for CI)",
+        help="never offer to install or update project files (for CI)",
     )
     parser.add_argument(
         "-y",
@@ -1236,8 +1325,7 @@ def versioned_entries() -> tuple[BaselineFile, ...]:
 
 def check_versioned_file(
     entry: BaselineFile,
-    template_root: Path,
-    project_root: Path,
+    ctx: CompareContext,
     *,
     required: bool,
     allow_update: bool,
@@ -1247,8 +1335,7 @@ def check_versioned_file(
     Args:
         entry: The manifest entry for a versioned file (see
             :func:`carries_version`).
-        template_root: Root of the template checkout.
-        project_root: Root of the project checkout.
+        ctx: Comparison context (roots, names, normalization switches).
         required: Whether the project must have this file (see
             :func:`effective_required`); the caller has already filtered out
             entries that aren't :func:`is_applicable` at all.
@@ -1259,8 +1346,8 @@ def check_versioned_file(
         ``True`` when the project's copy was written (installed or updated).
     """
     rel = entry.path
-    template_path = template_root / rel
-    project_path = project_root / rel
+    template_path = ctx.template_root / rel
+    project_path = ctx.project_root / rel
 
     if not template_path.is_file():
         cli.warn(f"  The template has no {rel}; skipping.")
@@ -1275,8 +1362,7 @@ def check_versioned_file(
             return False
         cli.warn(f"  The project is missing {rel} (template {template_version or 'unversioned'}).")
         if allow_update and cli.confirm(f"  Copy {rel} from the template into the project?"):
-            project_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(template_path, project_path)
+            install_from_template(entry, ctx)
             cli.success(f"  Installed {rel}.")
             return True
         return False
@@ -1306,14 +1392,12 @@ def check_versioned_file(
     if not cli.confirm(f"  Update the project's copy of {rel} from the template?"):
         cli.warn("  Continuing with the current copy; it will be flagged in the comparison.")
         return False
-    shutil.copyfile(template_path, project_path)
+    install_from_template(entry, ctx)
     cli.success(f"  Updated {rel}.")
     return True
 
 
-def check_versioned_files(
-    template_root: Path, project_root: Path, flags: FeatureFlags, *, allow_update: bool
-) -> None:
+def check_versioned_files(ctx: CompareContext, *, allow_update: bool) -> None:
     """Compare every versioned file and offer to update the project's copies.
 
     Runs before the main comparison so outdated copies (whose manifest and
@@ -1327,9 +1411,7 @@ def check_versioned_files(
     main comparison.
 
     Args:
-        template_root: Root of the template checkout.
-        project_root: Root of the project checkout.
-        flags: The project's resolved feature flags.
+        ctx: Comparison context (roots, names, normalization switches).
         allow_update: Whether updating may be offered (``False`` under
             ``--no-update``).
     """
@@ -1340,18 +1422,17 @@ def check_versioned_files(
     }
     updated = 0
     for entry in versioned_entries():
-        if not is_applicable(entry, flags):
+        if not is_applicable(entry, ctx.flags):
             continue
         if not check_versioned_file(
             entry,
-            template_root,
-            project_root,
-            required=effective_required(entry, flags),
+            ctx,
+            required=effective_required(entry, ctx.flags),
             allow_update=allow_update,
         ):
             continue
         updated += 1
-        project_path = normcase(normpath(str((project_root / entry.path).resolve())))
+        project_path = normcase(normpath(str((ctx.project_root / entry.path).resolve())))
         if project_path in running_files:
             # This script (or the _cli module it imports) was just replaced.
             # Stop before touching the remaining versioned files or running the
@@ -1363,6 +1444,40 @@ def check_versioned_files(
             sys.exit(0)
     if updated == 0:
         cli.success("  All versioned files are up to date with the template.")
+
+
+def offer_missing_installs(
+    results: list[Comparison], ctx: CompareContext, *, allow_update: bool
+) -> list[Comparison]:
+    """Offer to install every missing required file from the template.
+
+    The versioned files are excluded: the version pre-flight already offered
+    to install those, so one still missing here was declined moments ago.
+    Declined files keep their ``missing`` status (and exit-code weight).
+
+    Args:
+        results: Comparison results in manifest order.
+        ctx: Comparison context (roots, names, normalization switches).
+        allow_update: Whether installing may be offered (``False`` under
+            ``--no-update``).
+
+    Returns:
+        The results in the same order, with each installed file re-compared.
+    """
+    candidates = [r for r in results if r.status == "missing" and not carries_version(r.entry)]
+    if not candidates or not allow_update:
+        return results
+    cli.section("Missing files")
+    replacements: dict[str, Comparison] = {}
+    for result in candidates:
+        cli.warn(f"  The project is missing {result.project_rel}.")
+        if not cli.confirm(f"  Copy {result.entry.path} from the template into the project?"):
+            cli.warn("  Leaving it missing; it will be flagged in the comparison.")
+            continue
+        install_from_template(result.entry, ctx)
+        cli.success(f"  Installed {result.project_rel}.")
+        replacements[result.entry.path] = compare_one(result.entry, ctx)
+    return [replacements.get(r.entry.path, r) for r in results]
 
 
 def build_context(
@@ -1646,15 +1761,16 @@ def main() -> None:
     for gate, label in _FEATURE_LABELS:
         cli.info(label, "on" if flags.wanted(gate) else "off")
 
-    check_versioned_files(template_root, project_root, flags, allow_update=not args.no_update)
-
     ctx = build_context(template_root, project_root, names, flags)
+    check_versioned_files(ctx, allow_update=not args.no_update)
+
     applicable = [entry for entry in MANIFEST if is_applicable(entry, flags)]
     skipped = [entry for entry in MANIFEST if not is_applicable(entry, flags)]
     results = [compare_one(entry, ctx) for entry in applicable]
+    results = offer_missing_installs(results, ctx, allow_update=not args.no_update)
 
     cli.section("Comparison")
-    if skipped:
+    if skipped and args.all:
         cli.warn(f"  Skipping {len(skipped)} file(s) tied to features this project doesn't have:")
         for entry in skipped:
             print(f"    {entry.path}")

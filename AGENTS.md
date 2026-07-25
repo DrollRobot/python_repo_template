@@ -27,6 +27,8 @@ conventions, required checks, and how to run tests.
 - Always include thorough docstrings for all functions and classes.
 - Line length limit: 100 characters.
 - Use type hints for all function signatures.
+- Do not fight automatic formatting. Always commit autoformatting changes, even if
+  they're out of scope for the current task.
 
 ## Commit Messages
 Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).

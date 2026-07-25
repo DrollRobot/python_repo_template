@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `--no-remote` option to `scripts/push_new_tag_to_main.py`, for repositories
+  with no origin (or releases meant to stay on one machine). It skips the
+  fetch/fast-forward sync with origin and all three pushes (`main`, tags, and
+  the source branch); the merge, version bump, release commit, and annotated
+  tag still happen locally.
 - A `secret-scan` job in `.github/workflows/audit.yml`, so detect-secrets is
   finally a CI gate and not only a local one. Until now the pre-commit hook was
   the entire enforcement story, and it sees only staged files on a developer

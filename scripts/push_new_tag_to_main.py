@@ -16,11 +16,16 @@ change is skipped automatically (same as --no-version). When the version is
 not changed (assuming the version was already updated by hand), the version update and
 the release commit are skipped.
 
+Pass --no-remote for a repository with no origin (or when the release should
+stay on this machine): the fetch/fast-forward sync and every push are skipped,
+so the merge, version bump, release commit, and tag are made locally only.
+
 Usage:
     python scripts/push_new_tag_to_main.py patch
     python scripts/push_new_tag_to_main.py --version 2.0.0
     python scripts/push_new_tag_to_main.py --no-version
     python scripts/push_new_tag_to_main.py patch -y
+    python scripts/push_new_tag_to_main.py patch --no-remote
 
 Bump levels:
     patch — bug fixes only           (1.4.2 -> 1.4.3)
@@ -35,7 +40,8 @@ branch aborts.
 Requirements:
     - Run from inside the source branch.
     - `uv` installed and the project uses uv for version management.
-    - Push access to origin for both main and the source branch.
+    - Push access to origin for both main and the source branch (not needed
+      with --no-remote).
 """
 
 from __future__ import annotations
@@ -50,7 +56,7 @@ import _cli as cli
 # Version of this helper script itself (independent of the project version it
 # releases). Bump on every change so copies in other repos can be compared:
 # patch = bugfix, minor = new flag/behavior, major = breaking CLI change.
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 
 def parse_args() -> argparse.Namespace:
@@ -76,6 +82,11 @@ def parse_args() -> argparse.Namespace:
         "--no-version",
         action="store_true",
         help="merge and push without changing the version (no release commit or tag)",
+    )
+    parser.add_argument(
+        "--no-remote",
+        action="store_true",
+        help="work locally only: skip the origin sync and every push",
     )
     parser.add_argument(
         "-y",
@@ -145,6 +156,7 @@ def main() -> None:
 
     cli.info("Original branch", source)
     cli.info("Target branch", "main")
+    cli.info("Remote", "skipped (--no-remote)" if args.no_remote else "origin")
     if args.no_version:
         cli.info("Version change", "none (--no-version)")
     elif use_bump:
@@ -168,32 +180,35 @@ def main() -> None:
     # origin and merging it into main would silently omit those commits. Fetch
     # and fast-forward before anything is merged.
     cli.section("Sync with origin")
-    cli.run(["git", "fetch", "origin"])
-
-    # Source branch: it is checked out, so fast-forward it with a pull.
-    upstream = f"origin/{source}"
-    status = sync_status(source, upstream)
-    if status is None:
-        cli.info("Note", f"no '{upstream}' on origin; nothing to sync")
-    elif status[1] > 0:
-        cli.warn(f"  Local '{source}' is {status[1]} commit(s) behind {upstream}.")
-        cli.step(f"Fast-forward '{source}' to {upstream}?")
-        cli.run(["git", "pull", "--ff-only", "origin", source])
+    if args.no_remote:
+        cli.info("Skipped", "--no-remote; branches are not synced with origin")
     else:
-        cli.success(f"  '{source}' is up to date with {upstream}.")
+        cli.run(["git", "fetch", "origin"])
 
-    # Target branch: main is not checked out yet, so fast-forward its ref with
-    # a refspec fetch (which refuses a non-fast-forward update). Catches a stale
-    # local main early instead of at the 'git push origin main' rejection.
-    main_status = sync_status("main", "origin/main")
-    if main_status is None:
-        cli.info("Note", "no local 'main' or 'origin/main'; nothing to sync")
-    elif main_status[1] > 0:
-        cli.warn(f"  Local 'main' is {main_status[1]} commit(s) behind origin/main.")
-        cli.step("Fast-forward local 'main' to origin/main?")
-        cli.run(["git", "fetch", "origin", "main:main"])
-    else:
-        cli.success("  'main' is up to date with origin/main.")
+        # Source branch: it is checked out, so fast-forward it with a pull.
+        upstream = f"origin/{source}"
+        status = sync_status(source, upstream)
+        if status is None:
+            cli.info("Note", f"no '{upstream}' on origin; nothing to sync")
+        elif status[1] > 0:
+            cli.warn(f"  Local '{source}' is {status[1]} commit(s) behind {upstream}.")
+            cli.step(f"Fast-forward '{source}' to {upstream}?")
+            cli.run(["git", "pull", "--ff-only", "origin", source])
+        else:
+            cli.success(f"  '{source}' is up to date with {upstream}.")
+
+        # Target branch: main is not checked out yet, so fast-forward its ref with
+        # a refspec fetch (which refuses a non-fast-forward update). Catches a stale
+        # local main early instead of at the 'git push origin main' rejection.
+        main_status = sync_status("main", "origin/main")
+        if main_status is None:
+            cli.info("Note", "no local 'main' or 'origin/main'; nothing to sync")
+        elif main_status[1] > 0:
+            cli.warn(f"  Local 'main' is {main_status[1]} commit(s) behind origin/main.")
+            cli.step("Fast-forward local 'main' to origin/main?")
+            cli.run(["git", "fetch", "origin", "main:main"])
+        else:
+            cli.success("  'main' is up to date with origin/main.")
 
     # --- versions --------------------------------------------------------------
 
@@ -262,13 +277,14 @@ def main() -> None:
     cli.step(f"Create annotated tag 'v{version}'?")
     cli.run(["git", "tag", "-a", f"v{version}", "-m", f"Release {version}"])
 
-    cli.section("Step: push main")
-    cli.step("Push 'main' to origin?")
-    cli.run(["git", "push", "origin", "main"])
+    if not args.no_remote:
+        cli.section("Step: push main")
+        cli.step("Push 'main' to origin?")
+        cli.run(["git", "push", "origin", "main"])
 
-    cli.section("Step: push tags")
-    cli.step("Push tags to origin?")
-    cli.run(["git", "push", "origin", "--tags"])
+        cli.section("Step: push tags")
+        cli.step("Push tags to origin?")
+        cli.run(["git", "push", "origin", "--tags"])
 
     cli.section(f"Step: return to '{source}'")
     cli.step(f"Switch back to '{source}'?")
@@ -278,14 +294,18 @@ def main() -> None:
     cli.step(f"Merge 'main' into '{source}'?")
     cli.run(["git", "merge", "main"])
 
-    cli.section(f"Step: push '{source}'")
-    cli.step(f"Push '{source}' to origin?")
-    cli.run(["git", "push", "origin", source])
+    if not args.no_remote:
+        cli.section(f"Step: push '{source}'")
+        cli.step(f"Push '{source}' to origin?")
+        cli.run(["git", "push", "origin", source])
 
     # --- done ------------------------------------------------------------------
 
     cli.section("Done")
-    cli.success(f"  Released v{version}.")
+    if args.no_remote:
+        cli.success(f"  Released v{version} locally (nothing pushed).")
+    else:
+        cli.success(f"  Released v{version}.")
     cli.info("Current branch", cli.capture(["git", "branch", "--show-current"]))
 
 

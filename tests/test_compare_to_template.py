@@ -18,6 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+import _cli as cli
 from compare_to_template import (
     _MARKER,
     _PRIVATE_REPO_DEPS_END,
@@ -39,12 +40,15 @@ from compare_to_template import (
     effective_strict,
     feature_flags_from_config,
     github_user_from_url,
+    install_from_template,
     is_applicable,
     is_excluded,
     load_setup_config,
     map_project_path,
     normalize_eol,
+    normalize_project_text,
     normalize_template_text,
+    offer_missing_installs,
     pyproject_name,
     python_version_forms,
     replace_case_insensitive,
@@ -56,6 +60,7 @@ from compare_to_template import (
     script_version,
     script_version_note,
     self_check_action,
+    strip_package_purpose,
     strip_template_header,
     version_tuple,
 )
@@ -341,6 +346,51 @@ def test_replay_private_repo_deps_tolerates_missing_block() -> None:
     assert replay_private_repo_deps(".github/workflows/ci.yml", text) == text
 
 
+@pytest.mark.unit
+def test_strip_package_purpose_removes_section_from_agents_md() -> None:
+    text = (
+        "# Agent Rules\n"
+        "\n"
+        "## Package Purpose\n"
+        "<!-- FIXME: describe the package. -->\n"
+        "\n"
+        "## General rules\n"
+        "- Rule one.\n"
+    )
+    result = strip_package_purpose("AGENTS.md", text)
+    assert result == "# Agent Rules\n\n## General rules\n- Rule one.\n"
+
+
+@pytest.mark.unit
+def test_strip_package_purpose_treats_differing_content_as_equal() -> None:
+    template = "# Agent Rules\n\n## Package Purpose\n<!-- FIXME -->\n\n## General rules\n- Rule.\n"
+    project = (
+        "# Agent Rules\n\n## Package Purpose\nThis package parses widgets.\n\n"
+        "## General rules\n- Rule.\n"
+    )
+    assert strip_package_purpose("AGENTS.md", template) == strip_package_purpose(
+        "AGENTS.md", project
+    )
+
+
+@pytest.mark.unit
+def test_strip_package_purpose_leaves_unrelated_files_alone() -> None:
+    text = "## Package Purpose\nSomething unrelated in another file.\n"
+    assert strip_package_purpose("README.md", text) == text
+
+
+@pytest.mark.unit
+def test_strip_package_purpose_tolerates_missing_heading() -> None:
+    text = "# Agent Rules\n\n## General rules\n- Rule one.\n"
+    assert strip_package_purpose("AGENTS.md", text) == text
+
+
+@pytest.mark.unit
+def test_strip_package_purpose_handles_last_section_in_file() -> None:
+    text = "# Agent Rules\n\n## Package Purpose\nDescribes the package.\n"
+    assert strip_package_purpose("AGENTS.md", text) == "# Agent Rules\n\n"
+
+
 # --- token mapping -------------------------------------------------------------
 
 
@@ -367,6 +417,26 @@ def test_normalize_template_text_skips_user_when_unknown() -> None:
     names = ProjectNames(snake="my_proj", kebab="my-proj", github_user=None)
     text = f"by {TEMPLATE_USER}\n"
     assert normalize_template_text("notes.md", text, names) == f"by {TEMPLATE_USER}\n"
+
+
+@pytest.mark.unit
+def test_normalize_template_text_strips_package_purpose_from_agents_md() -> None:
+    text = "# Agent Rules\n\n## Package Purpose\n<!-- FIXME -->\n\n## General rules\n- Rule.\n"
+    result = normalize_template_text("AGENTS.md", text, NAMES)
+    assert result == "# Agent Rules\n\n## General rules\n- Rule.\n"
+
+
+@pytest.mark.unit
+def test_normalize_project_text_strips_package_purpose_from_agents_md() -> None:
+    text = "# Agent Rules\n\n## Package Purpose\nParses widgets.\n\n## General rules\n- Rule.\n"
+    result = normalize_project_text("AGENTS.md", text)
+    assert result == "# Agent Rules\n\n## General rules\n- Rule.\n"
+
+
+@pytest.mark.unit
+def test_normalize_project_text_leaves_other_files_alone() -> None:
+    text = "## Package Purpose\nUnrelated content.\n"
+    assert normalize_project_text("README.md", text) == text
 
 
 # --- strictness ------------------------------------------------------------------
@@ -606,6 +676,22 @@ def test_compare_one_reports_drift_when_private_repo_deps_kept_but_edited(tmp_pa
 
 
 @pytest.mark.unit
+def test_compare_one_matches_agents_md_despite_differing_package_purpose(
+    tmp_path: Path,
+) -> None:
+    # AGENTS.md is a strict=False entry, but even the "review" note it would
+    # otherwise get should not fire just because each project's Package
+    # Purpose section is, by design, always different from the template's.
+    ctx = make_ctx(tmp_path)
+    template = "# Agent Rules\n\n## Package Purpose\n<!-- FIXME -->\n\n## General rules\n- R.\n"
+    project = "# Agent Rules\n\n## Package Purpose\nParses widgets.\n\n## General rules\n- R.\n"
+    write(ctx.template_root, "AGENTS.md", template)
+    write(ctx.project_root, "AGENTS.md", project)
+    result = compare_one(BaselineFile("AGENTS.md", strict=False), ctx)
+    assert result.status == "match"
+
+
+@pytest.mark.unit
 def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     rel = f"docs/reference/{TEMPLATE_SNAKE}.md"
@@ -614,6 +700,93 @@ def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
     result = compare_one(BaselineFile(rel, required=False, strict=False), ctx)
     assert result.status == "match"
     assert result.project_rel == "docs/reference/my_proj.md"
+
+
+# --- installing from the template ----------------------------------------------------
+
+
+@pytest.mark.unit
+def test_install_from_template_writes_normalized_text(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path)
+    template = BANNER + f"pkg {TEMPLATE_SNAKE} dist {TEMPLATE_KEBAB} by {TEMPLATE_USER}\n"
+    write(ctx.template_root, "notes.md", template)
+    assert install_from_template(BaselineFile("notes.md"), ctx) == "notes.md"
+    installed = (ctx.project_root / "notes.md").read_bytes().decode("utf-8")
+    assert installed == "pkg my_proj dist my-proj by octocat\n"
+    assert compare_one(BaselineFile("notes.md"), ctx).status == "match"
+
+
+@pytest.mark.unit
+def test_install_from_template_maps_renamed_paths(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path)
+    rel = f"docs/reference/{TEMPLATE_SNAKE}.md"
+    write(ctx.template_root, rel, f"::: {TEMPLATE_SNAKE}\n")
+    assert install_from_template(BaselineFile(rel), ctx) == "docs/reference/my_proj.md"
+    installed = ctx.project_root / "docs" / "reference" / "my_proj.md"
+    assert installed.read_bytes().decode("utf-8") == "::: my_proj\n"
+
+
+@pytest.mark.unit
+def test_offer_missing_installs_installs_on_confirm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "notes.md", f"pkg {TEMPLATE_SNAKE}\n")
+    entry = BaselineFile("notes.md")
+    results = [compare_one(entry, ctx)]
+    assert results[0].status == "missing"
+    monkeypatch.setattr(cli, "confirm", lambda _msg: True)
+    updated = offer_missing_installs(results, ctx, allow_update=True)
+    assert updated[0].status == "match"
+    assert (ctx.project_root / "notes.md").read_bytes().decode("utf-8") == "pkg my_proj\n"
+
+
+@pytest.mark.unit
+def test_offer_missing_installs_keeps_missing_when_declined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "notes.md", "content\n")
+    results = [compare_one(BaselineFile("notes.md"), ctx)]
+    monkeypatch.setattr(cli, "confirm", lambda _msg: False)
+    updated = offer_missing_installs(results, ctx, allow_update=True)
+    assert updated[0].status == "missing"
+    assert not (ctx.project_root / "notes.md").exists()
+
+
+@pytest.mark.unit
+def test_offer_missing_installs_skips_versioned_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The version pre-flight already offered these; no second prompt.
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "scripts/helper.py", '__version__ = "1.0.0"\n')
+
+    def unexpected(_msg: str) -> bool:
+        raise AssertionError("confirm() should not be called for versioned entries")
+
+    monkeypatch.setattr(cli, "confirm", unexpected)
+    results = [compare_one(BaselineFile("scripts/helper.py"), ctx)]
+    updated = offer_missing_installs(results, ctx, allow_update=True)
+    assert updated[0].status == "missing"
+    assert not (ctx.project_root / "scripts" / "helper.py").exists()
+
+
+@pytest.mark.unit
+def test_offer_missing_installs_respects_no_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "notes.md", "content\n")
+
+    def unexpected(_msg: str) -> bool:
+        raise AssertionError("confirm() should not be called under --no-update")
+
+    monkeypatch.setattr(cli, "confirm", unexpected)
+    results = [compare_one(BaselineFile("notes.md"), ctx)]
+    updated = offer_missing_installs(results, ctx, allow_update=False)
+    assert updated[0].status == "missing"
+    assert not (ctx.project_root / "notes.md").exists()
 
 
 # --- feature gating ------------------------------------------------------------------
