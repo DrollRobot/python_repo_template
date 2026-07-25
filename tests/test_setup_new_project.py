@@ -25,7 +25,10 @@ import choose_license
 import choose_shell
 import find_fixmes
 import reinit_git
+import remove_config_system
 import remove_contributing_guide
+import remove_keyring
+import remove_keyvault
 import remove_mkdocs
 import remove_private_repo_deps
 import remove_remote_disposable_scripts
@@ -61,6 +64,9 @@ no_inline_secret_suppressions = false
 
 [features]
 mkdocs = true
+config_system = true
+keyring = true
+keyvault = true
 private_repo_deps = true
 remote_disposable_scripts = true
 security_policy = true
@@ -91,6 +97,9 @@ def _valid_raw() -> dict[str, Any]:
         },
         "features": {
             "mkdocs": True,
+            "config_system": True,
+            "keyring": True,
+            "keyvault": True,
             "private_repo_deps": True,
             "remote_disposable_scripts": True,
             "security_policy": True,
@@ -117,6 +126,9 @@ def _make_config(**overrides: Any) -> setup_new_project.Config:
         "auto_memory_guard": False,
         "no_inline_secret_suppressions": False,
         "mkdocs": True,
+        "config_system": True,
+        "keyring": True,
+        "keyvault": True,
         "private_repo_deps": True,
         "remote_disposable_scripts": True,
         "security_policy": True,
@@ -311,6 +323,32 @@ def test_validate_config_non_bool_feature_flag_reports_problem(tmp_path: Path) -
 
 
 @pytest.mark.unit
+def test_validate_config_backend_without_config_system_reports_problem(tmp_path: Path) -> None:
+    """Keeping a backend while removing the whole config package is contradictory."""
+    raw = _valid_raw()
+    raw["features"]["config_system"] = False
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
+    assert any("[features].keyring=true" in problem for problem in problems)
+    assert any("[features].keyvault=true" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_declining_config_system_with_backends_false_passes(
+    tmp_path: Path,
+) -> None:
+    """config_system=false is valid once both backend flags are false too."""
+    raw = _valid_raw()
+    raw["features"]["config_system"] = False
+    raw["features"]["keyring"] = False
+    raw["features"]["keyvault"] = False
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert problems == []
+    assert config is not None
+    assert config.config_system is False
+
+
+@pytest.mark.unit
 def test_validate_config_reinit_true_pristine_clone_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -367,6 +405,40 @@ def test_build_steps_includes_remove_mkdocs_when_declined() -> None:
     """mkdocs=false adds the remove_mkdocs step at the end."""
     steps = setup_new_project.build_steps(_make_config(mkdocs=False))
     assert steps[-1].key == "remove_mkdocs"
+
+
+@pytest.mark.unit
+def test_build_steps_includes_remove_keyring_when_declined() -> None:
+    """keyring=false adds the remove_keyring step."""
+    steps = setup_new_project.build_steps(_make_config(keyring=False))
+    assert steps[-1].key == "remove_keyring"
+
+
+@pytest.mark.unit
+def test_build_steps_includes_remove_keyvault_when_declined() -> None:
+    """keyvault=false adds the remove_keyvault step."""
+    steps = setup_new_project.build_steps(_make_config(keyvault=False))
+    assert steps[-1].key == "remove_keyvault"
+
+
+@pytest.mark.unit
+def test_build_steps_orders_both_backend_removals() -> None:
+    """Both backends declined: keyring is removed before keyvault."""
+    steps = setup_new_project.build_steps(_make_config(keyring=False, keyvault=False))
+    assert [step.key for step in steps[-2:]] == ["remove_keyring", "remove_keyvault"]
+
+
+@pytest.mark.unit
+def test_build_steps_config_system_declined_replaces_backend_steps() -> None:
+    """config_system=false adds only remove_config_system -- the package
+    removal already covers both backends."""
+    steps = setup_new_project.build_steps(
+        _make_config(config_system=False, keyring=False, keyvault=False)
+    )
+    keys = [step.key for step in steps]
+    assert steps[-1].key == "remove_config_system"
+    assert "remove_keyring" not in keys
+    assert "remove_keyvault" not in keys
 
 
 @pytest.mark.unit
@@ -575,6 +647,44 @@ def test_step_remove_mkdocs_forwards_assume_yes(
 
 
 @pytest.mark.unit
+def test_step_remove_keyring_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_keyring, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(keyring=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
+def test_step_remove_keyvault_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_keyvault, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(keyvault=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
+def test_step_remove_config_system_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_config_system, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(
+        _make_config(config_system=False, keyring=False, keyvault=False)
+    )
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
 def test_step_remove_private_repo_deps_forwards_assume_yes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -696,6 +806,9 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
         choose_shell,
         choose_license,
         remove_mkdocs,
+        remove_keyring,
+        remove_keyvault,
+        remove_config_system,
         remove_private_repo_deps,
         remove_remote_disposable_scripts,
         remove_security_policy,
