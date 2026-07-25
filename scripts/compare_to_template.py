@@ -89,7 +89,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.17.1"
+__version__ = "1.18.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -269,14 +269,18 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # The config package's unit tests ship to projects (cleanup.py keeps
     # them: no script shares their names) and must track the template, so
     # they are compared here despite the blanket tests/test_*.py exclusion.
-    # test_config_secrets.py imports the keyring backend at module scope, so
-    # it follows that backend's gate (remove_keyring.py deletes both).
+    # None of them import a concrete backend, so they all follow the package's
+    # own gate; the per-backend tests are the two entries below.
     BaselineFile("tests/test_config_cli.py", versioned=True, gate="config_system"),
     BaselineFile("tests/test_config_file.py", versioned=True, gate="config_system"),
     BaselineFile("tests/test_config_paths.py", versioned=True, gate="config_system"),
     BaselineFile("tests/test_config_resolve.py", versioned=True, gate="config_system"),
     BaselineFile("tests/test_config_schema.py", versioned=True, gate="config_system"),
-    BaselineFile("tests/test_config_secrets.py", versioned=True, gate="keyring"),
+    BaselineFile("tests/test_config_secrets.py", versioned=True, gate="config_system"),
+    # Each backend's tests import that backend at module scope, so they follow
+    # its gate and are deleted with it.
+    BaselineFile("tests/test_keyring_backend.py", versioned=True, gate="keyring"),
+    BaselineFile("tests/test_keyvault_backend.py", versioned=True, gate="keyvault"),
     # Remote-destructive-test feature, read half: run automatically by
     # conftest.py's destructive_remote gate. Paired with
     # scripts/mark_remote_disposable.py above; the marker mechanism is filled
@@ -371,12 +375,13 @@ class FeatureFlags:
             secret backends) and its tests kept
             (``[features].config_system``).
         keyring: OS-keyring secret backend kept (``[features].keyring``).
-            Also gates ``tests/test_config_secrets.py``, which imports the
+            Also gates ``tests/test_keyring_backend.py``, which imports the
             backend at module scope. Forced ``False`` when ``config_system``
             is ``False`` -- the backend lives inside the config package.
         keyvault: Azure Key Vault secret backend kept
-            (``[features].keyvault``). Forced ``False`` when
-            ``config_system`` is ``False``, as above.
+            (``[features].keyvault``). Also gates
+            ``tests/test_keyvault_backend.py``, as above. Forced ``False``
+            when ``config_system`` is ``False``, as above.
         private_repo_deps: Commented-out private-git-deps GitHub Actions
             steps kept in ci.yml/audit.yml/docs.yml
             (``[features].private_repo_deps``). Not a ``gate`` on any

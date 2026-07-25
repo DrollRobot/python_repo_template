@@ -14,7 +14,8 @@ Key Vault secret names cannot contain underscores, so schema field names are
 mapped ``client_secret`` -> ``client-secret`` for lookup.
 
 This is the only module in the package that imports ``azure-*``. To remove
-the Key Vault backend entirely: delete this file and the two azure lines in
+the Key Vault backend entirely: delete this file, its test module
+``tests/test_keyvault_backend.py``, and the two azure lines in
 ``pyproject.toml`` (in ``[project] dependencies`` and the ``dev`` group),
 then run ``uv lock`` and ``uv sync``. With this file gone there are no
 ``azure`` imports anywhere.
@@ -30,7 +31,7 @@ from python_repo_template.config.schema import ConfigError
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # secrets.py includes this hint when a write is attempted against this backend.
 READ_ONLY_HINT = (

@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "tem
 import remove_keyring
 
 _BACKEND = "src/my_project/config/keyring_backend.py"
-_TESTS = "tests/test_config_secrets.py"
+_TESTS = "tests/test_keyring_backend.py"
 
 
 def _make_project(root: Path, *relpaths: str) -> list[Path]:
@@ -50,7 +50,7 @@ def test_plan_deletions_finds_the_backend_and_its_tests(tmp_path: Path) -> None:
     deletions = remove_keyring.plan_deletions(tmp_path)
     assert [path.name for path in deletions] == [
         "keyring_backend.py",
-        "test_config_secrets.py",
+        "test_keyring_backend.py",
     ]
 
 
@@ -91,3 +91,17 @@ def test_run_deletes_the_backend_and_its_tests(tmp_path: Path) -> None:
     assert not backend.exists()
     assert not tests.exists()
     assert keep.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.regression
+def test_plan_deletions_keeps_the_dispatcher_tests(tmp_path: Path) -> None:
+    """secrets.py survives the removal, so its tests must survive it too.
+
+    They used to share a file with the keyring tests and were deleted here,
+    leaving the undeletable dispatcher with no coverage.
+    """
+    _make_project(tmp_path, _BACKEND, "tests/test_config_secrets.py")
+
+    deletions = remove_keyring.plan_deletions(tmp_path)
+    assert [path.name for path in deletions] == ["keyring_backend.py"]

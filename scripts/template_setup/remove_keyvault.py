@@ -1,14 +1,18 @@
 """Remove the Azure Key Vault credential backend.
 
-The Key Vault backend is a single file inside the config package:
+The Key Vault backend is one file inside the config package, plus the unit
+test module that imports it at module scope:
 
-    src/<package>/config/keyvault_backend.py
+    src/<package>/config/keyvault_backend.py  the backend implementation
+    tests/test_keyvault_backend.py            its unit tests
 
-It is the only module in the package that imports ``azure-*``, so deleting it
-removes every azure import. Only that file is deleted; nothing else is
-edited. The dispatcher (``secrets.py``) selects backends by naming convention
-and never names "keyvault", so it stays functional -- profiles simply cannot
-select ``credential_backend = "keyvault"`` any more.
+The backend is the only module in the package that imports ``azure-*``, so
+deleting it removes every azure import. Only those files are deleted;
+nothing else is edited. The dispatcher (``secrets.py``) selects backends by
+naming convention and never names "keyvault", so it stays functional --
+profiles simply cannot select ``credential_backend = "keyvault"`` any more.
+The dispatcher's own tests (``tests/test_config_secrets.py``) use fake
+backends and are deliberately not touched: ``secrets.py`` stays.
 
 Manual follow-ups (this script only deletes files):
 
@@ -29,6 +33,11 @@ from pathlib import Path
 
 import _common
 
+# Fixed-path files deleted wholesale (relative to the project root).
+_DELETE = [
+    "tests/test_keyvault_backend.py",
+]
+
 # The backend file, located by glob because the package directory carries the
 # project's own (possibly already renamed) import name.
 _BACKEND_GLOB = "src/*/config/keyvault_backend.py"
@@ -41,10 +50,12 @@ def plan_deletions(root: Path) -> list[Path]:
         root: Project root directory.
 
     Returns:
-        The backend file (wherever the package lives under ``src/``), or an
-        empty list when it is already gone.
+        The backend file (wherever the package lives under ``src/``) followed
+        by the fixed-path files from :data:`_DELETE`, existing paths only.
     """
-    return sorted(root.glob(_BACKEND_GLOB))
+    paths = sorted(root.glob(_BACKEND_GLOB))
+    paths.extend(root / relpath for relpath in _DELETE if (root / relpath).exists())
+    return paths
 
 
 def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:

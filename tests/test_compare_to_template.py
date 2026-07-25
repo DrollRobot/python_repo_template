@@ -1185,15 +1185,17 @@ def test_manifest_config_package_is_gated_and_schema_existence_only() -> None:
 
 @pytest.mark.unit
 def test_manifest_config_tests_follow_their_import_gates() -> None:
-    # The config test suite ships to projects and follows the config-system
-    # gate -- except test_config_secrets.py, which imports the keyring
-    # backend at module scope and so is deleted with that backend.
-    for name in ("cli", "file", "paths", "resolve", "schema"):
+    # The config test suite imports no concrete backend, so all of it follows
+    # the config-system gate. Only the per-backend test modules, which import
+    # their backend at module scope, follow a backend gate.
+    for name in ("cli", "file", "paths", "resolve", "schema", "secrets"):
         (entry,) = [e for e in MANIFEST if e.path == f"tests/test_config_{name}.py"]
         assert entry.gate == "config_system"
         assert entry.versioned is True
-    (secrets_entry,) = [e for e in MANIFEST if e.path == "tests/test_config_secrets.py"]
-    assert secrets_entry.gate == "keyring"
+    for backend, gate in (("keyring", "keyring"), ("keyvault", "keyvault")):
+        (entry,) = [e for e in MANIFEST if e.path == f"tests/test_{backend}_backend.py"]
+        assert entry.gate == gate
+        assert entry.versioned is True
     (test_object,) = [e for e in MANIFEST if e.path == "tests/_config_test_object.py"]
     assert test_object.gate == "config_system"
     assert test_object.versioned is True
