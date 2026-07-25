@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fetch/fast-forward sync with origin and all three pushes (`main`, tags, and
   the source branch); the merge, version bump, release commit, and annotated
   tag still happen locally.
+- A `--no-remote` option to the three worktree scripts, so the whole worktree
+  lifecycle works in a repository with no origin. `new_worktree.py` skips the
+  fetch and the base-branch push and forks from the local base instead of
+  `origin/<base>`; `complete_worktree.py` merges the branch into its base in
+  the main worktree instead of pushing and opening a PR (no PR body file, no
+  gh, and incompatible with the cross-device `--*-notes` modes);
+  `remove_worktree.py` skips the pull and the prune, and swaps its "commits
+  never pushed to origin" guard for "commits not in the local base", so
+  force-deleting the branch still cannot silently discard work.
 - A `secret-scan` job in `.github/workflows/audit.yml`, so detect-secrets is
   finally a CI gate and not only a local one. Until now the pre-commit hook was
   the entire enforcement story, and it sees only staged files on a developer

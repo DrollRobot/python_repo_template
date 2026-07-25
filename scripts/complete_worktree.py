@@ -19,6 +19,11 @@ The procedure:
 
 Pass -y/--yes to answer every prompt with 'y' for non-interactive use.
 
+Pass --no-remote for a repository with no origin (or to stay local): instead of
+pushing and opening a PR, the branch is merged into its base in the main
+worktree, which is what merging the PR would have done. No PR body file is
+needed and gh is not used. The worktree is still left in place.
+
 Cross-device handoff (push on one device, open the PR on another) — for when
 the device with the worktree has no authenticated gh, and nothing may leave the
 repo:
@@ -40,14 +45,15 @@ Usage:
     python scripts/complete_worktree.py -y
     python scripts/complete_worktree.py --push-pr-to-notes
     python scripts/complete_worktree.py --web-from-notes --slug issue-42
+    python scripts/complete_worktree.py --no-remote
 
 Requirements:
     - Run from inside the worktree, on a wt/ branch with all work committed
       (the PR body file itself does not need to be committed).
     - `git` and `gh` installed and authenticated (gh is NOT needed for
-      --push-pr-to-notes or --web-from-notes).
+      --push-pr-to-notes, --web-from-notes, or --no-remote).
     - A PR body file at .local/PR.md in the worktree, opening with fenced
-      front-matter that sets the PR title.
+      front-matter that sets the PR title (not needed with --no-remote).
 """
 
 from __future__ import annotations
@@ -67,7 +73,7 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 # Default location of the PR description, relative to the worktree root and
 # overridable with --body-file. It lives under .local/ so the repo's '*.local*'
@@ -314,6 +320,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--draft", action="store_true", help="open the PR as a draft")
     parser.add_argument(
+        "--no-remote",
+        action="store_true",
+        help="work locally only: merge the branch into its base instead of pushing/opening a PR",
+    )
+    parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
@@ -472,6 +483,64 @@ def push_pr_note(base: str, title: str, body: str, body_name: str, branch: str) 
     print(f"    {cli.GRAY}{script} --web-from-notes --slug {slug}{cli.RESET}")
 
 
+def main_worktree_path() -> str:
+    """Return the path of the repository's main worktree.
+
+    ``git worktree list --porcelain`` always reports the main worktree first,
+    so its first ``worktree`` line is the checkout that owns the integration
+    branches.
+
+    Returns:
+        The main worktree's path.
+    """
+    for line in cli.capture(["git", "worktree", "list", "--porcelain"]).splitlines():
+        if line.startswith("worktree "):
+            return line.removeprefix("worktree ")
+    cli.die("Could not determine the main worktree (are you inside a git repository?).")
+
+
+def merge_locally(branch: str, base: str) -> None:
+    """--no-remote: merge the wt/ branch into its base in the main worktree.
+
+    Stands in for merging the pull request. The merge runs in the main
+    worktree rather than this one, because git allows a branch to be checked
+    out in only one worktree at a time and the base normally lives there. This
+    worktree is left in place, exactly as the PR flow leaves it.
+
+    Args:
+        branch: The wt/ branch to merge.
+        base: The branch to merge it into.
+    """
+    main_repo = main_worktree_path()
+
+    cli.section(f"Step: merge '{branch}' into '{base}'")
+    cli.info("Main worktree", main_repo)
+
+    # The merge writes to the main worktree's files, so anything uncommitted
+    # there is at risk; refuse rather than merge on top of it.
+    dirty = cli.capture_ok(["git", "-C", main_repo, "status", "--porcelain"])
+    if dirty:
+        cli.warn(f"  The main worktree at {main_repo} has uncommitted changes:")
+        for line in dirty.splitlines():
+            print(f"  {cli.GRAY}{line}{cli.RESET}")
+        cli.die("Commit or stash them there first, then re-run.")
+
+    current = cli.capture_ok(["git", "-C", main_repo, "branch", "--show-current"])
+    if current != base:
+        cli.step(f"Switch the main worktree from '{current or '(detached HEAD)'}' to '{base}'?")
+        cli.run(["git", "-C", main_repo, "switch", base])
+
+    cli.step(f"Merge '{branch}' into '{base}'?")
+    cli.run(["git", "-C", main_repo, "merge", branch])
+
+    cli.section("Done")
+    cli.success(f"  Merged '{branch}' into '{base}' locally; nothing was pushed.")
+    cli.info("Base", base)
+    cli.info("Main worktree", main_repo)
+    print()
+    print(f"  {cli.GRAY}Worktree left in place for you to clean up.{cli.RESET}")
+
+
 def main() -> None:
     """Run the interactive verify-push-PR flow."""
     args = parse_args()
@@ -480,8 +549,13 @@ def main() -> None:
     cli.info("Script version", __version__)
     print("")
 
-    if sum(bool(m) for m in (args.push_pr_to_notes, args.gh_from_notes, args.web_from_notes)) > 1:
+    notes_modes = (args.push_pr_to_notes, args.gh_from_notes, args.web_from_notes)
+    if sum(bool(m) for m in notes_modes) > 1:
         cli.die("Specify at most one of --push-pr-to-notes, --gh-from-notes, --web-from-notes.")
+    # The notes modes exist to move a PR across devices via origin, so they are
+    # the opposite of working with no remote at all.
+    if args.no_remote and any(notes_modes):
+        cli.die("--no-remote cannot be combined with the --*-notes cross-device modes.")
 
     # Device B never touches the local worktree; it works purely from origin.
     if args.gh_from_notes or args.web_from_notes:
@@ -537,67 +611,28 @@ def main() -> None:
 
     cli.info("Worktree", str(repo_root))
     cli.info("Source branch", branch)
-    cli.info("PR base", base)
+    cli.info("PR base", base if not args.no_remote else f"{base} (merge target)")
+    cli.info("Remote", "skipped (--no-remote)" if args.no_remote else "origin")
 
     # --- PR body ---------------------------------------------------------------
 
-    cli.section("PR body")
-    body_path = Path(args.body_file)
-    if not body_path.is_absolute():
-        body_path = repo_root / body_path
-
-    if not body_path.exists():
-        cli.die(
-            f"PR body file not found: {body_path}. "
-            f"Write the PR description to {PR_FILE_PATH} first."
-        )
-    raw_body = body_path.read_text(encoding="utf-8-sig")
-    if not raw_body.strip():
-        cli.die(f"PR body file is empty: {body_path}.")
-    # The body file carries the title in fenced front-matter; the body sent to
-    # gh is everything after the closing fence.
-    _, fm_title, body_text = parse_front_matter(raw_body)
-    cli.info("Body file", str(body_path))
-    print()
-    print(f"{cli.GRAY}{body_text.rstrip()}{cli.RESET}")
-
-    # --- title -----------------------------------------------------------------
-
-    title = args.title or fm_title
-    if not title:
-        cli.die(
-            f"No PR title in {body_path.name}. Its first lines must be fenced "
-            "front-matter setting the title, e.g.:\n"
-            "  ---\n  title: feat(scope): summary\n  ---\n  <body...>"
-        )
-    cli.section("PR title")
-    cli.info("PR title", title)
-    if not cli.confirm("  Use this title?"):
-        title = cli.prompt_value("  Enter the PR title")
-    if not title.strip():
-        cli.die("PR title cannot be empty.")
+    # With --no-remote there is no PR, so no body file and no title are needed;
+    # the clean-tree check below then has nothing to exempt.
+    body_path: Path | None = None
+    body_name = ""
+    title = ""
+    body_text = ""
+    if not args.no_remote:
+        body_path, title, body_text = read_pr_body(args, repo_root)
+        body_name = body_path.name
 
     # --- working tree status ---------------------------------------------------
 
-    cli.section("Working tree status")
-    cli.run(["git", "status", "--short", "--branch"])
+    check_working_tree(repo_root, body_path)
 
-    # The PR body file only feeds the PR, so it may stay uncommitted; exempt it
-    # from the clean-tree check (when it lives inside the worktree).
-    try:
-        exempt = body_path.resolve().relative_to(repo_root.resolve()).as_posix()
-    except ValueError:
-        exempt = None
-    status_lines = cli.capture(["git", "status", "--porcelain"]).splitlines()
-    dirty = dirty_status_lines(status_lines, exempt)
-    if dirty:
-        print()
-        cli.warn(
-            f"  Working tree is not clean. Commit everything except {body_path.name} "
-            "before completing the worktree."
-        )
-        cli.die("Uncommitted changes present; refusing to push.")
-    cli.success(f"  Working tree is clean; all changes committed ({body_path.name} is exempt).")
+    if args.no_remote:
+        merge_locally(branch, base)
+        return
 
     # --- existing PR guard (gh; skipped when only pushing the note) ------------
 
@@ -635,7 +670,7 @@ def main() -> None:
     # --- device A: attach the PR body as a note and stop -----------------------
 
     if args.push_pr_to_notes:
-        push_pr_note(base, title, body_text, body_path.name, branch)
+        push_pr_note(base, title, body_text, body_name, branch)
         return
 
     # --- open PR ---------------------------------------------------------------
@@ -649,6 +684,109 @@ def main() -> None:
         print(f"  {cli.GRAY}Worktree left in place for you to clean up.{cli.RESET}")
         return
 
+    open_pull_request(args, branch, base, title, body_text)
+
+
+def read_pr_body(args: argparse.Namespace, repo_root: Path) -> tuple[Path, str, str]:
+    """Read the PR body file, show it, and settle the PR title.
+
+    Args:
+        args: Parsed command line (``--body-file`` and ``--title``).
+        repo_root: The worktree root, for resolving a relative body path.
+
+    Returns:
+        ``(body_path, title, body_text)`` — the resolved body file, the
+        confirmed title, and the front-matter-stripped body.
+    """
+    cli.section("PR body")
+    body_path = Path(args.body_file)
+    if not body_path.is_absolute():
+        body_path = repo_root / body_path
+
+    if not body_path.exists():
+        cli.die(
+            f"PR body file not found: {body_path}. "
+            f"Write the PR description to {PR_FILE_PATH} first."
+        )
+    raw_body = body_path.read_text(encoding="utf-8-sig")
+    if not raw_body.strip():
+        cli.die(f"PR body file is empty: {body_path}.")
+    # The body file carries the title in fenced front-matter; the body sent to
+    # gh is everything after the closing fence.
+    _, fm_title, body_text = parse_front_matter(raw_body)
+    cli.info("Body file", str(body_path))
+    print()
+    print(f"{cli.GRAY}{body_text.rstrip()}{cli.RESET}")
+
+    # --- title -----------------------------------------------------------------
+
+    title = args.title or fm_title
+    if not title:
+        cli.die(
+            f"No PR title in {body_path.name}. Its first lines must be fenced "
+            "front-matter setting the title, e.g.:\n"
+            "  ---\n  title: feat(scope): summary\n  ---\n  <body...>"
+        )
+    cli.section("PR title")
+    cli.info("PR title", title)
+    if not cli.confirm("  Use this title?"):
+        title = cli.prompt_value("  Enter the PR title")
+    if not title.strip():
+        cli.die("PR title cannot be empty.")
+
+    return body_path, title, body_text
+
+
+def check_working_tree(repo_root: Path, body_path: Path | None) -> None:
+    """Refuse to continue unless everything in the worktree is committed.
+
+    Args:
+        repo_root: The worktree root.
+        body_path: The PR body file, exempt from the check because it only
+            feeds the PR and may stay uncommitted; ``None`` when there is no
+            PR body (``--no-remote``), in which case nothing is exempt.
+    """
+    cli.section("Working tree status")
+    cli.run(["git", "status", "--short", "--branch"])
+
+    exempt: str | None = None
+    body_name = body_path.name if body_path is not None else ""
+    if body_path is not None:
+        # Only exempt the body file when it actually lives inside the worktree.
+        try:
+            exempt = body_path.resolve().relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            exempt = None
+    status_lines = cli.capture(["git", "status", "--porcelain"]).splitlines()
+    dirty = dirty_status_lines(status_lines, exempt)
+    if dirty:
+        print()
+        if exempt is None:
+            cli.warn("  Working tree is not clean. Commit everything before completing.")
+        else:
+            cli.warn(
+                f"  Working tree is not clean. Commit everything except {body_name} "
+                "before completing the worktree."
+            )
+        cli.die("Uncommitted changes present; refusing to continue.")
+    if exempt is None:
+        cli.success("  Working tree is clean; all changes committed.")
+    else:
+        cli.success(f"  Working tree is clean; all changes committed ({exempt} is exempt).")
+
+
+def open_pull_request(
+    args: argparse.Namespace, branch: str, base: str, title: str, body_text: str
+) -> None:
+    """Create the pull request with gh and report its URL.
+
+    Args:
+        args: Parsed command line (``--draft``).
+        branch: The wt/ branch the PR comes from.
+        base: The PR base branch.
+        title: The confirmed PR title.
+        body_text: The front-matter-stripped PR body.
+    """
     cli.section("Step: open pull request")
     draft_note = " (draft)" if args.draft else ""
     cli.step(f"Open a PR from '{branch}' into '{base}'?{draft_note}")

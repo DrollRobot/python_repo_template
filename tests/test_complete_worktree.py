@@ -13,9 +13,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+import _cli
 from complete_worktree import (
     dirty_status_lines,
+    main_worktree_path,
     notes_ref,
+    parse_args,
     parse_front_matter,
     render_note,
 )
@@ -131,3 +134,32 @@ def test_notes_ref_uses_per_slug_suffix() -> None:
 def test_notes_ref_flattens_slashes() -> None:
     """A slug with slashes stays a single ref path segment."""
     assert notes_ref("fix/login") == "pr-body-fix-login"
+
+
+# --- parse_args ----------------------------------------------------------------------
+
+
+def test_parse_args_defaults_to_remote_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without --no-remote the script pushes and opens a PR."""
+    monkeypatch.setattr(sys, "argv", ["complete_worktree.py"])
+    assert parse_args().no_remote is False
+
+
+def test_parse_args_accepts_no_remote(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--no-remote switches the flow to a local merge."""
+    monkeypatch.setattr(sys, "argv", ["complete_worktree.py", "--no-remote"])
+    assert parse_args().no_remote is True
+
+
+# --- main_worktree_path --------------------------------------------------------------
+
+
+def test_main_worktree_path_returns_first_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """git lists the main worktree first, so its path is the one to merge in."""
+    porcelain = (
+        "worktree C:/dev/repo\nHEAD abc\nbranch refs/heads/develop\n\n"
+        "worktree C:/dev/repo-wt/issue-42\nHEAD def\nbranch refs/heads/wt/issue-42\n"
+    )
+    # complete_worktree does `import _cli as cli`, so this is the same object.
+    monkeypatch.setattr(_cli, "capture", lambda *a, **k: porcelain)
+    assert main_worktree_path() == "C:/dev/repo"
