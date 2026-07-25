@@ -29,6 +29,11 @@ from typing import Any, cast
 
 from python_repo_template.config.schema import ConfigError, is_secret
 
+# Version of this module. It ships to projects generated from this template,
+# so bump on every change to let scripts/compare_to_template.py flag stale
+# copies: patch = bugfix, minor = new behavior, major = breaking change.
+__version__ = "1.0.0"
+
 # Keys legal only at the top level of the file.
 RESERVED_TOP_LEVEL_KEYS = frozenset({"default_profile", "profiles"})
 

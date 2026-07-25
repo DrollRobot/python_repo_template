@@ -24,9 +24,9 @@ project). A few files (e.g. the README and the remote-disposability stub
 pair) are checked for existence only, as the project rewrites their contents
 wholesale. Files the project adds on top of the template are ignored.
 
-Files belonging to a config-driven optional feature (mkdocs, the
-remote-disposability scripts, SECURITY.md, CONTRIBUTING.md, the Claude Code
-command hooks) are gated on
+Files belonging to a config-driven optional feature (mkdocs, the config
+system and its credential backends, the remote-disposability scripts,
+SECURITY.md, CONTRIBUTING.md, the Claude Code command hooks) are gated on
 that project's own choices, read from ``scripts/setup.toml`` (a missing or
 unparsable file is a hard error, not a cue to guess). A feature the
 project declined is left out of the comparison, the version preflight, and
@@ -89,7 +89,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.16.0"
+__version__ = "1.17.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -244,9 +244,39 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # Test infrastructure (conftest grows project fixtures).
     BaselineFile("tests/__init__.py", required=False),
     BaselineFile("tests/conftest.py", required=False, strict=False),
-    # Toy schema shared by the config-package tests (kept schema-independent
+    # The config package (per-user config.toml + secret backends). The core
+    # modules are generic and carry a __version__; schema.py holds the
+    # project's own option definitions, so like README.md only its existence
+    # is checked. The backend modules are independently removable, each
+    # behind its own gate.
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/__init__.py", gate="config_system"),
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/__main__.py", gate="config_system"),
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/cli.py", versioned=True, gate="config_system"),
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/file.py", versioned=True, gate="config_system"),
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/paths.py", versioned=True, gate="config_system"),
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/resolve.py", versioned=True, gate="config_system"),
+    BaselineFile(
+        f"src/{TEMPLATE_SNAKE}/config/schema.py", compare_content=False, gate="config_system"
+    ),
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/secrets.py", versioned=True, gate="config_system"),
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/keyring_backend.py", versioned=True, gate="keyring"),
+    BaselineFile(
+        f"src/{TEMPLATE_SNAKE}/config/keyvault_backend.py", versioned=True, gate="keyvault"
+    ),
+    # Test object shared by the config-package tests (kept schema-independent
     # so downstream edits to Settings don't break them).
-    BaselineFile("tests/_toy_config.py"),
+    BaselineFile("tests/_config_test_object.py", versioned=True, gate="config_system"),
+    # The config package's unit tests ship to projects (cleanup.py keeps
+    # them: no script shares their names) and must track the template, so
+    # they are compared here despite the blanket tests/test_*.py exclusion.
+    # test_config_secrets.py imports the keyring backend at module scope, so
+    # it follows that backend's gate (remove_keyring.py deletes both).
+    BaselineFile("tests/test_config_cli.py", versioned=True, gate="config_system"),
+    BaselineFile("tests/test_config_file.py", versioned=True, gate="config_system"),
+    BaselineFile("tests/test_config_paths.py", versioned=True, gate="config_system"),
+    BaselineFile("tests/test_config_resolve.py", versioned=True, gate="config_system"),
+    BaselineFile("tests/test_config_schema.py", versioned=True, gate="config_system"),
+    BaselineFile("tests/test_config_secrets.py", versioned=True, gate="keyring"),
     # Remote-destructive-test feature, read half: run automatically by
     # conftest.py's destructive_remote gate. Paired with
     # scripts/mark_remote_disposable.py above; the marker mechanism is filled
@@ -271,7 +301,9 @@ MANIFEST: tuple[BaselineFile, ...] = (
 # Tracked template paths deliberately not compared. Prefixes cover the
 # project's own source and the setup scripts (deleted by cleanup.py); globs
 # cover per-project files and the template-development test suite (also
-# deleted by cleanup.py).
+# deleted by cleanup.py). The manifest is authoritative over these lists, so
+# the config-package files under src/ and the tests/test_config_*.py suite
+# are still compared (see is_excluded()).
 EXCLUDED_PREFIXES = ("src/", "scripts/template_setup/")
 EXCLUDED_GLOBS = (
     "CHANGELOG.md",
@@ -335,6 +367,16 @@ class FeatureFlags:
 
     Attributes:
         mkdocs: Documentation site kept (``[features].mkdocs``).
+        config_system: The config package (per-user config.toml, config CLI,
+            secret backends) and its tests kept
+            (``[features].config_system``).
+        keyring: OS-keyring secret backend kept (``[features].keyring``).
+            Also gates ``tests/test_config_secrets.py``, which imports the
+            backend at module scope. Forced ``False`` when ``config_system``
+            is ``False`` -- the backend lives inside the config package.
+        keyvault: Azure Key Vault secret backend kept
+            (``[features].keyvault``). Forced ``False`` when
+            ``config_system`` is ``False``, as above.
         private_repo_deps: Commented-out private-git-deps GitHub Actions
             steps kept in ci.yml/audit.yml/docs.yml
             (``[features].private_repo_deps``). Not a ``gate`` on any
@@ -363,6 +405,9 @@ class FeatureFlags:
     """
 
     mkdocs: bool
+    config_system: bool
+    keyring: bool
+    keyvault: bool
     private_repo_deps: bool
     remote_disposable_scripts: bool
     security_policy: bool
@@ -959,8 +1004,15 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
     no_chained_commands = bool(claude.get("no_chained_commands", False))
     canonical_commands = bool(claude.get("canonical_commands", False))
 
+    # The backends live inside the config package, so declining the package
+    # drops them too, whatever their own flags say.
+    config_system = bool(features.get("config_system", True))
+
     return FeatureFlags(
         mkdocs=bool(features.get("mkdocs", True)),
+        config_system=config_system,
+        keyring=config_system and bool(features.get("keyring", True)),
+        keyvault=config_system and bool(features.get("keyvault", True)),
         private_repo_deps=bool(features.get("private_repo_deps", True)),
         remote_disposable_scripts=bool(features.get("remote_disposable_scripts", True)),
         security_policy=bool(features.get("security_policy", True)),

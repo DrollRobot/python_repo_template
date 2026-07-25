@@ -10,6 +10,11 @@ import pytest
 from python_repo_template.config import paths
 from python_repo_template.config.schema import APP_NAME, ENV_PREFIX
 
+# Version of this test module. It ships to projects generated from this
+# template (cleanup.py keeps it: no script or hook shares its name), so bump
+# on every change to let scripts/compare_to_template.py flag stale copies.
+__version__ = "1.0.0"
+
 pytestmark = pytest.mark.unit
 
 

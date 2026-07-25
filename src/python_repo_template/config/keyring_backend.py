@@ -30,6 +30,11 @@ import keyring.errors
 
 from python_repo_template.config.schema import CLI_NAME, ConfigError
 
+# Version of this module. It ships to projects generated from this template,
+# so bump on every change to let scripts/compare_to_template.py flag stale
+# copies: patch = bugfix, minor = new behavior, major = breaking change.
+__version__ = "1.0.0"
+
 
 def _require_usable_backend() -> None:
     """Raise when the active keyring backend cannot actually store secrets.

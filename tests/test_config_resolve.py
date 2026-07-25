@@ -1,7 +1,7 @@
 """Unit tests for the precedence engine in config/resolve.py.
 
 All tests pass an explicit config_path under tmp_path and run against the
-fixed toy schema (tests/_toy_config.py), so nothing here touches the real
+fixed test object (tests/_config_test_object.py), so nothing here touches the real
 user config directory or depends on the repo's FIXME example fields.
 """
 
@@ -15,7 +15,12 @@ import pytest
 
 from python_repo_template.config.resolve import PROFILE_ENV, resolve_settings
 from python_repo_template.config.schema import CLI_NAME, ENV_PREFIX, ConfigError
-from tests._toy_config import ToySettings
+from tests._config_test_object import ConfigTestObject
+
+# Version of this test module. It ships to projects generated from this
+# template (cleanup.py keeps it: no script or hook shares its name), so bump
+# on every change to let scripts/compare_to_template.py flag stale copies.
+__version__ = "1.0.0"
 
 pytestmark = pytest.mark.unit
 
@@ -46,8 +51,8 @@ def config_path(tmp_path: Path) -> Path:
     return tmp_path / "config.toml"
 
 
-def _resolve(config_path: Path, **kwargs: Any) -> ToySettings:
-    result: ToySettings = resolve_settings(ToySettings, config_path=config_path, **kwargs)
+def _resolve(config_path: Path, **kwargs: Any) -> ConfigTestObject:
+    result: ConfigTestObject = resolve_settings(ConfigTestObject, config_path=config_path, **kwargs)
     return result
 
 

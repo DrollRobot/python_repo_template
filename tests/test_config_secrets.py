@@ -21,7 +21,14 @@ import pytest
 from python_repo_template.config import keyring_backend, secrets
 from python_repo_template.config.resolve import resolve_settings
 from python_repo_template.config.schema import APP_NAME, ENV_PREFIX, ConfigError
-from tests._toy_config import ToySettings
+from tests._config_test_object import ConfigTestObject
+
+# Version of this test module. It ships to projects generated from this
+# template (cleanup.py keeps it: no script or hook shares its name), so bump
+# on every change to let scripts/compare_to_template.py flag stale copies.
+# It imports the keyring backend at module scope, so remove_keyring.py deletes
+# it along with the backend.
+__version__ = "1.0.0"
 
 pytestmark = pytest.mark.unit
 
@@ -191,7 +198,7 @@ def test_resolver_pulls_secret_from_profile_backend(
         """,
         encoding="utf-8",
     )
-    settings: ToySettings = resolve_settings(ToySettings, config_path=config_path)
+    settings: ConfigTestObject = resolve_settings(ConfigTestObject, config_path=config_path)
     assert settings.token == "from-backend"  # noqa: S105
     # Profile-scoped service; profile's credential_backend overrode the top level.
     assert seen == [("token", f"{APP_NAME}:a", {"credential_backend": "fake"})]

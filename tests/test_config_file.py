@@ -9,7 +9,12 @@ import pytest
 
 from python_repo_template.config import file as config_file
 from python_repo_template.config.schema import ConfigError
-from tests._toy_config import ToySettings
+from tests._config_test_object import ConfigTestObject
+
+# Version of this test module. It ships to projects generated from this
+# template (cleanup.py keeps it: no script or hook shares its name), so bump
+# on every change to let scripts/compare_to_template.py flag stale copies.
+__version__ = "1.0.0"
 
 pytestmark = pytest.mark.unit
 
@@ -58,19 +63,19 @@ def test_validate_accepts_full_valid_document(tmp_path: Path) -> None:
         keyvault_url = "https://kv.example.invalid/"
         """,
     )
-    config_file.validate_config(document, ToySettings, path)
+    config_file.validate_config(document, ConfigTestObject, path)
 
 
 def test_validate_rejects_unknown_top_level_key(tmp_path: Path) -> None:
     document, path = _load(tmp_path, 'nmae = "typo"\n')
     with pytest.raises(ConfigError, match="Unknown key 'nmae'"):
-        config_file.validate_config(document, ToySettings, path)
+        config_file.validate_config(document, ConfigTestObject, path)
 
 
 def test_validate_rejects_unknown_profile_key(tmp_path: Path) -> None:
     document, path = _load(tmp_path, '[profiles.a]\nnmae = "typo"\n')
     with pytest.raises(ConfigError, match=r"Unknown key 'nmae' in profile 'profiles\.a'"):
-        config_file.validate_config(document, ToySettings, path)
+        config_file.validate_config(document, ConfigTestObject, path)
 
 
 @pytest.mark.parametrize(
@@ -84,25 +89,25 @@ def test_validate_rejects_unknown_profile_key(tmp_path: Path) -> None:
 def test_validate_rejects_secret_values_in_file(tmp_path: Path, text: str) -> None:
     document, path = _load(tmp_path, text)
     with pytest.raises(ConfigError, match=r"Secrets must never be stored in config.toml"):
-        config_file.validate_config(document, ToySettings, path)
+        config_file.validate_config(document, ConfigTestObject, path)
 
 
 def test_validate_rejects_non_string_default_profile(tmp_path: Path) -> None:
     document, path = _load(tmp_path, "default_profile = 3\n")
     with pytest.raises(ConfigError, match=r"'default_profile'.*must be a string"):
-        config_file.validate_config(document, ToySettings, path)
+        config_file.validate_config(document, ConfigTestObject, path)
 
 
 def test_validate_rejects_non_table_profiles(tmp_path: Path) -> None:
     document, path = _load(tmp_path, 'profiles = "oops"\n')
     with pytest.raises(ConfigError, match=r"'profiles'.*must be a table"):
-        config_file.validate_config(document, ToySettings, path)
+        config_file.validate_config(document, ConfigTestObject, path)
 
 
 def test_validate_rejects_non_table_profile_entry(tmp_path: Path) -> None:
     document, path = _load(tmp_path, '[profiles]\na = "oops"\n')
     with pytest.raises(ConfigError, match=r"Profile 'profiles\.a'.*must be a table"):
-        config_file.validate_config(document, ToySettings, path)
+        config_file.validate_config(document, ConfigTestObject, path)
 
 
 # --- profile_table -------------------------------------------------------------------

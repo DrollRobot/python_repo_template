@@ -1,8 +1,8 @@
-"""Shared toy settings schema for the config unit tests.
+"""Shared settings test object for the config unit tests.
 
 The resolver engine is generic over any dataclass following the schema
 conventions (see src/python_repo_template/config/schema.py). Tests run it
-against this fixed toy schema instead of the real ``Settings`` so they stay
+against this fixed test object instead of the real ``Settings`` so they stay
 green when a downstream repo replaces the FIXME example fields.
 """
 
@@ -10,9 +10,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# Version of this test helper. It ships to projects generated from this
+# template (cleanup.py keeps it: no script or hook shares its name), so bump
+# on every change to let scripts/compare_to_template.py flag stale copies.
+__version__ = "1.0.0"
+
 
 @dataclass(frozen=True)
-class ToySettings:
+class ConfigTestObject:
     """Fixed schema exercising every supported field type and classification."""
 
     name: str = field(metadata={"help": "Required plain string"})
