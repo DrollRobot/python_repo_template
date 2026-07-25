@@ -18,6 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+import _cli as cli
 from compare_to_template import (
     _MARKER,
     _PRIVATE_REPO_DEPS_END,
@@ -39,6 +40,7 @@ from compare_to_template import (
     effective_strict,
     feature_flags_from_config,
     github_user_from_url,
+    install_from_template,
     is_applicable,
     is_excluded,
     load_setup_config,
@@ -46,6 +48,7 @@ from compare_to_template import (
     normalize_eol,
     normalize_project_text,
     normalize_template_text,
+    offer_missing_installs,
     pyproject_name,
     python_version_forms,
     replace_case_insensitive,
@@ -697,6 +700,93 @@ def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
     result = compare_one(BaselineFile(rel, required=False, strict=False), ctx)
     assert result.status == "match"
     assert result.project_rel == "docs/reference/my_proj.md"
+
+
+# --- installing from the template ----------------------------------------------------
+
+
+@pytest.mark.unit
+def test_install_from_template_writes_normalized_text(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path)
+    template = BANNER + f"pkg {TEMPLATE_SNAKE} dist {TEMPLATE_KEBAB} by {TEMPLATE_USER}\n"
+    write(ctx.template_root, "notes.md", template)
+    assert install_from_template(BaselineFile("notes.md"), ctx) == "notes.md"
+    installed = (ctx.project_root / "notes.md").read_bytes().decode("utf-8")
+    assert installed == "pkg my_proj dist my-proj by octocat\n"
+    assert compare_one(BaselineFile("notes.md"), ctx).status == "match"
+
+
+@pytest.mark.unit
+def test_install_from_template_maps_renamed_paths(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path)
+    rel = f"docs/reference/{TEMPLATE_SNAKE}.md"
+    write(ctx.template_root, rel, f"::: {TEMPLATE_SNAKE}\n")
+    assert install_from_template(BaselineFile(rel), ctx) == "docs/reference/my_proj.md"
+    installed = ctx.project_root / "docs" / "reference" / "my_proj.md"
+    assert installed.read_bytes().decode("utf-8") == "::: my_proj\n"
+
+
+@pytest.mark.unit
+def test_offer_missing_installs_installs_on_confirm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "notes.md", f"pkg {TEMPLATE_SNAKE}\n")
+    entry = BaselineFile("notes.md")
+    results = [compare_one(entry, ctx)]
+    assert results[0].status == "missing"
+    monkeypatch.setattr(cli, "confirm", lambda _msg: True)
+    updated = offer_missing_installs(results, ctx, allow_update=True)
+    assert updated[0].status == "match"
+    assert (ctx.project_root / "notes.md").read_bytes().decode("utf-8") == "pkg my_proj\n"
+
+
+@pytest.mark.unit
+def test_offer_missing_installs_keeps_missing_when_declined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "notes.md", "content\n")
+    results = [compare_one(BaselineFile("notes.md"), ctx)]
+    monkeypatch.setattr(cli, "confirm", lambda _msg: False)
+    updated = offer_missing_installs(results, ctx, allow_update=True)
+    assert updated[0].status == "missing"
+    assert not (ctx.project_root / "notes.md").exists()
+
+
+@pytest.mark.unit
+def test_offer_missing_installs_skips_versioned_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The version pre-flight already offered these; no second prompt.
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "scripts/helper.py", '__version__ = "1.0.0"\n')
+
+    def unexpected(_msg: str) -> bool:
+        raise AssertionError("confirm() should not be called for versioned entries")
+
+    monkeypatch.setattr(cli, "confirm", unexpected)
+    results = [compare_one(BaselineFile("scripts/helper.py"), ctx)]
+    updated = offer_missing_installs(results, ctx, allow_update=True)
+    assert updated[0].status == "missing"
+    assert not (ctx.project_root / "scripts" / "helper.py").exists()
+
+
+@pytest.mark.unit
+def test_offer_missing_installs_respects_no_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "notes.md", "content\n")
+
+    def unexpected(_msg: str) -> bool:
+        raise AssertionError("confirm() should not be called under --no-update")
+
+    monkeypatch.setattr(cli, "confirm", unexpected)
+    results = [compare_one(BaselineFile("notes.md"), ctx)]
+    updated = offer_missing_installs(results, ctx, allow_update=False)
+    assert updated[0].status == "missing"
+    assert not (ctx.project_root / "notes.md").exists()
 
 
 # --- feature gating ------------------------------------------------------------------
