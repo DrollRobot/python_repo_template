@@ -14,6 +14,8 @@ so that only real drift is reported:
   - the template-only pyproject.toml config -> dropped, as cleanup.py does
   - the commented-out private-repo-deps workflow steps -> stripped, as
     remove_private_repo_deps.py does, when the project declined them
+  - AGENTS.md's "Package Purpose" section -> stripped from both sides, since
+    every project fills it in with its own description
 
 Each baseline file is strict (drift is an error) or lenient (expected to
 diverge; reported for review only), and required or optional (optional
@@ -84,7 +86,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.13.0"
+__version__ = "1.14.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -191,7 +193,10 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".pre-commit-config.yaml"),
     BaselineFile(".gitignore", strict=False),  # projects append their own ignores
     # Agent and contributor docs.
-    BaselineFile("AGENTS.md", strict=False),  # holds the project's own rules
+    # strict=False: holds the project's own rules. Its "Package Purpose"
+    # section is additionally stripped from both sides before comparing (see
+    # strip_package_purpose()), since every project fills it in uniquely.
+    BaselineFile("AGENTS.md", strict=False),
     BaselineFile("AGENTS.COMMITTING.md"),
     BaselineFile("AGENTS.RELEASING.md"),
     BaselineFile("AGENTS.TESTING.md"),
@@ -292,6 +297,12 @@ _PRIVATE_REPO_DEPS_PATHS = (
 )
 _PRIVATE_REPO_DEPS_START = "# <private-repo-deps>"
 _PRIVATE_REPO_DEPS_END = "</private-repo-deps>"
+
+# AGENTS.md's per-project description heading. Every project rewrites this
+# section with its own content in place of the template's FIXME placeholder,
+# so it is stripped from both sides before comparing -- see
+# strip_package_purpose().
+_PACKAGE_PURPOSE_HEADING = "## Package Purpose"
 
 
 @dataclass(frozen=True)
@@ -682,6 +693,38 @@ def replay_private_repo_deps(rel: str, text: str) -> str:
     return "".join(lines)
 
 
+def strip_package_purpose(rel: str, text: str) -> str:
+    """Remove AGENTS.md's "Package Purpose" section from ``text``, if present.
+
+    Every project rewrites this section with its own description in place of
+    the template's FIXME placeholder, so a difference there is never
+    meaningful drift; it is stripped from both the template and project sides
+    before comparing. A no-op for any file other than AGENTS.md, or if the
+    heading is somehow already gone.
+
+    Args:
+        rel: Template- or project-relative path of the file.
+        text: File contents (LF line endings).
+
+    Returns:
+        The contents without the "Package Purpose" section (its heading and
+        body, up to the next heading or end of file), or unchanged.
+    """
+    if rel != "AGENTS.md":
+        return text
+    lines = text.splitlines(keepends=True)
+    start = next(
+        (i for i, line in enumerate(lines) if line.strip() == _PACKAGE_PURPOSE_HEADING), None
+    )
+    if start is None:
+        return text
+    end = start + 1
+    while end < len(lines) and not lines[end].lstrip().startswith("#"):
+        end += 1
+    del lines[start:end]
+    return "".join(lines)
+
+
 def map_project_path(rel: str, names: ProjectNames) -> str:
     """Map a template-relative path to its project-relative counterpart.
 
@@ -729,6 +772,7 @@ def normalize_template_text(
         The normalized contents.
     """
     text = strip_template_header(normalize_eol(text))
+    text = strip_package_purpose(rel, text)
     if dotted is not None and compact is not None:
         text = replay_python_version(rel, text, dotted, compact)
     if rel == "pyproject.toml" and ran_cleanup:
@@ -741,17 +785,20 @@ def normalize_template_text(
     return text
 
 
-def normalize_project_text(text: str) -> str:
+def normalize_project_text(rel: str, text: str) -> str:
     """Normalize project-side content for comparison.
 
     Args:
+        rel: Project-relative path of the file.
         text: Raw project-side contents.
 
     Returns:
-        The contents with line endings normalized and any leftover template
-        banner stripped (in case the setup step was skipped).
+        The contents with line endings normalized, any leftover template
+        banner stripped (in case the setup step was skipped), and AGENTS.md's
+        "Package Purpose" section removed (see :func:`strip_package_purpose`).
     """
-    return strip_template_header(normalize_eol(text))
+    text = strip_template_header(normalize_eol(text))
+    return strip_package_purpose(rel, text)
 
 
 def effective_strict(entry: BaselineFile, *, has_mkdocs: bool) -> bool:
@@ -1066,7 +1113,7 @@ def compare_one(entry: BaselineFile, ctx: CompareContext) -> Comparison:
         ran_cleanup=ctx.ran_cleanup,
         private_repo_deps=ctx.flags.private_repo_deps,
     )
-    project_norm = normalize_project_text(project_text)
+    project_norm = normalize_project_text(entry.path, project_text)
     if template_norm == project_norm:
         return Comparison(entry, project_rel, "match")
 

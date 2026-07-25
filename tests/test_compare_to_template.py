@@ -44,6 +44,7 @@ from compare_to_template import (
     load_setup_config,
     map_project_path,
     normalize_eol,
+    normalize_project_text,
     normalize_template_text,
     pyproject_name,
     python_version_forms,
@@ -56,6 +57,7 @@ from compare_to_template import (
     script_version,
     script_version_note,
     self_check_action,
+    strip_package_purpose,
     strip_template_header,
     version_tuple,
 )
@@ -341,6 +343,51 @@ def test_replay_private_repo_deps_tolerates_missing_block() -> None:
     assert replay_private_repo_deps(".github/workflows/ci.yml", text) == text
 
 
+@pytest.mark.unit
+def test_strip_package_purpose_removes_section_from_agents_md() -> None:
+    text = (
+        "# Agent Rules\n"
+        "\n"
+        "## Package Purpose\n"
+        "<!-- FIXME: describe the package. -->\n"
+        "\n"
+        "## General rules\n"
+        "- Rule one.\n"
+    )
+    result = strip_package_purpose("AGENTS.md", text)
+    assert result == "# Agent Rules\n\n## General rules\n- Rule one.\n"
+
+
+@pytest.mark.unit
+def test_strip_package_purpose_treats_differing_content_as_equal() -> None:
+    template = "# Agent Rules\n\n## Package Purpose\n<!-- FIXME -->\n\n## General rules\n- Rule.\n"
+    project = (
+        "# Agent Rules\n\n## Package Purpose\nThis package parses widgets.\n\n"
+        "## General rules\n- Rule.\n"
+    )
+    assert strip_package_purpose("AGENTS.md", template) == strip_package_purpose(
+        "AGENTS.md", project
+    )
+
+
+@pytest.mark.unit
+def test_strip_package_purpose_leaves_unrelated_files_alone() -> None:
+    text = "## Package Purpose\nSomething unrelated in another file.\n"
+    assert strip_package_purpose("README.md", text) == text
+
+
+@pytest.mark.unit
+def test_strip_package_purpose_tolerates_missing_heading() -> None:
+    text = "# Agent Rules\n\n## General rules\n- Rule one.\n"
+    assert strip_package_purpose("AGENTS.md", text) == text
+
+
+@pytest.mark.unit
+def test_strip_package_purpose_handles_last_section_in_file() -> None:
+    text = "# Agent Rules\n\n## Package Purpose\nDescribes the package.\n"
+    assert strip_package_purpose("AGENTS.md", text) == "# Agent Rules\n\n"
+
+
 # --- token mapping -------------------------------------------------------------
 
 
@@ -367,6 +414,26 @@ def test_normalize_template_text_skips_user_when_unknown() -> None:
     names = ProjectNames(snake="my_proj", kebab="my-proj", github_user=None)
     text = f"by {TEMPLATE_USER}\n"
     assert normalize_template_text("notes.md", text, names) == f"by {TEMPLATE_USER}\n"
+
+
+@pytest.mark.unit
+def test_normalize_template_text_strips_package_purpose_from_agents_md() -> None:
+    text = "# Agent Rules\n\n## Package Purpose\n<!-- FIXME -->\n\n## General rules\n- Rule.\n"
+    result = normalize_template_text("AGENTS.md", text, NAMES)
+    assert result == "# Agent Rules\n\n## General rules\n- Rule.\n"
+
+
+@pytest.mark.unit
+def test_normalize_project_text_strips_package_purpose_from_agents_md() -> None:
+    text = "# Agent Rules\n\n## Package Purpose\nParses widgets.\n\n## General rules\n- Rule.\n"
+    result = normalize_project_text("AGENTS.md", text)
+    assert result == "# Agent Rules\n\n## General rules\n- Rule.\n"
+
+
+@pytest.mark.unit
+def test_normalize_project_text_leaves_other_files_alone() -> None:
+    text = "## Package Purpose\nUnrelated content.\n"
+    assert normalize_project_text("README.md", text) == text
 
 
 # --- strictness ------------------------------------------------------------------
@@ -603,6 +670,22 @@ def test_compare_one_reports_drift_when_private_repo_deps_kept_but_edited(tmp_pa
     write(ctx.project_root, ".github/workflows/ci.yml", project)
     result = compare_one(BaselineFile(".github/workflows/ci.yml"), ctx)
     assert result.status == "modified"
+
+
+@pytest.mark.unit
+def test_compare_one_matches_agents_md_despite_differing_package_purpose(
+    tmp_path: Path,
+) -> None:
+    # AGENTS.md is a strict=False entry, but even the "review" note it would
+    # otherwise get should not fire just because each project's Package
+    # Purpose section is, by design, always different from the template's.
+    ctx = make_ctx(tmp_path)
+    template = "# Agent Rules\n\n## Package Purpose\n<!-- FIXME -->\n\n## General rules\n- R.\n"
+    project = "# Agent Rules\n\n## Package Purpose\nParses widgets.\n\n## General rules\n- R.\n"
+    write(ctx.template_root, "AGENTS.md", template)
+    write(ctx.project_root, "AGENTS.md", project)
+    result = compare_one(BaselineFile("AGENTS.md", strict=False), ctx)
+    assert result.status == "match"
 
 
 @pytest.mark.unit
