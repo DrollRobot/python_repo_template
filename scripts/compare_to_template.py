@@ -89,7 +89,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.17.0"
+__version__ = "1.17.1"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -1398,8 +1398,13 @@ def check_versioned_file(
         ``True`` when the project's copy was written (installed or updated).
     """
     rel = entry.path
+    # The project-side path may be renamed (the config package lives under
+    # src/<snake>/), so it must be mapped exactly as compare_one and
+    # install_from_template do -- reading the project's copy from the
+    # template-named path would report every renamed file as missing.
+    project_rel = map_project_path(rel, ctx.names)
     template_path = ctx.template_root / rel
-    project_path = ctx.project_root / rel
+    project_path = ctx.project_root / project_rel
 
     if not template_path.is_file():
         cli.warn(f"  The template has no {rel}; skipping.")
@@ -1412,26 +1417,44 @@ def check_versioned_file(
         # drift; leave it out. The main comparison still reports it as absent.
         if not required:
             return False
-        cli.warn(f"  The project is missing {rel} (template {template_version or 'unversioned'}).")
+        cli.warn(
+            f"  The project is missing {project_rel} "
+            f"(template {template_version or 'unversioned'})."
+        )
         if allow_update and cli.confirm(f"  Copy {rel} from the template into the project?"):
             install_from_template(entry, ctx)
-            cli.success(f"  Installed {rel}.")
             return True
         return False
 
     project_text = decode_text(project_path.read_bytes()) or ""
     project_version = script_version(project_text)
-    same = normalize_eol(template_text) == normalize_eol(project_text)
+    # Compare the same normalized texts compare_one holds the project against,
+    # so a file whose contents embed the template's name (the config package)
+    # is not reported as differing every run purely because of the rename.
+    # The versioned scripts/*.py helpers are unaffected: their template tokens
+    # are built from pieces and the replays are path-scoped.
+    same = normalize_eol(
+        normalize_template_text(
+            rel,
+            template_text,
+            ctx.names,
+            dotted=ctx.dotted,
+            compact=ctx.compact,
+            ran_cleanup=ctx.ran_cleanup,
+            private_repo_deps=ctx.flags.private_repo_deps,
+        )
+    ) == normalize_eol(normalize_project_text(rel, project_text))
     action = self_check_action(template_version, project_version, same_content=same)
     if action == "ok":
         return False
 
+    display = rel if project_rel == rel else f"{rel} -> {project_rel}"
     cli.info(
-        rel,
+        display,
         f"template {template_version or 'unversioned'}, project {project_version or 'unversioned'}",
     )
     if action == "ahead":
-        cli.warn(f"  The project's copy of {rel} is NEWER than the template's.")
+        cli.warn(f"  The project's copy of {project_rel} is NEWER than the template's.")
         cli.warn("  Consider upstreaming the change to the template; not overwriting it.")
         return False
     if action == "update":
@@ -1441,11 +1464,11 @@ def check_versioned_file(
     if not allow_update:
         cli.warn("  Skipping the update offer (--no-update).")
         return False
-    if not cli.confirm(f"  Update the project's copy of {rel} from the template?"):
+    if not cli.confirm(f"  Update the project's copy of {project_rel} from the template?"):
         cli.warn("  Continuing with the current copy; it will be flagged in the comparison.")
         return False
     install_from_template(entry, ctx)
-    cli.success(f"  Updated {rel}.")
+    cli.success(f"  Updated {project_rel}.")
     return True
 
 
@@ -1484,7 +1507,8 @@ def check_versioned_files(ctx: CompareContext, *, allow_update: bool) -> None:
         ):
             continue
         updated += 1
-        project_path = normcase(normpath(str((ctx.project_root / entry.path).resolve())))
+        project_rel = map_project_path(entry.path, ctx.names)
+        project_path = normcase(normpath(str((ctx.project_root / project_rel).resolve())))
         if project_path in running_files:
             # This script (or the _cli module it imports) was just replaced.
             # Stop before touching the remaining versioned files or running the
@@ -1527,7 +1551,6 @@ def offer_missing_installs(
             cli.warn("  Leaving it missing; it will be flagged in the comparison.")
             continue
         install_from_template(result.entry, ctx)
-        cli.success(f"  Installed {result.project_rel}.")
         replacements[result.entry.path] = compare_one(result.entry, ctx)
     return [replacements.get(r.entry.path, r) for r in results]
 
@@ -1751,6 +1774,9 @@ def open_diffs_in_vscode(
 # "Feature configuration" section.
 _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("mkdocs", "mkdocs"),
+    ("config_system", "config package"),
+    ("keyring", "keyring secret backend"),
+    ("keyvault", "Key Vault secret backend"),
     ("private_repo_deps", "private-repo-deps workflow steps"),
     ("remote_disposable_scripts", "remote-disposability scripts"),
     ("security_policy", "SECURITY.md"),

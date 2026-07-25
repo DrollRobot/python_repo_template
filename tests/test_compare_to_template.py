@@ -12,6 +12,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import _cli as cli
 from compare_to_template import (
+    _FEATURE_LABELS,
     _MARKER,
     _PRIVATE_REPO_DEPS_END,
     _PRIVATE_REPO_DEPS_START,
@@ -34,6 +36,7 @@ from compare_to_template import (
     FeatureFlags,
     ProjectNames,
     carries_version,
+    check_versioned_file,
     compare_one,
     diff_files_for,
     effective_required,
@@ -795,7 +798,92 @@ def test_offer_missing_installs_respects_no_update(
     assert not (ctx.project_root / "notes.md").exists()
 
 
+# --- the versioned-file pre-flight ---------------------------------------------------
+
+# A versioned entry whose path embeds the template's package name, so the
+# project's copy lives at a renamed path (the config package). Built from the
+# module's constant, per this file's docstring.
+_RENAMED_VERSIONED_REL = f"src/{TEMPLATE_SNAKE}/config/cli.py"
+_RENAMED_PROJECT_REL = f"src/{NAMES.snake}/config/cli.py"
+
+
+def _renamed_entry() -> BaselineFile:
+    """Build the manifest entry for the renamed versioned file above."""
+    return BaselineFile(_RENAMED_VERSIONED_REL, versioned=True, gate="config_system")
+
+
+@pytest.mark.unit
+@pytest.mark.regression
+def test_check_versioned_file_reads_the_renamed_project_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: the pre-flight used to stat the project at the template's
+    # own path, so every file under src/<template snake>/ read as missing and
+    # was offered for copy -- overwriting the project's real copy.
+    ctx = make_ctx(tmp_path)
+    body = f'__version__ = "1.0.0"\npkg = "{TEMPLATE_SNAKE}"\n'
+    write(ctx.template_root, _RENAMED_VERSIONED_REL, body)
+    write(ctx.project_root, _RENAMED_PROJECT_REL, body.replace(TEMPLATE_SNAKE, NAMES.snake))
+
+    def unexpected(_msg: str) -> bool:
+        raise AssertionError("confirm() should not be called for an up-to-date copy")
+
+    monkeypatch.setattr(cli, "confirm", unexpected)
+    assert not check_versioned_file(_renamed_entry(), ctx, required=True, allow_update=True)
+
+
+@pytest.mark.unit
+def test_check_versioned_file_updates_the_renamed_project_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, _RENAMED_VERSIONED_REL, '__version__ = "1.2.0"\nnew = True\n')
+    write(ctx.project_root, _RENAMED_PROJECT_REL, '__version__ = "1.1.0"\n')
+    monkeypatch.setattr(cli, "confirm", lambda _msg: True)
+    assert check_versioned_file(_renamed_entry(), ctx, required=True, allow_update=True)
+    written = (ctx.project_root / _RENAMED_PROJECT_REL).read_bytes().decode("utf-8")
+    assert written == '__version__ = "1.2.0"\nnew = True\n'
+    assert not (ctx.project_root / _RENAMED_VERSIONED_REL).exists()
+
+
+@pytest.mark.unit
+def test_check_versioned_file_reports_the_missing_project_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A genuinely missing file is named by its project-side path, so the user
+    # can go look for it.
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, _RENAMED_VERSIONED_REL, '__version__ = "1.0.0"\n')
+    monkeypatch.setattr(cli, "confirm", lambda _msg: False)
+    assert not check_versioned_file(_renamed_entry(), ctx, required=True, allow_update=True)
+    out = capsys.readouterr().out
+    assert f"missing {_RENAMED_PROJECT_REL}" in out
+
+
+@pytest.mark.unit
+def test_check_versioned_file_leaves_optional_missing_file_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, _RENAMED_VERSIONED_REL, '__version__ = "1.0.0"\n')
+
+    def unexpected(_msg: str) -> bool:
+        raise AssertionError("confirm() should not be called for an optional absent file")
+
+    monkeypatch.setattr(cli, "confirm", unexpected)
+    assert not check_versioned_file(_renamed_entry(), ctx, required=False, allow_update=True)
+
+
 # --- feature gating ------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_feature_labels_cover_every_flag() -> None:
+    # Every FeatureFlags toggle is printed in the report; a flag added without
+    # a label would silently drop out of the "Feature configuration" section.
+    labelled = {gate for gate, _label in _FEATURE_LABELS}
+    toggles = {f.name for f in fields(FeatureFlags) if f.name != "source"}
+    assert labelled == toggles
 
 
 @pytest.mark.unit
