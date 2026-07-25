@@ -1,10 +1,13 @@
 """Remove the OS-keyring credential backend.
 
 The keyring backend is one file inside the config package, plus the unit
-test suite that imports it at module scope:
+test module that imports it at module scope:
 
     src/<package>/config/keyring_backend.py   the backend implementation
-    tests/test_config_secrets.py              dispatcher + keyring unit tests
+    tests/test_keyring_backend.py             its unit tests
+
+The dispatcher's own tests (``tests/test_config_secrets.py``) use fake
+backends and are deliberately not touched: ``secrets.py`` stays.
 
 Only those files are deleted; nothing else is edited. The dispatcher
 (``secrets.py``) selects backends by naming convention and never names
@@ -32,7 +35,7 @@ import _common
 
 # Fixed-path files deleted wholesale (relative to the project root).
 _DELETE = [
-    "tests/test_config_secrets.py",
+    "tests/test_keyring_backend.py",
 ]
 
 # The backend file, located by glob because the package directory carries the

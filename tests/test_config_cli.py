@@ -2,29 +2,35 @@
 
 Commands run in-process via ``cli.main([...])`` with the config directory
 pointed at ``tmp_path`` and the schema swapped for the fixed test object, so
-nothing here touches the real user config, the real keyring (an in-memory
-fake stands in), or the repo's FIXME example fields.
+nothing here touches the real user config, a real credential store (an
+in-memory fake backend stands in), or the repo's FIXME example fields.
+
+The fake is a module registered in ``sys.modules`` under the name the
+dispatcher imports, so the CLI reaches it through the real lookup in
+``secrets.py``. Nothing here imports a concrete backend or its third-party
+dependency, so this file keeps working in a project that deleted one.
 """
 
 from __future__ import annotations
 
 import os
+import sys
+import types
 from pathlib import Path
+from typing import Any
 
-import keyring
-import keyring.errors
 import pytest
 import tomlkit
 
 from python_repo_template.config import cli
 from python_repo_template.config.paths import CONFIG_DIR_ENV
-from python_repo_template.config.schema import APP_NAME, ENV_PREFIX
+from python_repo_template.config.schema import APP_NAME, ENV_PREFIX, ConfigError
 from tests._config_test_object import ConfigTestObject
 
 # Version of this test module. It ships to projects generated from this
-# template (cleanup.py keeps it: no script or hook shares its name), so bump
-# on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "1.0.0"
+# template, so bump on every change to let scripts/compare_to_template.py
+# flag stale copies.
+__version__ = "1.1.0"
 
 pytestmark = pytest.mark.unit
 
@@ -48,23 +54,39 @@ def _test_object_schema(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("python_repo_template.config.cli.Settings", ConfigTestObject)
 
 
-@pytest.fixture(autouse=True)
-def fake_keyring(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
-    """In-memory keyring so no test touches the host credential store."""
+def _install_backend(monkeypatch: pytest.MonkeyPatch, name: str, **functions: Any) -> None:
+    """Register a fake ``<name>_backend`` module the dispatcher can import."""
+    module = types.ModuleType(f"python_repo_template.config.{name}_backend")
+    for attr, value in functions.items():
+        setattr(module, attr, value)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+
+def _memory_backend(monkeypatch: pytest.MonkeyPatch, name: str) -> dict[tuple[str, str], str]:
+    """Install a read-write in-memory backend and return its ``(service, key)`` store."""
     store: dict[tuple[str, str], str] = {}
 
-    def delete(service: str, key: str) -> None:
+    def delete(key: str, service: str, config: Any) -> None:
+        # Mirrors the real backends' contract: deleting what is not there is
+        # an error, never a silent no-op.
         if (service, key) not in store:
-            raise keyring.errors.PasswordDeleteError(key)
+            raise ConfigError(f"No {key!r} stored for {service!r}; nothing deleted.")
         del store[(service, key)]
 
-    def set_password(service: str, key: str, value: str) -> None:
-        store[(service, key)] = value
-
-    monkeypatch.setattr(keyring, "get_password", lambda service, key: store.get((service, key)))
-    monkeypatch.setattr(keyring, "set_password", set_password)
-    monkeypatch.setattr(keyring, "delete_password", delete)
+    _install_backend(
+        monkeypatch,
+        name,
+        get=lambda key, service, config: store.get((service, key)),
+        set=lambda key, value, service, config: store.__setitem__((service, key), value),
+        delete=delete,
+    )
     return store
+
+
+@pytest.fixture(autouse=True)
+def fake_keyring(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
+    """In-memory stand-in for the default backend, so no test touches a real store."""
+    return _memory_backend(monkeypatch, "keyring")
 
 
 def _feed_input(monkeypatch: pytest.MonkeyPatch, responses: list[str]) -> None:
@@ -308,20 +330,26 @@ def test_delete_secret_missing_fails_loudly(capsys: pytest.CaptureFixture[str]) 
 
 
 @pytest.mark.integration
-def test_set_secret_on_keyvault_profile_names_the_manual_route(
+def test_set_secret_on_read_only_backend_names_the_manual_route(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    (config_dir / "config.toml").write_text(
-        'credential_backend = "keyvault"\nkeyvault_url = "https://kv.example.invalid/"\n',
-        encoding="utf-8",
+    # A backend with no set() is read-only; the CLI must surface its own
+    # READ_ONLY_HINT rather than a bare failure. Which backends are read-only
+    # is the backends' business, tested with them.
+    _install_backend(
+        monkeypatch,
+        "vaulted",
+        get=lambda key, service, config: None,
+        READ_ONLY_HINT="update the secret in the vault console",
     )
+    (config_dir / "config.toml").write_text('credential_backend = "vaulted"\n', encoding="utf-8")
     _feed_getpass(monkeypatch, ["s3"])
     assert cli.main(["set-secret", "token"]) == 1
     err = capsys.readouterr().err
     assert "read-only" in err
-    assert "az keyvault secret set" in err
+    assert "update the secret in the vault console" in err
 
 
 # --- file permissions ----------------------------------------------------------------

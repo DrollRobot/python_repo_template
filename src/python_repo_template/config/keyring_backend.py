@@ -12,10 +12,11 @@ usable keyring; ``keyring`` then selects a fail/null backend. That is
 detected on first use and raised as an actionable error naming the
 alternatives -- this backend never falls back to writing plaintext anywhere.
 
-To remove the keyring backend entirely: delete this file and the marked
-``keyring`` line in ``pyproject.toml``'s ``[project] dependencies`` (then run
-``uv lock`` and ``uv sync``). With this file gone there are no ``keyring``
-imports anywhere, and profiles must select another backend.
+To remove the keyring backend entirely: delete this file, its test module
+``tests/test_keyring_backend.py``, and the marked ``keyring`` line in
+``pyproject.toml``'s ``[project] dependencies`` (then run ``uv lock`` and
+``uv sync``). With this file gone there are no ``keyring`` imports anywhere,
+and profiles must select another backend.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from python_repo_template.config.schema import CLI_NAME, ConfigError
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 def _require_usable_backend() -> None:

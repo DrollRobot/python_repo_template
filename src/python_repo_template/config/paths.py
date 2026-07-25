@@ -9,10 +9,11 @@ The config file lives in the OS-standard per-user configuration directory:
 ``roaming=False`` is deliberate: roaming profiles / folder redirection would
 replicate the config to network storage.
 
-Set the ``PYTHON_REPO_TEMPLATE_CONFIG_DIR`` environment variable to override
-the directory entirely (used by tests and portable installs); tests must
-always point it at a temporary directory so they never touch the real user
-config.
+Set the ``<ENV_PREFIX>CONFIG_DIR`` environment variable to override the
+directory entirely (used by tests and portable installs); tests must always
+point it at a temporary directory so they never touch the real user config.
+``ENV_PREFIX`` is defined in ``schema.py`` as the app name upper-cased plus
+an underscore, so the variable's real name is :data:`CONFIG_DIR_ENV`.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from python_repo_template.config.schema import APP_NAME, ENV_PREFIX
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # Environment variable overriding the config *directory* (not the file).
 CONFIG_DIR_ENV = ENV_PREFIX + "CONFIG_DIR"
