@@ -66,8 +66,7 @@ no_inline_secret_suppressions = false
 mkdocs = true
 # The commented-out "mint a GitHub App token" steps in .github/workflows/
 # {ci,audit,docs}.yml, for cloning private git dependencies in CI. false
-# deletes those steps outright instead of leaving them commented out -- see
-# README's "GitHub App tokens" section to fill them back in by hand later.
+# deletes those steps outright instead of leaving them commented out
 private_repo_deps = true
 # The scripts/mark_remote_disposable.py + tests/verify_remote_disposable.py
 # stub pair that gates @pytest.mark.destructive_remote tests (see
