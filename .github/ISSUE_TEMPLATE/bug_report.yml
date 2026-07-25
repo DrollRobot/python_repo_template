@@ -14,6 +14,8 @@
 #   - Do a find/replace on "DrollRobot" to substitute your GitHub username.
 # =============================================================================
 
+# .github/ISSUE_TEMPLATE/bug_report.yml
+
 name: Bug report
 description: Something is not working as documented or expected.
 labels: ["bug"]

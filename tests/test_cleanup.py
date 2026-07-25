@@ -32,7 +32,7 @@ PYPROJECT = (
     "]\n"
     "\n"
     "[tool.mypy]\n"
-    'files = ["src", "tests", "scripts"]\n'
+    'files = ["src", "tests", "scripts", ".claude/hooks"]\n'
     'mypy_path = ["scripts", "scripts/template_setup"]\n'
 )
 
@@ -99,9 +99,8 @@ def test_test_matching_hook_is_selected(tmp_path: Path) -> None:
 def test_test_matching_hook_with_hook_suffix_is_selected(tmp_path: Path) -> None:
     """A ``_hook``-suffixed test name still matches its hyphenated hook.
 
-    This disambiguates a hook's test from a same-named script's test, e.g.
-    test_protect_auto_memory_hook.py (hook) alongside test_protect_auto_memory.py
-    (setup script).
+    The hook tests carry the suffix to mark that they cover a hook's runtime
+    rather than its wiring, e.g. test_protect_auto_memory_hook.py.
     """
     touch(tmp_path, ".claude/hooks/protect-auto-memory.py")
     test_file = touch(tmp_path, "tests/test_protect_auto_memory_hook.py")
@@ -130,11 +129,18 @@ def test_strip_narrows_mypy_path() -> None:
     assert "template_setup" not in result
 
 
+def test_strip_narrows_mypy_files_to_the_project() -> None:
+    """The template's own scripts and hooks drop out of mypy's files."""
+    result = strip_template_config(PYPROJECT)
+    assert 'files = ["src", "tests"]\n' in result
+    assert ".claude/hooks" not in result
+
+
 def test_strip_keeps_unrelated_lines() -> None:
     """Neighboring config lines survive the edit byte-for-byte."""
     result = strip_template_config(PYPROJECT)
-    assert 'files = ["src", "tests", "scripts"]\n' in result
     assert "[tool.mypy]\n" in result
+    assert '    "--cov=python_repo_template",\n' in result
 
 
 def test_strip_rejects_drifted_pyproject() -> None:

@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A `secret-scan` job in `.github/workflows/audit.yml`, so detect-secrets is
+  finally a CI gate and not only a local one. Until now the pre-commit hook was
+  the entire enforcement story, and it sees only staged files on a developer
+  machine and is skippable with `git commit --no-verify`. The job runs
+  `detect-secrets-hook` over every tracked file, and pins the same version as
+  the `rev:` in `.pre-commit-config.yaml` so local and CI results agree. It
+  lives in `audit.yml` rather than `ci.yml` because `ci.yml` is a three-OS
+  matrix that would run the scan three times for one answer, and it is its own
+  job, driven by `uvx`, so it still runs when dependency resolution or
+  `uv audit` fails. Add the `secret-scan` status to branch protection or it
+  reports without blocking.
+- A second gate in that job, on `.secrets.baseline` itself: every entry must be
+  audited and marked a false positive. Without it the baseline is a bypass --
+  add a real secret, run `scan`, and the file scan above goes green. This
+  catches both `UNVERIFIED` entries nobody reviewed and `VERIFIED_TRUE` entries
+  a human confirmed are real. It is enforced by parsing
+  `detect-secrets audit --report`, because that command always exits 0; the
+  `--fail-on-unaudited` flag belongs to IBM's detect-secrets fork, not the Yelp
+  one this template pins.
+
+- New Claude Code hook, `.claude/hooks/no-inline-secret-suppressions.py`: blocks
+  a write whose content adds a detect-secrets allowlist pragma and points the
+  agent at `.secrets.baseline` instead. Opt in with
+  `[claude].no_inline_secret_suppressions` in `scripts/setup.toml`; declining
+  deletes the hook, as with the auto-memory guard. It only reads what the direct
+  write tools are about to write -- never `old_string`, never shell commands --
+  and fails open on anything it cannot parse: it is steering for agents, while
+  the detect-secrets pre-commit hook and CI stay the actual gate.
+- The new hook carries a `__version__`, so `compare_to_template.py` tracks it in
+  the version pre-flight and offers to copy a newer template copy into a
+  project, the same way it does for the `scripts/` helpers.
+- `tests/test_no_inline_suppressions_for_secrets.py`, the enforcement half of
+  that hook: it scans every file `git add .` would commit -- tracked plus
+  untracked and not ignored, so `.gitignore` is the only place exclusions live
+  and the scan matches a CI checkout -- for the same suppression patterns, and
+  fails the suite. A pragma that arrived by a shell heredoc, a hand edit, a
+  merge, or a contributor without the hook installed still fails CI. There is no
+  fallback file list when git cannot answer: the test fails and says why, rather
+  than silently scanning a different set of files. Unlike the hook it is
+  ungated -- it ships to every project -- and
+  `test_patterns_match_the_steering_hook` fails if the two pattern lists drift
+  apart while both are present. The only escape hatch is `EXEMPT_PATHS`, a
+  whole-file allowlist in the test source, so granting one shows up in the diff.
+  Like the mypy stub guard it carries a `__version__` and is tracked by
+  `compare_to_template.py`.
+
+### Changed
+
+- Hook wiring is now one script. `scripts/template_setup/wire_hook.py` holds a
+  registry describing every hook the template ships (file, matcher,
+  interpreter) and owns `.claude/settings.json`; a hook is either kept and
+  wired or deleted and unwired. `protect_auto_memory.py` and
+  `no_inline_secret_suppressions.py` are gone, replaced by
+  `wire_hook.toggle()`, and `choose_shell.py` now only owns the choice --
+  which kinds, which shell -- and hands the keep/delete lists over. Three
+  copies of the settings read/merge/write logic became one.
+- Declining the shell hooks now also strips any wiring left by an earlier run,
+  instead of deleting the hook files and leaving entries pointing at them.
+
+### Fixed
+
+- Hook wiring is now portable across a team's machines. `.claude/settings.json`
+  is committed, but it used to hardcode an interpreter (`python` for the
+  powershell flavor, `python3` for bash) and rely on a shell to expand
+  `$CLAUDE_PROJECT_DIR`. Neither travels: `python3` is an App Execution Alias
+  stub on Windows that exits with "Python was not found", `python` is often
+  absent on macOS/Linux, and the command is passed to PowerShell on Windows
+  when Git Bash is not installed -- where `$CLAUDE_PROJECT_DIR` expands to
+  nothing. Because a failed hook exits non-zero without blocking, this failed
+  silently. Hooks are now wired in **exec form** (`command` + `args`), so no
+  shell is involved and Claude Code substitutes `${CLAUDE_PROJECT_DIR}`
+  itself, and they are launched with `uv run --no-project`, `uv` being the one
+  command name this project can rely on everywhere. Costs roughly 45ms per
+  hook invocation. Existing shell-form entries are recognized and replaced on
+  the next wiring run rather than duplicated.
+- mypy's `files` now includes `.claude/hooks`, so the hooks are type-checked
+  along with the rest of the repo. `cleanup.py` drops both `scripts` and
+  `.claude/hooks` from `files` when it runs, so a new project's type check
+  covers `src/` and `tests/` -- its own code -- and not the template's.
+
 ## [1.12.0] - 2026-07-20
 
 ### Added

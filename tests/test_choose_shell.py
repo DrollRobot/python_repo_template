@@ -1,4 +1,9 @@
-"""Unit tests for the pure helpers in scripts/template_setup/choose_shell.py.
+"""Unit tests for scripts/template_setup/choose_shell.py.
+
+choose_shell owns the *choice* -- which hook kinds, which shell flavor -- and
+hands the resulting keep/delete lists to wire_hook, which owns settings.json
+(covered in test_wire_hook.py). These tests drive run() end to end and check
+the outcome on disk: the chosen flavor wired, every other hook file gone.
 
 The template_setup folder is not a package, so the module is imported by
 adding the folder to sys.path, mirroring how the setup scripts import their
@@ -20,12 +25,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
 
 import choose_shell
+import wire_hook
 
 _BOTH_KINDS = frozenset({"no_chained_commands", "canonical_commands"})
 
 
 def _make_project(tmp_path: Path) -> Path:
-    """Create a project root with all four hook files present.
+    """Create a project root with all four shell hook files present.
 
     Args:
         tmp_path: pytest temporary directory.
@@ -33,131 +39,55 @@ def _make_project(tmp_path: Path) -> Path:
     Returns:
         The project root path.
     """
-    hooks = tmp_path / choose_shell.HOOKS_DIR
+    hooks = tmp_path / wire_hook.HOOKS_DIR
     hooks.mkdir(parents=True)
-    for name in choose_shell._ALL_HOOK_FILES:
-        (hooks / name).write_text("", encoding="utf-8")
+    for spec in choose_shell._ALL_SHELL_SPECS:
+        (hooks / spec.file).write_text("", encoding="utf-8")
     return tmp_path
 
 
-@pytest.mark.unit
-def test_hook_command_uses_project_dir_and_posix_path() -> None:
-    """The command resolves from $CLAUDE_PROJECT_DIR with a forward-slash path."""
-    command = choose_shell._hook_command("python", "no-chained-commands-pwsh.py")
-    assert command == 'python "$CLAUDE_PROJECT_DIR/.claude/hooks/no-chained-commands-pwsh.py"'
+def _entry(root: Path) -> dict[str, object]:
+    """Return the last PreToolUse entry from the project's settings.json."""
+    settings = json.loads((root / wire_hook.SETTINGS_PATH).read_text(encoding="utf-8"))
+    entries = settings["hooks"]["PreToolUse"]
+    assert isinstance(entries, list)
+    return dict(entries[-1])
+
+
+# ---------------------------------------------------------------------------
+# spec selection
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_references_our_hook_detects_template_hooks() -> None:
-    """An entry whose command names one of our hook files is recognized."""
-    name = next(iter(choose_shell._ALL_HOOK_FILES))
-    entry = {
-        "matcher": "Bash",
-        "hooks": [{"type": "command", "command": choose_shell._hook_command("python3", name)}],
+def test_all_shell_specs_covers_both_kinds_in_both_flavors() -> None:
+    files = {spec.file for spec in choose_shell._ALL_SHELL_SPECS}
+    assert files == {
+        "no-chained-commands-pwsh.py",
+        "no-chained-commands-bash.py",
+        "canonical-commands-pwsh.py",
+        "canonical-commands-bash.py",
     }
-    assert choose_shell._references_our_hook(entry) is True
 
 
 @pytest.mark.unit
-def test_references_our_hook_ignores_unrelated_entries() -> None:
-    """An unrelated PreToolUse entry is left alone."""
-    entry = {"matcher": "Write", "hooks": [{"type": "command", "command": "python other.py"}]}
-    assert choose_shell._references_our_hook(entry) is False
+def test_specs_for_returns_chosen_flavor_in_kind_order() -> None:
+    specs = choose_shell._specs_for("powershell", _BOTH_KINDS)
+    assert [spec.file for spec in specs] == [
+        "no-chained-commands-pwsh.py",
+        "canonical-commands-pwsh.py",
+    ]
 
 
 @pytest.mark.unit
-def test_build_entry_has_one_command_per_kind() -> None:
-    """Both kinds enabled builds an entry with one command for each."""
-    entry = choose_shell._build_entry("powershell", _BOTH_KINDS)
-    assert entry["matcher"] == choose_shell._SHELL_META["powershell"]["matcher"]
-    commands = [hook["command"] for hook in entry["hooks"]]
-    assert len(commands) == 2
-    assert any("no-chained-commands-pwsh.py" in c for c in commands)
-    assert any("canonical-commands-pwsh.py" in c for c in commands)
+def test_specs_for_drops_the_declined_kind() -> None:
+    specs = choose_shell._specs_for("bash", frozenset({"no_chained_commands"}))
+    assert [spec.file for spec in specs] == ["no-chained-commands-bash.py"]
 
 
-@pytest.mark.unit
-def test_build_entry_with_single_kind_has_one_command() -> None:
-    """Only the requested kind's file is referenced when the other is declined."""
-    entry = choose_shell._build_entry("bash", frozenset({"no_chained_commands"}))
-    commands = [hook["command"] for hook in entry["hooks"]]
-    assert len(commands) == 1
-    assert "no-chained-commands-bash.py" in commands[0]
-
-
-@pytest.mark.unit
-def test_merge_preserves_unrelated_keys_and_entries() -> None:
-    """Merging keeps permissions and unrelated PreToolUse entries intact."""
-    existing = {
-        "permissions": {"allow": ["Bash(git status)"]},
-        "hooks": {
-            "PreToolUse": [
-                {"matcher": "Write", "hooks": [{"type": "command", "command": "python other.py"}]}
-            ]
-        },
-    }
-    entry = choose_shell._build_entry("bash", _BOTH_KINDS)
-    merged = choose_shell._merge_settings(existing, entry)
-
-    assert merged["permissions"] == existing["permissions"]
-    matchers = [e["matcher"] for e in merged["hooks"]["PreToolUse"]]
-    assert matchers == ["Write", "Bash"]
-
-
-@pytest.mark.unit
-def test_merge_is_idempotent() -> None:
-    """Re-merging replaces our prior entry rather than appending a duplicate."""
-    entry = choose_shell._build_entry("powershell", _BOTH_KINDS)
-    once = choose_shell._merge_settings({}, entry)
-    twice = choose_shell._merge_settings(once, entry)
-    assert twice["hooks"]["PreToolUse"] == [entry]
-
-
-@pytest.mark.unit
-def test_merge_switching_shells_replaces_entry() -> None:
-    """Choosing the other shell drops the previous shell's entry."""
-    ps_entry = choose_shell._build_entry("powershell", _BOTH_KINDS)
-    bash_entry = choose_shell._build_entry("bash", _BOTH_KINDS)
-    merged = choose_shell._merge_settings(choose_shell._merge_settings({}, ps_entry), bash_entry)
-    assert merged["hooks"]["PreToolUse"] == [bash_entry]
-
-
-@pytest.mark.unit
-def test_read_settings_missing_returns_empty(tmp_path: Path) -> None:
-    """A missing settings file reads as an empty mapping."""
-    assert choose_shell._read_settings(tmp_path / "settings.json") == {}
-
-
-@pytest.mark.unit
-def test_read_settings_empty_file_returns_empty(tmp_path: Path) -> None:
-    """An empty settings file reads as an empty mapping."""
-    path = tmp_path / "settings.json"
-    path.write_text("", encoding="utf-8")
-    assert choose_shell._read_settings(path) == {}
-
-
-@pytest.mark.unit
-def test_read_settings_invalid_json_returns_none(tmp_path: Path) -> None:
-    """Invalid JSON is refused rather than silently discarded."""
-    path = tmp_path / "settings.json"
-    path.write_text("{not json", encoding="utf-8")
-    assert choose_shell._read_settings(path) is None
-
-
-@pytest.mark.unit
-def test_read_settings_non_object_returns_none(tmp_path: Path) -> None:
-    """A JSON array (not an object) is refused."""
-    path = tmp_path / "settings.json"
-    path.write_text("[1, 2, 3]", encoding="utf-8")
-    assert choose_shell._read_settings(path) is None
-
-
-@pytest.mark.unit
-def test_read_settings_unreadable_returns_none(tmp_path: Path) -> None:
-    """A file that is not UTF-8 text is refused."""
-    path = tmp_path / "settings.json"
-    path.write_bytes(b"\x80\x81")
-    assert choose_shell._read_settings(path) is None
+# ---------------------------------------------------------------------------
+# run
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -171,18 +101,17 @@ def test_run_invalid_shell_returns_one(tmp_path: Path) -> None:
         )
         == 1
     )
-    assert not (root / choose_shell.SETTINGS_PATH).exists()
+    assert not (root / wire_hook.SETTINGS_PATH).exists()
 
 
 @pytest.mark.integration
 @pytest.mark.functional
 def test_run_missing_hook_files_returns_one(tmp_path: Path) -> None:
     """A shell whose hook files are absent is rejected."""
-    root = tmp_path
-    (root / choose_shell.HOOKS_DIR).mkdir(parents=True)
+    (tmp_path / wire_hook.HOOKS_DIR).mkdir(parents=True)
     assert (
         choose_shell.run(
-            root, "bash", no_chained_commands=True, canonical_commands=True, assume_yes=True
+            tmp_path, "bash", no_chained_commands=True, canonical_commands=True, assume_yes=True
         )
         == 1
     )
@@ -193,7 +122,7 @@ def test_run_missing_hook_files_returns_one(tmp_path: Path) -> None:
 def test_run_invalid_settings_aborts_without_changes(tmp_path: Path) -> None:
     """An unparseable settings.json aborts the step before any file changes."""
     root = _make_project(tmp_path)
-    settings_path = root / choose_shell.SETTINGS_PATH
+    settings_path = root / wire_hook.SETTINGS_PATH
     settings_path.write_text("{not json", encoding="utf-8")
 
     assert (
@@ -204,9 +133,9 @@ def test_run_invalid_settings_aborts_without_changes(tmp_path: Path) -> None:
     )
 
     assert settings_path.read_text(encoding="utf-8") == "{not json"
-    hooks = root / choose_shell.HOOKS_DIR
-    for name in choose_shell._ALL_HOOK_FILES:
-        assert (hooks / name).exists()
+    hooks = root / wire_hook.HOOKS_DIR
+    for spec in choose_shell._ALL_SHELL_SPECS:
+        assert (hooks / spec.file).exists()
 
 
 @pytest.mark.integration
@@ -225,9 +154,8 @@ def test_run_dry_run_changes_nothing(tmp_path: Path) -> None:
         )
         == 0
     )
-    assert not (root / choose_shell.SETTINGS_PATH).exists()
-    hooks = root / choose_shell.HOOKS_DIR
-    assert (hooks / "canonical-commands-bash.py").exists()
+    assert not (root / wire_hook.SETTINGS_PATH).exists()
+    assert (root / wire_hook.HOOKS_DIR / "canonical-commands-bash.py").exists()
 
 
 @pytest.mark.integration
@@ -242,14 +170,29 @@ def test_run_writes_settings_and_deletes_unused(tmp_path: Path) -> None:
         == 0
     )
 
-    settings = json.loads((root / choose_shell.SETTINGS_PATH).read_text(encoding="utf-8"))
-    entry = settings["hooks"]["PreToolUse"][-1]
-    assert entry["matcher"] == "Bash|PowerShell"
+    assert _entry(root)["matcher"] == "Bash|PowerShell"
 
-    hooks = root / choose_shell.HOOKS_DIR
+    hooks = root / wire_hook.HOOKS_DIR
     assert (hooks / "canonical-commands-pwsh.py").exists()
     assert not (hooks / "canonical-commands-bash.py").exists()
     assert not (hooks / "no-chained-commands-bash.py").exists()
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_wires_both_kinds_as_one_entry(tmp_path: Path) -> None:
+    """The pair shares a matcher, so it is written as one entry, two commands."""
+    root = _make_project(tmp_path)
+    choose_shell.run(
+        root, "powershell", no_chained_commands=True, canonical_commands=True, assume_yes=True
+    )
+
+    hooks = _entry(root)["hooks"]
+    assert isinstance(hooks, list)
+    targets = [hook["args"][-1] for hook in hooks]
+    assert len(targets) == 2
+    assert any("no-chained-commands-pwsh.py" in t for t in targets)
+    assert any("canonical-commands-pwsh.py" in t for t in targets)
 
 
 @pytest.mark.integration
@@ -264,32 +207,94 @@ def test_run_one_kind_only_keeps_only_that_file(tmp_path: Path) -> None:
         == 0
     )
 
-    hooks = root / choose_shell.HOOKS_DIR
+    hooks = root / wire_hook.HOOKS_DIR
     assert (hooks / "no-chained-commands-bash.py").exists()
     assert not (hooks / "canonical-commands-bash.py").exists()
     assert not (hooks / "no-chained-commands-pwsh.py").exists()
     assert not (hooks / "canonical-commands-pwsh.py").exists()
 
-    settings = json.loads((root / choose_shell.SETTINGS_PATH).read_text(encoding="utf-8"))
-    entry = settings["hooks"]["PreToolUse"][-1]
-    commands = [hook["command"] for hook in entry["hooks"]]
-    assert len(commands) == 1
-    assert "no-chained-commands-bash.py" in commands[0]
+    entry_hooks = _entry(root)["hooks"]
+    assert isinstance(entry_hooks, list)
+    targets = [hook["args"][-1] for hook in entry_hooks]
+    assert len(targets) == 1
+    assert "no-chained-commands-bash.py" in targets[0]
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_bash_flavor_differs_only_by_matcher(tmp_path: Path) -> None:
+    """Both flavors launch identically; only the matcher tells them apart.
+
+    The interpreter used to differ per flavor, which broke the moment a
+    committed settings.json was opened on another OS.
+    """
+    root = _make_project(tmp_path)
+    choose_shell.run(
+        root, "bash", no_chained_commands=True, canonical_commands=True, assume_yes=True
+    )
+
+    entry = _entry(root)
+    assert entry["matcher"] == "Bash"
+    hooks = entry["hooks"]
+    assert isinstance(hooks, list)
+    assert all(hook["command"] == "uv" for hook in hooks)
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_switching_shells_replaces_the_entry(tmp_path: Path) -> None:
+    """Re-running with the other shell leaves exactly one shell-hook entry."""
+    root = _make_project(tmp_path)
+    choose_shell.run(
+        root, "powershell", no_chained_commands=True, canonical_commands=True, assume_yes=True
+    )
+    # The pwsh files are gone now, so restore all four before switching.
+    _make_hooks_again(root)
+    choose_shell.run(
+        root, "bash", no_chained_commands=True, canonical_commands=True, assume_yes=True
+    )
+
+    settings = json.loads((root / wire_hook.SETTINGS_PATH).read_text(encoding="utf-8"))
+    entries = settings["hooks"]["PreToolUse"]
+    assert len(entries) == 1
+    assert entries[0]["matcher"] == "Bash"
+
+
+def _make_hooks_again(root: Path) -> None:
+    """Recreate every shell hook file under an existing project root."""
+    hooks = root / wire_hook.HOOKS_DIR
+    hooks.mkdir(parents=True, exist_ok=True)
+    for spec in choose_shell._ALL_SHELL_SPECS:
+        (hooks / spec.file).write_text("", encoding="utf-8")
 
 
 @pytest.mark.integration
 @pytest.mark.functional
 def test_run_decline_removes_all_hooks(tmp_path: Path) -> None:
-    """Declining both kinds deletes every hook file and writes no settings."""
+    """Declining both kinds deletes every shell hook file and writes no settings."""
     root = _make_project(tmp_path)
     assert (
         choose_shell.run(root, no_chained_commands=False, canonical_commands=False, assume_yes=True)
         == 0
     )
 
-    assert not (root / choose_shell.SETTINGS_PATH).exists()
-    hooks = root / choose_shell.HOOKS_DIR
-    assert not hooks.exists()  # the emptied directory is removed too
+    assert not (root / wire_hook.SETTINGS_PATH).exists()
+    assert not (root / wire_hook.HOOKS_DIR).exists()  # the emptied directory goes too
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_decline_strips_earlier_wiring(tmp_path: Path) -> None:
+    """Declining after an earlier run removes the entry, not just the files."""
+    root = _make_project(tmp_path)
+    choose_shell.run(
+        root, "powershell", no_chained_commands=True, canonical_commands=True, assume_yes=True
+    )
+    assert (
+        choose_shell.run(root, no_chained_commands=False, canonical_commands=False, assume_yes=True)
+        == 0
+    )
+    assert not (root / wire_hook.SETTINGS_PATH).exists()
 
 
 @pytest.mark.integration
@@ -308,16 +313,6 @@ def test_run_decline_dry_run_keeps_hooks(tmp_path: Path) -> None:
         == 0
     )
 
-    hooks = root / choose_shell.HOOKS_DIR
-    for name in choose_shell._ALL_HOOK_FILES:
-        assert (hooks / name).exists()
-
-
-@pytest.mark.unit
-def test_remove_all_hooks_returns_removed_names(tmp_path: Path) -> None:
-    """The remover deletes present hook files and reports them sorted."""
-    root = _make_project(tmp_path)
-    hooks = root / choose_shell.HOOKS_DIR
-    removed = choose_shell._remove_all_hooks(hooks)
-    assert removed == sorted(choose_shell._ALL_HOOK_FILES)
-    assert not hooks.exists()
+    hooks = root / wire_hook.HOOKS_DIR
+    for spec in choose_shell._ALL_SHELL_SPECS:
+        assert (hooks / spec.file).exists()

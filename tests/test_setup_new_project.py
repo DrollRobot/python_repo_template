@@ -24,12 +24,12 @@ import _common
 import choose_license
 import choose_shell
 import find_fixmes
-import protect_auto_memory
 import reinit_git
-import remove_credentials
-import remove_keyring
-import remove_keyvault
+import remove_contributing_guide
 import remove_mkdocs
+import remove_private_repo_deps
+import remove_remote_disposable_scripts
+import remove_security_policy
 import rename_project
 import reset_changelog
 import set_github_user
@@ -37,6 +37,7 @@ import set_python_version
 import set_version
 import setup_new_project
 import strip_template_headers
+import wire_hook
 
 VALID_TOML = """
 [project]
@@ -56,11 +57,14 @@ shell = "powershell"
 no_chained_commands = true
 canonical_commands = true
 auto_memory_guard = false
+no_inline_secret_suppressions = false
 
 [features]
 mkdocs = true
-keyring = true
-azure_keyvault = true
+private_repo_deps = true
+remote_disposable_scripts = true
+security_policy = true
+contributing_guide = true
 
 [git]
 reinit = false
@@ -83,8 +87,15 @@ def _valid_raw() -> dict[str, Any]:
             "no_chained_commands": True,
             "canonical_commands": True,
             "auto_memory_guard": False,
+            "no_inline_secret_suppressions": False,
         },
-        "features": {"mkdocs": True, "keyring": True, "azure_keyvault": True},
+        "features": {
+            "mkdocs": True,
+            "private_repo_deps": True,
+            "remote_disposable_scripts": True,
+            "security_policy": True,
+            "contributing_guide": True,
+        },
         "git": {"reinit": False, "branch": "main"},
     }
 
@@ -104,9 +115,12 @@ def _make_config(**overrides: Any) -> setup_new_project.Config:
         "no_chained_commands": True,
         "canonical_commands": True,
         "auto_memory_guard": False,
+        "no_inline_secret_suppressions": False,
         "mkdocs": True,
-        "keyring": True,
-        "azure_keyvault": True,
+        "private_repo_deps": True,
+        "remote_disposable_scripts": True,
+        "security_policy": True,
+        "contributing_guide": True,
         "reinit": False,
         "branch": "main",
     }
@@ -335,7 +349,8 @@ _ALWAYS_ON_KEYS = [
     "set_version",
     "reset_changelog",
     "choose_shell",
-    "protect_auto_memory",
+    "auto_memory_guard",
+    "no_inline_secrets",
     "choose_license",
 ]
 
@@ -355,33 +370,43 @@ def test_build_steps_includes_remove_mkdocs_when_declined() -> None:
 
 
 @pytest.mark.unit
-def test_build_steps_includes_remove_keyring_when_declined() -> None:
-    """keyring=false adds the remove_keyring step."""
-    steps = setup_new_project.build_steps(_make_config(keyring=False))
-    keys = [step.key for step in steps]
-    assert "remove_keyring" in keys
-    assert "remove_keyvault" not in keys
-    assert "remove_credentials" not in keys
+def test_build_steps_includes_remove_private_repo_deps_when_declined() -> None:
+    """private_repo_deps=false adds the remove_private_repo_deps step."""
+    steps = setup_new_project.build_steps(_make_config(private_repo_deps=False))
+    assert steps[-1].key == "remove_private_repo_deps"
 
 
 @pytest.mark.unit
-def test_build_steps_includes_remove_keyvault_when_declined() -> None:
-    """azure_keyvault=false adds the remove_keyvault step, independent of keyring."""
-    steps = setup_new_project.build_steps(_make_config(azure_keyvault=False))
-    keys = [step.key for step in steps]
-    assert "remove_keyvault" in keys
-    assert "remove_keyring" not in keys
-    assert "remove_credentials" not in keys
+def test_build_steps_includes_remove_remote_disposable_scripts_when_declined() -> None:
+    """remote_disposable_scripts=false adds the remove_remote_disposable_scripts step."""
+    steps = setup_new_project.build_steps(_make_config(remote_disposable_scripts=False))
+    assert steps[-1].key == "remove_remote_disposable_scripts"
 
 
 @pytest.mark.unit
-def test_build_steps_includes_remove_credentials_only_when_both_declined() -> None:
-    """remove_credentials only appears once both backends are declined."""
-    steps = setup_new_project.build_steps(_make_config(keyring=False, azure_keyvault=False))
-    keys = [step.key for step in steps]
-    assert keys.index("remove_keyring") < keys.index("remove_credentials")
-    assert keys.index("remove_keyvault") < keys.index("remove_credentials")
-    assert keys[-1] == "remove_credentials"
+def test_build_steps_includes_remove_security_policy_when_declined() -> None:
+    """security_policy=false adds the remove_security_policy step."""
+    steps = setup_new_project.build_steps(_make_config(security_policy=False))
+    assert steps[-1].key == "remove_security_policy"
+
+
+@pytest.mark.unit
+def test_build_steps_includes_remove_contributing_guide_when_declined() -> None:
+    """contributing_guide=false adds the remove_contributing_guide step."""
+    steps = setup_new_project.build_steps(_make_config(contributing_guide=False))
+    assert steps[-1].key == "remove_contributing_guide"
+
+
+@pytest.mark.unit
+def test_build_steps_orders_both_community_doc_removals() -> None:
+    """Both community docs declined: SECURITY.md is removed before CONTRIBUTING.md."""
+    steps = setup_new_project.build_steps(
+        _make_config(security_policy=False, contributing_guide=False)
+    )
+    assert [step.key for step in steps[-2:]] == [
+        "remove_security_policy",
+        "remove_contributing_guide",
+    ]
 
 
 @pytest.mark.unit
@@ -494,9 +519,26 @@ def test_step_memory_guard_forwards_install(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(protect_auto_memory, "run", _recording_run(calls))
-    step = setup_new_project.build_steps(_make_config(auto_memory_guard=True))[7]
+    monkeypatch.setattr(wire_hook, "toggle", _recording_run(calls))
+    step = setup_new_project.build_steps(_make_config(auto_memory_guard=True))[
+        _ALWAYS_ON_KEYS.index("auto_memory_guard")
+    ]
     step.call(tmp_path, False)
+    assert calls[0]["args"][1] is wire_hook.by_key("auto_memory_guard")
+    assert calls[0]["kwargs"]["install"] is True
+    assert calls[0]["kwargs"]["assume_yes"] is True
+
+
+@pytest.mark.unit
+def test_step_no_inline_secrets_forwards_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(wire_hook, "toggle", _recording_run(calls))
+    config = _make_config(no_inline_secret_suppressions=True)
+    step = setup_new_project.build_steps(config)[_ALWAYS_ON_KEYS.index("no_inline_secrets")]
+    step.call(tmp_path, False)
+    assert calls[0]["args"][1] is wire_hook.by_key("no_inline_secrets")
     assert calls[0]["kwargs"]["install"] is True
     assert calls[0]["kwargs"]["assume_yes"] is True
 
@@ -511,7 +553,7 @@ def test_step_license_forwards_all_fields(tmp_path: Path, monkeypatch: pytest.Mo
         license_name="Ada",
         license_company="Acme",
     )
-    step = setup_new_project.build_steps(config)[8]
+    step = setup_new_project.build_steps(config)[_ALWAYS_ON_KEYS.index("choose_license")]
     step.call(tmp_path, False)
     assert calls[0]["kwargs"]["key"] == "proprietary"
     assert calls[0]["kwargs"]["year"] == "2026"
@@ -533,36 +575,51 @@ def test_step_remove_mkdocs_forwards_assume_yes(
 
 
 @pytest.mark.unit
-def test_step_remove_keyring_forwards_assume_yes(
+def test_step_remove_private_repo_deps_forwards_assume_yes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(remove_keyring, "run", _recording_run(calls))
-    steps = setup_new_project.build_steps(_make_config(keyring=False))
+    monkeypatch.setattr(remove_private_repo_deps, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(private_repo_deps=False))
     steps[-1].call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
 
 
 @pytest.mark.unit
-def test_step_remove_keyvault_forwards_assume_yes(
+def test_step_remove_remote_disposable_scripts_forwards_assume_yes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(remove_keyvault, "run", _recording_run(calls))
-    steps = setup_new_project.build_steps(_make_config(azure_keyvault=False))
+    monkeypatch.setattr(remove_remote_disposable_scripts, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(remote_disposable_scripts=False))
     steps[-1].call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
 
 
 @pytest.mark.unit
-def test_step_remove_credentials_forwards_assume_yes(
+def test_step_remove_security_policy_forwards_assume_yes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(remove_credentials, "run", _recording_run(calls))
-    steps = setup_new_project.build_steps(_make_config(keyring=False, azure_keyvault=False))
+    monkeypatch.setattr(remove_security_policy, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(security_policy=False))
     steps[-1].call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
+def test_step_remove_contributing_guide_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_contributing_guide, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(_make_config(contributing_guide=False))
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
 
 
 @pytest.mark.unit
@@ -637,12 +694,12 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
         set_version,
         reset_changelog,
         choose_shell,
-        protect_auto_memory,
         choose_license,
         remove_mkdocs,
-        remove_keyring,
-        remove_keyvault,
-        remove_credentials,
+        remove_private_repo_deps,
+        remove_remote_disposable_scripts,
+        remove_security_policy,
+        remove_contributing_guide,
         reinit_git,
     ]
     for module in modules:
@@ -655,6 +712,10 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
             return run
 
         monkeypatch.setattr(module, "run", make_run(module.__name__))
+
+    # The two standalone hook guards go through wire_hook.toggle(), not a
+    # module-level run() of their own.
+    monkeypatch.setattr(wire_hook, "toggle", make_run(wire_hook.__name__))
 
     def fake_find_fixmes_run(root: Path) -> int:
         calls.append("find_fixmes")

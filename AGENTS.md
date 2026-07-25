@@ -16,7 +16,10 @@ conventions, required checks, and how to run tests.
      constraints (e.g. "credentials are always supplied by the caller"). -->
 
 ## General rules
-- All environment specific values should live in .env, not in source.
+- No .env files. Non-secret environment/user values live in the per-user
+  config.toml managed by the config CLI (`python-repo-template-config`);
+  secrets live in the OS keyring or Azure Key Vault, never in the repo.
+  Option names are defined once, in `src/python_repo_template/config/schema.py`.
 - Fail early, fail loudly. Avoid default values that could mask errors.
 
 ## Code Formatting and Style

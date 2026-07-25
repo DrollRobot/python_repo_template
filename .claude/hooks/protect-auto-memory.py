@@ -15,8 +15,9 @@ unchanged whether it is wired at project scope or globally (see INSTALLATION).
 # INSTALLATION
 #
 # This hook ships OFF by default. The template setup step
-# scripts/template_setup/protect_auto_memory.py (also run by the guided
-# setup_new_project.py) asks whether to enable it. Accept and it wires the hook
+# scripts/template_setup/wire_hook.py (key: auto_memory_guard; also run by the
+# guided setup_new_project.py) wires it in when
+# [claude].auto_memory_guard in scripts/setup.toml is true. That wires the hook
 # *project-scoped* into this repo's .claude/settings.json -- so it only runs for
 # Claude Code sessions started inside this repository -- like this (settings.json
 # is strict JSON and cannot hold comments, which is why this note lives here):
@@ -29,7 +30,11 @@ unchanged whether it is wired at project scope or globally (see INSTALLATION).
 #             "hooks": [
 #               {
 #                 "type": "command",
-#                 "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-auto-memory.py\""
+#                 "command": "uv",
+#                 "args": [
+#                   "run", "--no-project",
+#                   "${CLAUDE_PROJECT_DIR}/.claude/hooks/protect-auto-memory.py"
+#                 ]
 #               }
 #             ]
 #           }
@@ -37,9 +42,12 @@ unchanged whether it is wired at project scope or globally (see INSTALLATION).
 #       }
 #     }
 #
-# Claude Code expands $CLAUDE_PROJECT_DIR to this project's root, so the command
-# resolves regardless of the current working directory. (Declining the setup
-# step deletes this file instead.)
+# This is exec form (command + args), so no shell runs and Claude Code itself
+# substitutes ${CLAUDE_PROJECT_DIR}, resolving the path regardless of the
+# current working directory. uv launches it because no interpreter name is
+# portable across the machines that share a committed settings.json -- see
+# wire_hook.py's module docstring. (Declining the setup step deletes this file
+# instead.)
 #
 # To make it GLOBAL instead (run for every project, not just this repo):
 #
@@ -48,9 +56,11 @@ unchanged whether it is wired at project scope or globally (see INSTALLATION).
 #      (Windows: C:/Users/<you>/.claude/hooks/protect-auto-memory.py)
 #   2. Add the same PreToolUse entry to your USER settings file
 #        ~/.claude/settings.json
-#      but point "command" at that absolute path instead of $CLAUDE_PROJECT_DIR:
+#      but point the last argument at that absolute path instead of
+#      ${CLAUDE_PROJECT_DIR}:
 #
-#        "command": "python \"C:/Users/<you>/.claude/hooks/protect-auto-memory.py\""
+#        "args": ["run", "--no-project",
+#                 "C:/Users/<you>/.claude/hooks/protect-auto-memory.py"]
 #
 #   3. Remove the project-scoped entry from this repo's .claude/settings.json
 #      (and optionally delete this file) so the hook does not run twice when you

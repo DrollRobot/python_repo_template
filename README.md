@@ -1,19 +1,14 @@
 # python-repo-template
-
 <!-- FIXME: replace badges below with your own CI/PyPI/coverage links -->
 [![CI](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml/badge.svg)](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) # FIXME replace with correct license link
-
 <!-- FIXME: one paragraph describing what this package does and who should use it -->
-
 My goal with this project is to create a baseline for new python projects with the most commonly used tools and community best practices.
 
 It's mostly for personal use. But maybe others will have suggestions? Or find it useful themselves?
 
-
 # Tool choices
-
 Based on some personal preference, and what I understand are the most widely used tools in the Python ecosystem.
 
 - **uv** for dependency management and virtual environments. Fast. Allows very simple package install directly from Github.
@@ -22,10 +17,20 @@ Based on some personal preference, and what I understand are the most widely use
 - **mypy** for static type checking.
 - **pytest** for testing.
 - **mkdocs** for documentation. Integrates easily with GitHub Pages for hosting.
-- **keyring** for credential storage. Cross-platform. Allows never keeping secrets in the repo.
-- **detect-secrets** for scanning for secrets before commits. Helps prevent accidental leaks.
+- **keyring** for local credential storage. Cross-platform. Allows never keeping secrets in the repo.
+- **Azure Keyvault** for remote secret storage.
+- **detect-secrets** for real-time secret scanning. Helps prevent accidental leaks.
 - **GitHub Actions** for CI and docs deployment. Free for public repos, and widely used.
 - **VSCode** for development. Most popular IDE. Lots of documentation. Many extensions.
+- **Claude Code** as the coding agent. Includes some helpful hooks and baseline settings.
+
+# Design choices
+Some of the design choices I've made for this project:
+
+- **No .env** To avoid keeping secrets/environment values within the repo, project
+keeps non-secret environment values and user config options in a config.toml in a
+standard OS-specific location. All secrets are designed to be kept within keyring
+or keyvault.
 
 ## Making a new repo from this template
 
@@ -34,10 +39,7 @@ Based on some personal preference, and what I understand are the most widely use
 git clone https://github.com/DrollRobot/python_repo_template.git YOUR-PROJECT-NAME
 ```
 
-2. **Edit `scripts/setup.toml`** with your values: project name,
-   GitHub username, Python/project version, license choice, which optional
-   features to keep (`mkdocs`, `keyring`, `azure_keyvault`, Claude command
-   hooks), and whether to re-initialize git.
+2. **Edit `scripts/setup.toml`** to determine which features you want to keep.
 
 3. **Run the setup script:**
 ```powershell
@@ -46,8 +48,7 @@ uv run scripts/template_setup/setup_new_project.py
    It validates every field in the config up front — if anything is wrong,
    nothing runs and every problem is listed at once. It then previews every
    change, asks for a single confirmation, and applies everything, including
-   dropping mkdocs/keyring/KeyVault if you turned them off (and the shared
-   credentials dispatcher too, automatically, once both backends are gone).
+   dropping any optional features you turned off.
    Add `--dry-run` to preview only, or `-y`/`--yes` to skip the confirmation
    (the preview still runs first).
 
@@ -57,15 +58,6 @@ uv run scripts/template_setup/setup_new_project.py
    This does **not** delete `scripts/template_setup/` — that stays a
    separate, manual step (`cleanup.py`, or just delete the folder) once
    you're done with it.
-
-4. **If you don't want the remaining optional features, delete them by hand**
-   — these aren't config-driven:
-
-   | Feature | Delete | Remove from config |
-   | --- | --- | --- |
-   | **Worktree scripts** | `scripts/new_worktree.py`, `scripts/complete_worktree.py`, `scripts/remove_worktree.py`, and their `tests/test_*.py` | — (`scripts/_cli.py` stays; the release script uses it) |
-   | **Template drift check** | `scripts/compare_to_template.py`, `tests/test_compare_to_template.py` | — |
-   | **Release script** | `scripts/push_new_tag_to_main.py` | — (also delete `scripts/_cli.py` if nothing else uses it) |
 
 5. **Create the venv and install dev/test dependencies:**
 ```powershell
@@ -90,7 +82,7 @@ uv run mkdocs gh-deploy --force
 
 8. **Initialize the secrets baseline:**
 ```powershell
-uvx detect-secrets scan > .secrets.baseline
+uv run detect-secrets scan > .secrets.baseline
 ```
 
 9. **If using GitHub App tokens to access private repos:**

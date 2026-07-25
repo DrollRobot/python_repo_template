@@ -11,9 +11,12 @@ exists, so you are never left with no license.
 
 It also trims the pyproject.toml lines that only matter while developing the
 template itself: the ``--cov=scripts`` coverage flag (the dev-script tests are
-deleted here, so scripts coverage would read as untested) and the
-``scripts/template_setup`` entry in mypy's search path (that folder is gone).
-The scripts that remain in ``scripts/`` stay type-checked via mypy's ``files``.
+deleted here, so scripts coverage would read as untested), the
+``scripts/template_setup`` entry in mypy's search path (that folder is gone),
+and ``scripts``/``.claude/hooks`` from mypy's ``files``. The scripts and hooks
+themselves stay -- but they are the template's code, not the project's, so a
+downstream project should not have its type check fail on them. Run mypy on
+them by path (``uv run mypy scripts``) if you do edit them.
 
 It does NOT edit prose for you; it prints reminders for the manual bits (such as
 removing the template instructions from README.md).
@@ -46,9 +49,13 @@ PYPROJECT_EDITS = [
     # Dev-script coverage: the tests covering scripts/ are deleted below, so
     # keeping the flag would only drag the project's coverage number down.
     ('    "--cov=scripts",\n', ""),
-    # scripts/template_setup/ is deleted below; the remaining scripts/ stays
-    # in mypy's files and search path so it stays type-checked.
+    # scripts/template_setup/ is deleted below; scripts/ stays in mypy's search
+    # path so an import from a remaining dev script still resolves.
     ('mypy_path = ["scripts", "scripts/template_setup"]', 'mypy_path = ["scripts"]'),
+    # The dev scripts and Claude hooks are the template's code and are not
+    # type-checked as part of the project: drop them from mypy's files so a
+    # downstream `uv run mypy` covers src/ and tests/ only.
+    ('files = ["src", "tests", "scripts", ".claude/hooks"]', 'files = ["src", "tests"]'),
 ]
 
 
@@ -82,10 +89,10 @@ def dev_script_tests(root: Path) -> list[Path]:
     or ``scripts/template_setup/<name>.py``. Hook filenames use hyphens, not a
     valid module name, so ``tests/test_<name>.py`` is matched to
     ``.claude/hooks/<name-with-hyphens>.py`` too; a ``_hook`` suffix on the test
-    name is dropped first so it can be stripped before conversion (used when a
-    hook's test would otherwise collide with a same-named script's test, e.g.
-    ``test_protect_auto_memory_hook.py`` alongside ``test_protect_auto_memory.py``).
-    Tests with no matching script or hook (the project's own tests) are kept.
+    name is dropped first so it can be stripped before conversion (the hook
+    tests carry it to mark that they cover the hook's runtime, not its wiring,
+    e.g. ``test_protect_auto_memory_hook.py``). Tests with no matching script or
+    hook (the project's own tests) are kept.
 
     Args:
         root: Project root directory.
@@ -162,7 +169,8 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
         print("  (Keeping LICENSE.*.FIXME: no LICENSE chosen yet -- run choose_license first.)")
 
     print("\n  Will edit:")
-    print("    pyproject.toml (drop --cov=scripts; drop scripts/template_setup from mypy_path)")
+    print("    pyproject.toml (drop --cov=scripts; drop scripts/template_setup from mypy_path;")
+    print("                    drop scripts + .claude/hooks from mypy files)")
 
     print("\n  Reminders (not done automatically):")
     for reminder in REMINDERS:

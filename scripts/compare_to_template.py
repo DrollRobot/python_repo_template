@@ -12,29 +12,37 @@ so that only real drift is reported:
   - the "TEMPLATE SETUP NOTES" banner comments -> stripped from both sides
   - the pinned Python version -> the project's (from `.python-version`)
   - the template-only pyproject.toml config -> dropped, as cleanup.py does
+  - the commented-out private-repo-deps workflow steps -> stripped, as
+    remove_private_repo_deps.py does, when the project declined them
 
 Each baseline file is strict (drift is an error) or lenient (expected to
 diverge; reported for review only), and required or optional (optional
-features such as mkdocs or the credential helpers may be deleted from a
-project). A few files (e.g. the README) are checked for existence only, as
-the project rewrites their contents wholesale. Files the project adds on top
-of the template are ignored.
+features such as mkdocs may be deleted from a
+project). A few files (e.g. the README and the remote-disposability stub
+pair) are checked for existence only, as the project rewrites their contents
+wholesale. Files the project adds on top of the template are ignored.
 
-Files belonging to a config-driven optional feature (mkdocs, the keyring/
-KeyVault credential backends, the Claude Code command hooks) are gated on
-that project's own choices, read from ``scripts/setup.toml`` -- or, if that
-file is missing, inferred from which feature files exist. A feature the
+Files belonging to a config-driven optional feature (mkdocs, the
+remote-disposability scripts, SECURITY.md, CONTRIBUTING.md, the Claude Code
+command hooks) are gated on
+that project's own choices, read from ``scripts/setup.toml`` (a missing or
+unparsable file is a hard error, not a cue to guess). A feature the
 project declined is left out of the comparison, the version preflight, and
 ``--diff`` entirely: it is never reported and never offered for copy, exactly
 like a file the project simply doesn't have. A feature the project kept is
 compared like any other required file, so an accidentally deleted one is
-reported as drift instead of silently ignored.
+reported as drift instead of silently ignored. The private-repo-deps feature
+is different: it is not a ``gate`` on any file (ci.yml/audit.yml/docs.yml
+stay required and strict either way) -- instead its commented-out steps are
+replayed away from the template side before comparing, per
+``replay_private_repo_deps()``.
 
 Before comparing, the script checks the version of every versioned file (the
-dev helper scripts ``scripts/*.py`` and the ``mypy`` stub-guard test) on both
-sides and offers to copy over any that are out of date or missing in the
-project, so those files -- and the manifest and replay logic this script
-compares against -- match the template's current ones.
+dev helper scripts ``scripts/*.py`` and the ``mypy`` stub-guard test, minus
+the existence-only ones) on both sides and offers to copy over any that are
+out of date or missing in the project, so those files -- and the manifest
+and replay logic this script compares against -- match the template's
+current ones.
 
 Run it from either repository; the other repository is given as the
 positional path (default: a sibling folder with the template's name):
@@ -76,7 +84,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.5.0"
+__version__ = "1.13.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -131,7 +139,7 @@ class BaselineFile:
             explicitly for any other versioned file.
         gate: Name of the matching :class:`FeatureFlags` field, for a file
             that belongs to one config-driven optional feature (mkdocs, a
-            credentials backend, a Claude command hook). ``None`` for files
+            Claude command hook). ``None`` for files
             that are always part of the baseline. See :func:`is_applicable`
             and :func:`effective_required`.
     """
@@ -158,8 +166,8 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".github/workflows/ci.yml"),
     BaselineFile(".github/workflows/docs.yml", gate="mkdocs"),
     # Claude Code configuration. choose_shell.py deletes the unchosen hook
-    # pair (or all hooks) and protect_auto_memory.py deletes its own hook on
-    # decline, so each hook file's presence tracks exactly one [claude]
+    # pair (or all hooks) and wire_hook.py deletes a declined standalone
+    # guard's hook, so each hook file's presence tracks exactly one [claude]
     # config flag. settings.json accumulates per-project permissions on top
     # of whichever hooks are wired in, so it stays optional and lenient
     # instead of gated.
@@ -168,13 +176,20 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".claude/hooks/no-chained-commands-bash.py", gate="hook_no_chained_bash"),
     BaselineFile(".claude/hooks/no-chained-commands-pwsh.py", gate="hook_no_chained_pwsh"),
     BaselineFile(".claude/hooks/protect-auto-memory.py", gate="hook_auto_memory"),
+    # The only hook that carries a __version__, so it joins the version
+    # pre-flight and can be copied forward into a project (the others are
+    # compared by content only).
+    BaselineFile(
+        ".claude/hooks/no-inline-secret-suppressions.py",
+        versioned=True,
+        gate="hook_no_inline_secrets",
+    ),
     BaselineFile(".claude/settings.json", required=False, strict=False),
     # Editor / lint / format / hygiene config.
     BaselineFile(".editorconfig"),
     BaselineFile(".gitattributes"),
     BaselineFile(".pre-commit-config.yaml"),
     BaselineFile(".gitignore", strict=False),  # projects append their own ignores
-    BaselineFile(".env.example", required=False, strict=False),  # project env vars
     # Agent and contributor docs.
     BaselineFile("AGENTS.md", strict=False),  # holds the project's own rules
     BaselineFile("AGENTS.COMMITTING.md"),
@@ -182,8 +197,9 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("AGENTS.TESTING.md"),
     BaselineFile("AGENTS.WORKTREE.md"),
     BaselineFile("CLAUDE.md"),
-    BaselineFile("CONTRIBUTING.md"),
-    BaselineFile("SECURITY.md"),
+    # GitHub community docs, each independently removable at setup time.
+    BaselineFile("CONTRIBUTING.md", gate="contributing_guide"),
+    BaselineFile("SECURITY.md", gate="security_policy"),
     BaselineFile("README.md", compare_content=False),  # rewritten per project: only check it exists
     # Project configuration: always diverges (version, description, deps).
     BaselineFile("pyproject.toml", strict=False),
@@ -201,35 +217,47 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("scripts/push_new_tag_to_main.py"),
     BaselineFile("scripts/remove_worktree.py"),
     BaselineFile("scripts/update_floors.py"),
-    BaselineFile("scripts/setup_credentials.py", gate="keyring"),
     # Remote-destructive-test feature, write half: run manually to mark a
     # target disposable. Its read half (verify_remote_disposable.py) lives in
     # tests/, next to the conftest.py gate that is its only automatic caller.
-    # The marker mechanism is expected to be filled in per project, so drift
-    # (customization) is not an error. Not config-driven (no setup.toml
-    # field for it), so it stays optional rather than gated.
-    BaselineFile("scripts/mark_remote_disposable.py", required=False, strict=False),
+    # The marker mechanism is filled in per project, so the contents are
+    # always different by design: only existence is checked, like README.md.
+    BaselineFile(
+        "scripts/mark_remote_disposable.py",
+        compare_content=False,
+        gate="remote_disposable_scripts",
+    ),
     # Documentation site (mkdocs feature; content is the project's own).
     BaselineFile("mkdocs.yml", gate="mkdocs", strict=False),
-    BaselineFile("docs/index.md", gate="mkdocs", strict=False),
+    # The docs landing page is rewritten wholesale per project (it is always
+    # completely different), so only its existence is checked, like README.md.
+    BaselineFile("docs/index.md", gate="mkdocs", compare_content=False),
     BaselineFile(f"docs/reference/{TEMPLATE_SNAKE}.md", gate="mkdocs", strict=False),
-    # Test infrastructure (credential feature is removable; conftest grows
-    # project fixtures).
+    # Test infrastructure (conftest grows project fixtures).
     BaselineFile("tests/__init__.py", required=False),
     BaselineFile("tests/conftest.py", required=False, strict=False),
-    BaselineFile("tests/_bootstrap.py", gate="credentials"),
-    BaselineFile("tests/_keyring.py", gate="keyring"),
-    BaselineFile("tests/_keyvault.py", gate="keyvault"),
+    # Toy schema shared by the config-package tests (kept schema-independent
+    # so downstream edits to Settings don't break them).
+    BaselineFile("tests/_toy_config.py"),
     # Remote-destructive-test feature, read half: run automatically by
     # conftest.py's destructive_remote gate. Paired with
-    # scripts/mark_remote_disposable.py above; the marker mechanism is
-    # expected to be filled in per project, so drift (customization) is not
-    # an error.
-    BaselineFile("tests/verify_remote_disposable.py", required=False, strict=False),
+    # scripts/mark_remote_disposable.py above; the marker mechanism is filled
+    # in per project, so the contents are always different by design: only
+    # existence is checked.
+    BaselineFile(
+        "tests/verify_remote_disposable.py",
+        compare_content=False,
+        gate="remote_disposable_scripts",
+    ),
     # The mypy stub-guard test ships to projects (cleanup.py keeps it: no
     # matching script) and must track the template, so it is compared here
     # despite the blanket tests/test_*.py exclusion, and carries a __version__.
     BaselineFile("tests/test_mypy_stub_guard.py", versioned=True),
+    # Same deal for the inline-suppression gate: it ships to every project
+    # (ungated -- unlike the steering hook it backs up, which
+    # [claude].no_inline_secret_suppressions can decline) and carries a
+    # __version__.
+    BaselineFile("tests/test_no_inline_suppressions_for_secrets.py", versioned=True),
 )
 
 # Tracked template paths deliberately not compared. Prefixes cover the
@@ -251,6 +279,19 @@ EXCLUDED_GLOBS = (
 # removed mkdocs they are compared leniently instead, because the template
 # side still carries the mkdocs sections.
 MKDOCS_EDITED = ("CONTRIBUTING.md", "AGENTS.RELEASING.md")
+
+# Workflow files that carry the commented-out private-repo-deps GitHub
+# Actions steps (see scripts/template_setup/remove_private_repo_deps.py).
+# Unlike MKDOCS_EDITED, these stay strictly compared -- the block is stripped
+# from the template side by replay_private_repo_deps() before comparing, so a
+# project that declined the feature still needs to match byte-for-byte.
+_PRIVATE_REPO_DEPS_PATHS = (
+    ".github/workflows/ci.yml",
+    ".github/workflows/audit.yml",
+    ".github/workflows/docs.yml",
+)
+_PRIVATE_REPO_DEPS_START = "# <private-repo-deps>"
+_PRIVATE_REPO_DEPS_END = "</private-repo-deps>"
 
 
 @dataclass(frozen=True)
@@ -280,30 +321,44 @@ class FeatureFlags:
 
     Attributes:
         mkdocs: Documentation site kept (``[features].mkdocs``).
-        keyring: OS-keyring credentials backend kept (``[features].keyring``).
-        keyvault: Azure KeyVault backend kept (``[features].azure_keyvault``).
-        credentials: Shared credentials dispatcher kept -- ``True`` whenever
-            ``keyring`` or ``keyvault`` is, since either backend needs it.
+        private_repo_deps: Commented-out private-git-deps GitHub Actions
+            steps kept in ci.yml/audit.yml/docs.yml
+            (``[features].private_repo_deps``). Not a ``gate`` on any
+            :class:`BaselineFile` -- those workflow files are always
+            required/strict; when this is ``False``,
+            :func:`normalize_template_text` strips the block from the
+            template side before comparing, via
+            :func:`replay_private_repo_deps`.
+        remote_disposable_scripts: The mark/verify remote-disposability stub
+            pair kept (``[features].remote_disposable_scripts``). Gates both
+            ``scripts/mark_remote_disposable.py`` and
+            ``tests/verify_remote_disposable.py``.
+        security_policy: ``SECURITY.md`` kept (``[features].security_policy``).
+        contributing_guide: ``CONTRIBUTING.md`` kept
+            (``[features].contributing_guide``).
         hook_no_chained_pwsh: ``no-chained-commands`` hook, PowerShell flavor.
         hook_no_chained_bash: ``no-chained-commands`` hook, bash flavor.
         hook_canonical_pwsh: ``canonical-commands`` hook, PowerShell flavor.
         hook_canonical_bash: ``canonical-commands`` hook, bash flavor.
         hook_auto_memory: Auto-memory write-guard hook
             (``[claude].auto_memory_guard``).
-        source: Where these flags came from -- :data:`SETUP_CONFIG_REL` or
-            ``"inferred from file presence"`` -- shown in the report so it's
-            clear which one produced a given run's results.
+        hook_no_inline_secrets: Inline-secret-suppression guard hook
+            (``[claude].no_inline_secret_suppressions``).
+        source: Where these flags came from -- always :data:`SETUP_CONFIG_REL`,
+            the only supported source -- shown in the report for provenance.
     """
 
     mkdocs: bool
-    keyring: bool
-    keyvault: bool
-    credentials: bool
+    private_repo_deps: bool
+    remote_disposable_scripts: bool
+    security_policy: bool
+    contributing_guide: bool
     hook_no_chained_pwsh: bool
     hook_no_chained_bash: bool
     hook_canonical_pwsh: bool
     hook_canonical_bash: bool
     hook_auto_memory: bool
+    hook_no_inline_secrets: bool
     source: str
 
     def wanted(self, gate: str) -> bool:
@@ -584,9 +639,47 @@ def replay_cleanup_pyproject(text: str) -> str:
         The trimmed contents.
     """
     text = text.replace('    "--cov=scripts",\n', "")
-    return text.replace(
+    text = text.replace(
         'mypy_path = ["scripts", "scripts/template_setup"]', 'mypy_path = ["scripts"]'
     )
+    return text.replace(
+        'files = ["src", "tests", "scripts", ".claude/hooks"]', 'files = ["src", "tests"]'
+    )
+
+
+def replay_private_repo_deps(rel: str, text: str) -> str:
+    """Strip the commented-out private-repo-deps GitHub Actions block.
+
+    Mirrors scripts/template_setup/remove_private_repo_deps.py: removes the
+    ``# <private-repo-deps>`` ... ``# </private-repo-deps>`` block (and the
+    blank line immediately before it) from a workflow file's template-side
+    text, so a project that declined ``[features].private_repo_deps``
+    compares byte-equal instead of showing permanent drift. A no-op for any
+    other file, or for one of the three workflows if the block is somehow
+    already gone.
+
+    Args:
+        rel: Template-relative path of the file.
+        text: Template-side file contents (LF line endings).
+
+    Returns:
+        The contents with the block removed, or unchanged.
+    """
+    if rel not in _PRIVATE_REPO_DEPS_PATHS:
+        return text
+    lines = text.splitlines(keepends=True)
+    start = next(
+        (i for i, line in enumerate(lines) if line.strip() == _PRIVATE_REPO_DEPS_START), None
+    )
+    if start is None:
+        return text
+    end = next((i for i in range(start, len(lines)) if _PRIVATE_REPO_DEPS_END in lines[i]), None)
+    if end is None:
+        return text
+    if start > 0 and not lines[start - 1].strip():
+        start -= 1
+    del lines[start : end + 1]
+    return "".join(lines)
 
 
 def map_project_path(rel: str, names: ProjectNames) -> str:
@@ -613,6 +706,7 @@ def normalize_template_text(
     dotted: str | None = None,
     compact: str | None = None,
     ran_cleanup: bool = False,
+    private_repo_deps: bool = True,
 ) -> str:
     """Replay the template-setup transformations onto template-side content.
 
@@ -626,6 +720,10 @@ def normalize_template_text(
         dotted: Project Python version as ``MAJOR.MINOR`` (skip when ``None``).
         compact: Project Python version as ``pyMAJORMINOR`` (skip when ``None``).
         ran_cleanup: Whether to drop the template-only pyproject.toml lines.
+        private_repo_deps: Whether the project kept the private-repo-deps
+            workflow steps (``[features].private_repo_deps``); ``False``
+            strips them from the template side too, mirroring
+            ``remove_private_repo_deps.py``.
 
     Returns:
         The normalized contents.
@@ -635,6 +733,8 @@ def normalize_template_text(
         text = replay_python_version(rel, text, dotted, compact)
     if rel == "pyproject.toml" and ran_cleanup:
         text = replay_cleanup_pyproject(text)
+    if not private_repo_deps:
+        text = replay_private_repo_deps(rel, text)
     text = text.replace(TEMPLATE_SNAKE, names.snake).replace(TEMPLATE_KEBAB, names.kebab)
     if names.github_user is not None:
         text = replace_case_insensitive(text, TEMPLATE_USER, names.github_user)
@@ -773,8 +873,8 @@ def load_setup_config(project_root: Path) -> dict[str, Any] | None:
 
     Returns:
         The parsed TOML content, or ``None`` when the file is missing,
-        unreadable, or not valid TOML -- callers then fall back to
-        :func:`infer_feature_flags`.
+        unreadable, or not valid TOML -- :func:`resolve_feature_flags` then
+        errors out.
     """
     path = project_root / SETUP_CONFIG_REL
     if not path.is_file():
@@ -805,82 +905,69 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
     claude_raw = raw.get("claude")
     claude = claude_raw if isinstance(claude_raw, dict) else {}
 
-    keyring = bool(features.get("keyring", True))
-    keyvault = bool(features.get("azure_keyvault", True))
     shell = claude.get("shell")
     no_chained_commands = bool(claude.get("no_chained_commands", False))
     canonical_commands = bool(claude.get("canonical_commands", False))
 
     return FeatureFlags(
         mkdocs=bool(features.get("mkdocs", True)),
-        keyring=keyring,
-        keyvault=keyvault,
-        credentials=keyring or keyvault,
+        private_repo_deps=bool(features.get("private_repo_deps", True)),
+        remote_disposable_scripts=bool(features.get("remote_disposable_scripts", True)),
+        security_policy=bool(features.get("security_policy", True)),
+        contributing_guide=bool(features.get("contributing_guide", True)),
         hook_no_chained_pwsh=(shell == "powershell" and no_chained_commands),
         hook_no_chained_bash=(shell == "bash" and no_chained_commands),
         hook_canonical_pwsh=(shell == "powershell" and canonical_commands),
         hook_canonical_bash=(shell == "bash" and canonical_commands),
         hook_auto_memory=bool(claude.get("auto_memory_guard", False)),
+        hook_no_inline_secrets=bool(claude.get("no_inline_secret_suppressions", False)),
         source=SETUP_CONFIG_REL,
-    )
-
-
-def infer_feature_flags(project_root: Path) -> FeatureFlags:
-    """Derive :class:`FeatureFlags` from which optional files are present.
-
-    Fallback for when :data:`SETUP_CONFIG_REL` is missing or unreadable (for
-    example a project generated before this file was tracked). Mirrors what
-    each template-setup step's removal script leaves behind, so the result
-    matches what a present config would have said.
-
-    Args:
-        project_root: Root of the project checkout.
-
-    Returns:
-        The resolved flags, tagged ``"inferred from file presence"``.
-    """
-    hooks_dir = project_root / ".claude" / "hooks"
-    keyring = (project_root / "tests" / "_keyring.py").is_file()
-    keyvault = (project_root / "tests" / "_keyvault.py").is_file()
-    return FeatureFlags(
-        mkdocs=(project_root / "mkdocs.yml").is_file(),
-        keyring=keyring,
-        keyvault=keyvault,
-        credentials=(project_root / "tests" / "_bootstrap.py").is_file(),
-        hook_no_chained_pwsh=(hooks_dir / "no-chained-commands-pwsh.py").is_file(),
-        hook_no_chained_bash=(hooks_dir / "no-chained-commands-bash.py").is_file(),
-        hook_canonical_pwsh=(hooks_dir / "canonical-commands-pwsh.py").is_file(),
-        hook_canonical_bash=(hooks_dir / "canonical-commands-bash.py").is_file(),
-        hook_auto_memory=(hooks_dir / "protect-auto-memory.py").is_file(),
-        source="inferred from file presence",
     )
 
 
 def resolve_feature_flags(project_root: Path) -> FeatureFlags:
     """Determine which config-driven optional files this project kept.
 
-    Reads :data:`SETUP_CONFIG_REL` when it is present and parses cleanly --
-    the normal case, since ``setup_new_project.py`` leaves it behind on
-    purpose (see its module docstring) -- and falls back to inferring from
-    which feature files exist otherwise.
+    Reads :data:`SETUP_CONFIG_REL`, which ``setup_new_project.py`` leaves
+    behind on purpose (see its module docstring) so it is always available
+    here. Its absence or an unparsable body is a hard error, not a cue to
+    guess: inferring the feature set from which files happen to exist would
+    silently mask a genuinely deleted or broken config, and every gated file
+    of a wrongly-guessed feature would then be mis-reported.
 
     Args:
         project_root: Root of the project checkout.
 
     Returns:
         The resolved flags.
+
+    Raises:
+        SystemExit: If :data:`SETUP_CONFIG_REL` is missing or cannot be
+            parsed as TOML.
     """
+    path = project_root / SETUP_CONFIG_REL
+    if not path.is_file():
+        cli.die(
+            f"No {SETUP_CONFIG_REL} in the project ({path}). It records which "
+            "optional features the project kept; setup_new_project.py leaves it "
+            "in place on purpose. Restore it before comparing."
+        )
     raw = load_setup_config(project_root)
-    if raw is not None:
-        return feature_flags_from_config(raw)
-    return infer_feature_flags(project_root)
+    if raw is None:
+        cli.die(f"Could not parse {path} as TOML; fix it before comparing.")
+    return feature_flags_from_config(raw)
 
 
 def carries_version(entry: BaselineFile) -> bool:
     """Whether an entry declares a ``__version__`` the comparison tracks.
 
     True for the dev helper scripts (``scripts/*.py``, by path) and for any
-    entry explicitly flagged ``versioned``.
+    entry explicitly flagged ``versioned`` -- except for existence-only
+    entries (``compare_content=False``), whose project-side contents are the
+    project's own by design. Tracking their version would offer to overwrite
+    a deliberately customized file from the template (see
+    :func:`check_versioned_file`), which is the same mistake as reporting
+    their contents as drift.
 
     Args:
         entry: The manifest entry.
@@ -889,6 +976,8 @@ def carries_version(entry: BaselineFile) -> bool:
         ``True`` when the file participates in the version pre-flight and the
         drift note.
     """
+    if not entry.compare_content:
+        return False
     if entry.versioned:
         return True
     return entry.path.startswith("scripts/") and entry.path.endswith(".py")
@@ -975,6 +1064,7 @@ def compare_one(entry: BaselineFile, ctx: CompareContext) -> Comparison:
         dotted=ctx.dotted,
         compact=ctx.compact,
         ran_cleanup=ctx.ran_cleanup,
+        private_repo_deps=ctx.flags.private_repo_deps,
     )
     project_norm = normalize_project_text(project_text)
     if template_norm == project_norm:
@@ -1229,10 +1319,12 @@ def check_versioned_files(
     Runs before the main comparison so outdated copies (whose manifest and
     replay logic may lag the template) are refreshed first. When a script this
     program is running from -- this file or the ``_cli`` module it imports -- is
-    itself replaced, the script exits afterwards so the user re-runs the updated
-    version (with its current manifest). Entries tied to a declined feature
-    (:func:`is_applicable` is ``False``) are skipped entirely -- never offered
-    for copy, same as they're never reported as drift in the main comparison.
+    itself replaced, the script stops right then, before offering to update the
+    remaining versioned files or running the comparison, so the user re-runs the
+    updated version (with its current manifest and replay logic). Entries tied to
+    a declined feature (:func:`is_applicable` is ``False``) are skipped entirely
+    -- never offered for copy, same as they're never reported as drift in the
+    main comparison.
 
     Args:
         template_root: Root of the template checkout.
@@ -1247,7 +1339,6 @@ def check_versioned_files(
         normcase(normpath(str(Path(cli.__file__).resolve()))),
     }
     updated = 0
-    replaced_running = False
     for entry in versioned_entries():
         if not is_applicable(entry, flags):
             continue
@@ -1262,12 +1353,16 @@ def check_versioned_files(
         updated += 1
         project_path = normcase(normpath(str((project_root / entry.path).resolve())))
         if project_path in running_files:
-            replaced_running = True
+            # This script (or the _cli module it imports) was just replaced.
+            # Stop before touching the remaining versioned files or running the
+            # comparison: both rely on this file's now-stale manifest and replay
+            # logic. The freshly copied version re-checks everything next run.
+            print()
+            cli.warn(f"  Updated {entry.path}, which this program is running from.")
+            print("  Stopping now; re-run the script to use the new version.")
+            sys.exit(0)
     if updated == 0:
         cli.success("  All versioned files are up to date with the template.")
-    if replaced_running:
-        print("  A script this program runs from was updated; re-run it to use the new version.")
-        sys.exit(0)
 
 
 def build_context(
@@ -1489,14 +1584,16 @@ def open_diffs_in_vscode(
 # "Feature configuration" section.
 _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("mkdocs", "mkdocs"),
-    ("keyring", "keyring backend"),
-    ("keyvault", "Azure KeyVault backend"),
-    ("credentials", "credentials dispatcher"),
+    ("private_repo_deps", "private-repo-deps workflow steps"),
+    ("remote_disposable_scripts", "remote-disposability scripts"),
+    ("security_policy", "SECURITY.md"),
+    ("contributing_guide", "CONTRIBUTING.md"),
     ("hook_no_chained_pwsh", "no-chained-commands hook (powershell)"),
     ("hook_no_chained_bash", "no-chained-commands hook (bash)"),
     ("hook_canonical_pwsh", "canonical-commands hook (powershell)"),
     ("hook_canonical_bash", "canonical-commands hook (bash)"),
     ("hook_auto_memory", "auto-memory guard hook"),
+    ("hook_no_inline_secrets", "inline-suppression guard hook"),
 )
 
 

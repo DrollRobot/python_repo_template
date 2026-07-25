@@ -3,17 +3,28 @@
 # =============================================================================
 # This audit.yml is part of python_repo_template, a starter repo scaffold.
 #
-# Purpose: Runs `uv audit` on every push and pull request to main, checking
-# all locked dependencies against the OSV vulnerability database. Blocks
-# merges if any known vulnerability is found in the dependency tree.
+# Purpose: Runs the security gates on every push and pull request to main.
 #
-# No customization is required. To suppress a false positive, add a
-# pyproject.toml [tool.uv.audit] ignore entry with a justification comment.
+#   audit       -- `uv audit` checks all locked dependencies against the OSV
+#                  vulnerability database.
+#   secret-scan -- detect-secrets scans every tracked file, and enforces that
+#                  every .secrets.baseline entry is an audited false positive.
+#
+# GitHub setup (one-time, to make these gates actually block merges):
+#   1. Push this file so the workflow runs at least once.
+#   2. Settings -> Branches -> branch protection rule for main.
+#   3. Under "Require status checks to pass before merging", add both the
+#      "audit" and "secret-scan" statuses.
+#
+# Without branch protection these jobs report pass/fail but do not prevent
+# merging. To suppress a dependency false positive, add a pyproject.toml
+# [tool.uv.audit] ignore entry with a justification comment.
 # =============================================================================
 
 # .github/workflows/audit.yml
 
 name: Security audit
+run-name: Audit on ${{ github.ref_name }} ${{ github.event_name }} by @${{ github.actor }}
 
 on:
   push:
@@ -40,6 +51,7 @@ jobs:
           enable-cache: true
           version: "0.11.x"
 
+      # <private-repo-deps>
       # FIXME uncomment if using Github app tokens to access private repos
       # - name: Mint a token for private git deps
       #   id: app-token
@@ -59,9 +71,64 @@ jobs:
       #     git config --global \
       #       url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf \
       #       "https://github.com/"
+      # </private-repo-deps>
 
       - name: Sync dependencies
         run: uv sync --locked --all-groups
 
       - name: Audit dependencies
         run: uv audit
+
+  # Secret scanning.
+
+  # detect-secrets runs from the locked project environment (a dev
+  # dependency), so local pre-commit scans and CI use the same release.
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          version: "0.11.x"
+
+      - name: Sync dependencies
+        run: uv sync --locked --all-groups
+
+      # Fails if any tracked file contains a detection that is not already
+      # recorded in .secrets.baseline.
+      - name: Scan tracked files for new secrets
+        run: |
+          git ls-files -z | xargs -0 -r \
+            uv run detect-secrets-hook --baseline .secrets.baseline
+
+      # This blocks the two ways the baseline can be used to smuggle a secret
+      # past the scan above:
+      #   UNVERIFIED    -- entry added by `scan` that nobody reviewed
+      #   VERIFIED_TRUE -- entry a human confirmed is a real secret
+      - name: Require every baseline entry to be an audited false positive
+        run: |
+          uv run detect-secrets audit --report .secrets.baseline > secrets-report.json
+          python3 - <<'PY'
+          import json
+          import sys
+
+          with open("secrets-report.json", encoding="utf-8") as handle:
+              results = json.load(handle)["results"]
+
+          unresolved = [r for r in results if r["category"] != "VERIFIED_FALSE"]
+          for entry in unresolved:
+              types = ", ".join(entry["types"])
+              print(
+                  f"::error file={entry['filename']}::{entry['category']}: {types}. "
+                  "Audit it with `uv run detect-secrets audit .secrets.baseline` "
+                  "and remove the secret if it is real."
+              )
+
+          if unresolved:
+              sys.exit(1)
+
+          print(f"{len(results)} baseline entries, all audited as false positives.")
+          PY

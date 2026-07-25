@@ -20,6 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from compare_to_template import (
     _MARKER,
+    _PRIVATE_REPO_DEPS_END,
+    _PRIVATE_REPO_DEPS_START,
     MANIFEST,
     SETUP_CONFIG_REL,
     TEMPLATE_KEBAB,
@@ -37,7 +39,6 @@ from compare_to_template import (
     effective_strict,
     feature_flags_from_config,
     github_user_from_url,
-    infer_feature_flags,
     is_applicable,
     is_excluded,
     load_setup_config,
@@ -48,6 +49,7 @@ from compare_to_template import (
     python_version_forms,
     replace_case_insensitive,
     replay_cleanup_pyproject,
+    replay_private_repo_deps,
     replay_python_version,
     resolve_code,
     resolve_feature_flags,
@@ -80,27 +82,31 @@ def write(root: Path, rel: str, text: str) -> Path:
 def make_flags(
     *,
     mkdocs: bool = True,
-    keyring: bool = True,
-    keyvault: bool = True,
-    credentials: bool = True,
+    private_repo_deps: bool = True,
+    remote_disposable_scripts: bool = True,
+    security_policy: bool = True,
+    contributing_guide: bool = True,
     hook_no_chained_pwsh: bool = True,
     hook_no_chained_bash: bool = True,
     hook_canonical_pwsh: bool = True,
     hook_canonical_bash: bool = True,
     hook_auto_memory: bool = True,
+    hook_no_inline_secrets: bool = True,
     source: str = "test",
 ) -> FeatureFlags:
     """Build a FeatureFlags with every feature/hook on, unless overridden."""
     return FeatureFlags(
         mkdocs=mkdocs,
-        keyring=keyring,
-        keyvault=keyvault,
-        credentials=credentials,
+        private_repo_deps=private_repo_deps,
+        remote_disposable_scripts=remote_disposable_scripts,
+        security_policy=security_policy,
+        contributing_guide=contributing_guide,
         hook_no_chained_pwsh=hook_no_chained_pwsh,
         hook_no_chained_bash=hook_no_chained_bash,
         hook_canonical_pwsh=hook_canonical_pwsh,
         hook_canonical_bash=hook_canonical_bash,
         hook_auto_memory=hook_auto_memory,
+        hook_no_inline_secrets=hook_no_inline_secrets,
         source=source,
     )
 
@@ -305,6 +311,36 @@ def test_replay_cleanup_pyproject_tolerates_missing_snippets() -> None:
     assert replay_cleanup_pyproject(text) == text
 
 
+_PRIVATE_REPO_DEPS_BLOCK = (
+    f"      {_PRIVATE_REPO_DEPS_START}\n"
+    "      # FIXME uncomment if using Github app tokens to access private repos\n"
+    "      # - name: Mint a token for private git deps\n"
+    f"      # {_PRIVATE_REPO_DEPS_END}\n"
+)
+
+
+@pytest.mark.unit
+def test_replay_private_repo_deps_strips_block_from_known_workflow() -> None:
+    text = (
+        "      - name: Install uv\n"
+        "\n" + _PRIVATE_REPO_DEPS_BLOCK + "\n" + "      - name: Sync dependencies\n"
+    )
+    result = replay_private_repo_deps(".github/workflows/ci.yml", text)
+    assert result == ("      - name: Install uv\n\n      - name: Sync dependencies\n")
+
+
+@pytest.mark.unit
+def test_replay_private_repo_deps_leaves_unrelated_files_alone() -> None:
+    text = "      - name: Install uv\n\n" + _PRIVATE_REPO_DEPS_BLOCK + "\n"
+    assert replay_private_repo_deps("README.md", text) == text
+
+
+@pytest.mark.unit
+def test_replay_private_repo_deps_tolerates_missing_block() -> None:
+    text = "      - name: Install uv\n      - name: Sync dependencies\n"
+    assert replay_private_repo_deps(".github/workflows/ci.yml", text) == text
+
+
 # --- token mapping -------------------------------------------------------------
 
 
@@ -345,7 +381,7 @@ def test_effective_strict_demotes_mkdocs_edited_files_when_removed() -> None:
 
 @pytest.mark.unit
 def test_effective_strict_keeps_other_files_strict() -> None:
-    entry = BaselineFile("SECURITY.md")
+    entry = BaselineFile("CLAUDE.md")
     assert effective_strict(entry, has_mkdocs=False) is True
 
 
@@ -537,6 +573,39 @@ def test_compare_one_demotes_mkdocs_edited_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_compare_one_matches_after_private_repo_deps_removal(tmp_path: Path) -> None:
+    # Unlike mkdocs (demoted to "review"), a declined private_repo_deps still
+    # compares as a clean "match": the template side is stripped down to what
+    # remove_private_repo_deps.py leaves in the project, byte-for-byte.
+    ctx = make_ctx(tmp_path, flags=make_flags(private_repo_deps=False))
+    template = (
+        "      - name: Install uv\n\n" + _PRIVATE_REPO_DEPS_BLOCK + "\n"
+        "      - name: Sync dependencies\n"
+    )
+    project = "      - name: Install uv\n\n      - name: Sync dependencies\n"
+    write(ctx.template_root, ".github/workflows/ci.yml", template)
+    write(ctx.project_root, ".github/workflows/ci.yml", project)
+    result = compare_one(BaselineFile(".github/workflows/ci.yml"), ctx)
+    assert result.status == "match"
+
+
+@pytest.mark.unit
+def test_compare_one_reports_drift_when_private_repo_deps_kept_but_edited(tmp_path: Path) -> None:
+    # With the feature kept (the default), the block is never stripped from
+    # the template side, so a project that hand-edited it still shows drift.
+    ctx = make_ctx(tmp_path, flags=make_flags(private_repo_deps=True))
+    template = (
+        "      - name: Install uv\n\n" + _PRIVATE_REPO_DEPS_BLOCK + "\n"
+        "      - name: Sync dependencies\n"
+    )
+    project = "      - name: Install uv\n\n      - name: Sync dependencies\n"
+    write(ctx.template_root, ".github/workflows/ci.yml", template)
+    write(ctx.project_root, ".github/workflows/ci.yml", project)
+    result = compare_one(BaselineFile(".github/workflows/ci.yml"), ctx)
+    assert result.status == "modified"
+
+
+@pytest.mark.unit
 def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path)
     rel = f"docs/reference/{TEMPLATE_SNAKE}.md"
@@ -552,7 +621,7 @@ def test_compare_one_maps_renamed_paths(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_is_applicable_true_for_ungated_entries() -> None:
-    assert is_applicable(BaselineFile("SECURITY.md"), make_flags(mkdocs=False)) is True
+    assert is_applicable(BaselineFile("CLAUDE.md"), make_flags(mkdocs=False)) is True
 
 
 @pytest.mark.unit
@@ -565,7 +634,7 @@ def test_is_applicable_follows_the_matching_flag() -> None:
 @pytest.mark.unit
 def test_effective_required_uses_static_field_when_ungated() -> None:
     flags = make_flags()
-    assert effective_required(BaselineFile("SECURITY.md"), flags) is True
+    assert effective_required(BaselineFile("CLAUDE.md"), flags) is True
     assert effective_required(BaselineFile("extra.md", required=False), flags) is False
 
 
@@ -575,22 +644,28 @@ def test_effective_required_ignores_the_flag_for_gated_entries() -> None:
     # the entry in play (which implies the flag is True); as a pure function
     # it always reports a gated entry as required, trusting the caller to
     # have filtered out declined features first.
-    entry = BaselineFile("tests/_keyvault.py", gate="keyvault")
-    assert effective_required(entry, make_flags(keyvault=False)) is True
+    entry = BaselineFile("SECURITY.md", gate="security_policy")
+    assert effective_required(entry, make_flags(security_policy=False)) is True
 
 
 @pytest.mark.unit
 def test_compare_one_missing_is_drift_when_feature_kept(tmp_path: Path) -> None:
-    ctx = make_ctx(tmp_path, flags=make_flags(keyvault=True))
-    write(ctx.template_root, "tests/_keyvault.py", "content\n")
-    entry = BaselineFile("tests/_keyvault.py", gate="keyvault")
+    ctx = make_ctx(tmp_path, flags=make_flags(security_policy=True))
+    write(ctx.template_root, "SECURITY.md", "content\n")
+    entry = BaselineFile("SECURITY.md", gate="security_policy")
     assert compare_one(entry, ctx).status == "missing"
 
 
 @pytest.mark.unit
 def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     raw = {
-        "features": {"mkdocs": False, "keyring": True, "azure_keyvault": False},
+        "features": {
+            "mkdocs": False,
+            "private_repo_deps": False,
+            "remote_disposable_scripts": False,
+            "security_policy": False,
+            "contributing_guide": False,
+        },
         "claude": {
             "shell": "bash",
             "no_chained_commands": True,
@@ -600,9 +675,10 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     }
     flags = feature_flags_from_config(raw)
     assert flags.mkdocs is False
-    assert flags.keyring is True
-    assert flags.keyvault is False
-    assert flags.credentials is True  # keyring alone is enough
+    assert flags.private_repo_deps is False
+    assert flags.remote_disposable_scripts is False
+    assert flags.security_policy is False
+    assert flags.contributing_guide is False
     assert flags.hook_no_chained_bash is True
     assert flags.hook_no_chained_pwsh is False
     assert flags.hook_canonical_bash is False
@@ -611,20 +687,15 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
 
 
 @pytest.mark.unit
-def test_feature_flags_from_config_credentials_needs_at_least_one_backend() -> None:
-    raw = {"features": {"keyring": False, "azure_keyvault": False}}
-    assert feature_flags_from_config(raw).credentials is False
-
-
-@pytest.mark.unit
 def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
     # An unedited config's [features] table is all-true and [claude] hooks
     # are off; a config missing those tables entirely reads the same way.
     flags = feature_flags_from_config({})
     assert flags.mkdocs is True
-    assert flags.keyring is True
-    assert flags.keyvault is True
-    assert flags.credentials is True
+    assert flags.private_repo_deps is True
+    assert flags.remote_disposable_scripts is True
+    assert flags.security_policy is True
+    assert flags.contributing_guide is True
     assert flags.hook_no_chained_pwsh is False
     assert flags.hook_auto_memory is False
 
@@ -634,20 +705,6 @@ def test_feature_flags_from_config_tolerates_malformed_tables() -> None:
     flags = feature_flags_from_config({"features": "not a table", "claude": None})
     assert flags.mkdocs is True
     assert flags.hook_auto_memory is False
-
-
-@pytest.mark.unit
-def test_infer_feature_flags_reads_file_presence(tmp_path: Path) -> None:
-    write(tmp_path, "tests/_keyvault.py", "x\n")
-    write(tmp_path, ".claude/hooks/canonical-commands-bash.py", "x\n")
-
-    flags = infer_feature_flags(tmp_path)
-    assert flags.keyvault is True
-    assert flags.keyring is False
-    assert flags.mkdocs is False
-    assert flags.hook_canonical_bash is True
-    assert flags.hook_canonical_pwsh is False
-    assert flags.source == "inferred from file presence"
 
 
 @pytest.mark.unit
@@ -670,10 +727,9 @@ def test_load_setup_config_parses_valid_toml(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_resolve_feature_flags_prefers_config_over_inference(tmp_path: Path) -> None:
-    # The config says mkdocs is on even though no mkdocs.yml exists on disk
-    # yet (e.g. setup.toml was hand-edited without re-running
-    # setup_new_project.py) -- the config wins.
+def test_resolve_feature_flags_reads_config(tmp_path: Path) -> None:
+    # The config drives the result: mkdocs is on even though no mkdocs.yml
+    # exists on disk (the file presence is never consulted).
     write(tmp_path, SETUP_CONFIG_REL, "[features]\nmkdocs = true\n")
     flags = resolve_feature_flags(tmp_path)
     assert flags.source == SETUP_CONFIG_REL
@@ -681,11 +737,19 @@ def test_resolve_feature_flags_prefers_config_over_inference(tmp_path: Path) -> 
 
 
 @pytest.mark.unit
-def test_resolve_feature_flags_falls_back_when_config_absent(tmp_path: Path) -> None:
+def test_resolve_feature_flags_errors_when_config_absent(tmp_path: Path) -> None:
+    # A missing setup.toml is a hard error, not a cue to guess from file
+    # presence -- even when feature files exist on disk.
     write(tmp_path, "mkdocs.yml", "site_name: x\n")
-    flags = resolve_feature_flags(tmp_path)
-    assert flags.source == "inferred from file presence"
-    assert flags.mkdocs is True
+    with pytest.raises(SystemExit):
+        resolve_feature_flags(tmp_path)
+
+
+@pytest.mark.unit
+def test_resolve_feature_flags_errors_when_config_unparsable(tmp_path: Path) -> None:
+    write(tmp_path, SETUP_CONFIG_REL, "not [ valid toml")
+    with pytest.raises(SystemExit):
+        resolve_feature_flags(tmp_path)
 
 
 # --- manifest ------------------------------------------------------------------------
@@ -714,6 +778,17 @@ def test_carries_version_false_for_plain_files() -> None:
 
 
 @pytest.mark.unit
+def test_carries_version_false_for_existence_only_entries() -> None:
+    # A file whose contents are never compared must not be offered for
+    # overwrite by the version pre-flight either, whatever its path or flag.
+    assert carries_version(BaselineFile("scripts/helper.py", compare_content=False)) is False
+    assert (
+        carries_version(BaselineFile("tests/test_guard.py", versioned=True, compare_content=False))
+        is False
+    )
+
+
+@pytest.mark.unit
 def test_manifest_tracks_versioned_stub_guard() -> None:
     (guard,) = [e for e in MANIFEST if e.path == "tests/test_mypy_stub_guard.py"]
     assert guard.required is True
@@ -738,11 +813,49 @@ def test_manifest_readme_is_required_but_existence_only() -> None:
 
 
 @pytest.mark.unit
+def test_manifest_index_md_is_existence_only_and_gated_on_mkdocs() -> None:
+    # The docs landing page is rewritten wholesale per project, so its
+    # contents are never compared -- only its existence, and only when the
+    # project kept mkdocs.
+    (entry,) = [e for e in MANIFEST if e.path == "docs/index.md"]
+    assert entry.gate == "mkdocs"
+    assert entry.compare_content is False
+
+
+@pytest.mark.unit
 def test_manifest_setup_config_is_required_existence_only_and_ungated() -> None:
     (entry,) = [e for e in MANIFEST if e.path == SETUP_CONFIG_REL]
     assert entry.required is True
     assert entry.compare_content is False
     assert entry.gate is None
+
+
+@pytest.mark.unit
+def test_manifest_remote_disposable_pair_is_gated_and_existence_only() -> None:
+    # Both halves are deleted together by
+    # remove_remote_disposable_scripts.py, and their marker mechanism is
+    # filled in per project, so their contents always differ by design: only
+    # existence is checked, and they stay out of the version pre-flight.
+    paths = ("scripts/mark_remote_disposable.py", "tests/verify_remote_disposable.py")
+    entries = [e for e in MANIFEST if e.path in paths]
+    assert len(entries) == len(paths)
+    for entry in entries:
+        assert entry.gate == "remote_disposable_scripts"
+        assert entry.compare_content is False
+        assert carries_version(entry) is False
+
+
+@pytest.mark.unit
+def test_manifest_community_docs_are_gated_separately() -> None:
+    # SECURITY.md and CONTRIBUTING.md are independently removable at setup
+    # time, so each is gated on its own flag and compared strictly whenever
+    # the project kept it.
+    expected = {"SECURITY.md": "security_policy", "CONTRIBUTING.md": "contributing_guide"}
+    entries = [e for e in MANIFEST if e.path in expected]
+    assert len(entries) == len(expected)
+    for entry in entries:
+        assert entry.gate == expected[entry.path]
+        assert entry.strict is True
 
 
 @pytest.mark.unit
@@ -752,14 +865,15 @@ def test_manifest_gates_match_feature_flags_fields() -> None:
     # used by at least one entry, or it's dead code.
     valid_gates = {
         "mkdocs",
-        "keyring",
-        "keyvault",
-        "credentials",
+        "remote_disposable_scripts",
+        "security_policy",
+        "contributing_guide",
         "hook_no_chained_pwsh",
         "hook_no_chained_bash",
         "hook_canonical_pwsh",
         "hook_canonical_bash",
         "hook_auto_memory",
+        "hook_no_inline_secrets",
     }
     gates = {entry.gate for entry in MANIFEST if entry.gate is not None}
     assert gates == valid_gates

@@ -6,11 +6,19 @@ keep everything in one file.
 
 This module can also be run directly:
     uv run python -m python_repo_template --arg1 value
+
+Configuration comes from the config system (see
+``src/python_repo_template/config/``): non-secret values from the per-user
+config.toml, secrets from the OS keyring or Azure Key Vault, with env-var
+overrides for CI. The ``--profile`` flag below is the standard shape for
+multi-tenant use; keep it even if your project starts single-tenant.
 """
 
 from __future__ import annotations
 
 import argparse
+
+from python_repo_template.config import load_settings
 
 
 def main() -> None:
@@ -22,6 +30,11 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description="FIXME: describe what this tool does")
 
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="Config profile to use (default: default_profile from config.toml).",
+    )
     # FIXME: replace these arguments with ones that match your use case
     parser.add_argument("--arg1", required=True, help="FIXME: describe this argument")
     parser.add_argument(
@@ -33,8 +46,12 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # FIXME: call your core logic here
-    print(args.arg1, args.arg2)
+    # Fails loudly (naming the fix) when required config is missing.
+    settings = load_settings(profile=args.profile)
+
+    # FIXME: call your core logic here, e.g.
+    # client = ApiClient(settings.api_url, secret=settings.client_secret)
+    print(args.arg1, args.arg2, settings.api_url)
 
 
 # This block runs only when the file is executed directly, not when it is

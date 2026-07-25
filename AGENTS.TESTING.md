@@ -44,42 +44,26 @@ uv run mypy --platform linux        # type check as Linux
 
 # tests (destructive tests are skipped by default; see note below)
 uv run pytest -m "not live"         # offline tests
-uv run pytest                       # online and offline tests (when credentialed)
+uv run pytest                       # live and not-live tests (when credentialed)
 ```
 
 ## Destructive tests
-
-Destructive tests never run in the normal procedure above. There are two
-independent categories, mutating two different things, gated completely
-separately so that clearing one can never accidentally arm the other:
+Destructive tests never run in the normal procedure above. Two independent
+categories, each needing BOTH its own layers (flag + gate).
 
 | | `destructive_local` | `destructive_remote` |
 |---|---|---|
 | Mutates | This host/device | A remote/external system (cloud resource, database, API tenant, ...) |
 | Collection gate | `--run-destructive-local` | `--run-destructive-remote` |
-| Execution gate | `DISPOSABLE_ENVIRONMENT=1` (machine-wide env var) | `tests/verify_remote_disposable.py` exits 0 |
-
-Both categories require BOTH their own layers (flag + gate) to run. Neither
-category's gate says anything about the other: `DISPOSABLE_ENVIRONMENT` only
-describes this machine, and the remote check only describes whichever target
-this project's own configuration currently points at.
+| Execution gate | `DISPOSABLE_ENVIRONMENT=1` (env var) | `tests/verify_remote_disposable.py` exits 0 |
 
 ### Local destructive tests
-
-If the package contains `destructive_local` tests, check the
-`DISPOSABLE_ENVIRONMENT` environment variable.
-- `0` = User says this system is not disposable; never run `destructive_local` tests.
-- `1` = User has decided this system is disposable; ask user once per session if
-    `destructive_local` tests should be run.
-- Not set = the system has not been assessed. Do NOT run `destructive_local`
-    tests. Provide the user the commands below and ask them to set the
-    variable. Any value other than `1` (including typos or an unset variable)
-    is treated as non-disposable, so `0` is the safe choice.
-
-Use `0` on a normal machine (never run `destructive_local` tests here). Use `1`
-ONLY on a disposable VM/container you are willing to have mutated. The
-commands below show `0`; change it to `1` only on a throwaway host. Each takes
-effect in new sessions, not the shell that runs it.
+`DISPOSABLE_ENVIRONMENT` values:
+- `1` — user has declared this host disposable. Ask the user once per session
+    before running `destructive_local` tests.
+- `0` — not disposable. Never run them.
+- Not set — host not assessed. Never run them; give the user the commands
+    below and ask them to set the variable.
 ```
 # windows (admin PowerShell)
 [Environment]::SetEnvironmentVariable('DISPOSABLE_ENVIRONMENT','0','Machine')
@@ -90,58 +74,32 @@ echo 'DISPOSABLE_ENVIRONMENT=0' | sudo tee -a /etc/environment
 # macOS
 echo 'export DISPOSABLE_ENVIRONMENT=0' | sudo tee -a /etc/zprofile
 ```
-
 **Agents must NEVER set `DISPOSABLE_ENVIRONMENT` themselves.**
 
-If the package contains `destructive_local` tests, the variable is set, and
-the user has approved running them in this session, run:
+Once the variable is `1` and the user has approved in the current session, run freely:
 ```
 uv run pytest --run-destructive-local
 ```
 
 ### Remote destructive tests
+The target is whatever this project's configuration points at, so no local
+variable can vouch for it — repointing the config would carry a local flag to
+an unmarked or production target. The marker lives on the remote target
+itself, in whatever form that system supports (resource tag, marker row,
+tenant custom field, ...). Two scripts:
 
-`destructive_remote` tests mutate a remote/external system that this
-project's own configuration points at (environment variables, a settings
-file, IaC state, ... — there is no guarantee a given project even uses a
-`.env` file), not this host, so gating them on a local variable would be the
-wrong fix in the opposite direction: whether a remote target is safe to
-destroy has nothing to do with this machine, and a local flag would silently
-follow that configuration to a different, unmarked (or worse, production)
-target.
+- `scripts/mark_remote_disposable.py` — For human use only, during setup.
+- `tests/verify_remote_disposable.py` — Checked with every
+  `pytest --run-destructive-remote` call. If it fails, tests won't run.
 
-Instead, the remote target itself carries the marker, in whatever form that
-system supports (a resource tag, a database marker row, a custom field on an
-API tenant, ...). Each project supplies a pair of scripts:
+Both ship as stubs (the marker mechanism is project-specific) — see the FIXME
+in each docstring. Until `verify_remote_disposable.py` is implemented,
+`destructive_remote` tests fail closed.
 
-- `scripts/mark_remote_disposable.py` — run manually, rarely (once per
-  target, or to renew an expiring marker). Confirms with a human, then writes
-  the marker onto the actual remote resource the project is currently
-  configured to point at.
-- `tests/verify_remote_disposable.py` — run automatically by the test
-  suite the first time a `destructive_remote` test executes in a session.
-  Reads the marker back from that same resource and exits 0 if present and
-  unexpired, non-zero otherwise. Its exit code is the only thing pytest
-  reads. It lives in `tests/`, not `scripts/`, because its only caller is
-  the test suite's own gate.
+**Agents must NEVER run `mark_remote_disposable.py` or attempt to mark a remote**
+**resource as disposable**
 
-Both ship as stubs in this template (the marker mechanism is project- and
-system-specific) — see the FIXME in each script's docstring. Until
-`tests/verify_remote_disposable.py` is implemented, `destructive_remote` tests fail
-closed with a clear message.
-
-**Agents must NEVER implement `mark_remote_disposable.py`'s case-by-case
-logic, or run it, without the user's explicit direction.** Its entire job is
-asserting "it is safe to destroy this remote thing" — treat it with at least
-the same caution as `DISPOSABLE_ENVIRONMENT` above, not less.
-
-If the package contains `destructive_remote` tests and the user has approved
-running them in this session, run:
+If the user has approved running destructive tests in the current session, run freely:
 ```
 uv run pytest --run-destructive-remote
-```
-
-Running both categories together: pass both flags.
-```
-uv run pytest --run-destructive-local --run-destructive-remote
 ```

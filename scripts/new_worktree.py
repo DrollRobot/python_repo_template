@@ -4,7 +4,9 @@ Intended for running multiple agents in parallel: each gets its own checkout
 on its own branch, forked from current upstream. A VS Code workspace is
 generated (copied from the repo's existing one where possible), forced to
 point only at its own worktree, and kept out of git via the shared
-.git/info/exclude.
+.git/info/exclude. An empty '.local/' scratch directory is created for files
+that belong to this worktree alone; the repo's '*.local*' .gitignore rule keeps
+it untracked.
 
 Before creating the worktree it syncs the base branch: if your local base is
 ahead of origin it offers to push (so the new worktree, forked from
@@ -44,7 +46,12 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.3.0"
+__version__ = "1.4.0"
+
+# Scratch directory created in every worktree, for files that stay local to it.
+# The repo's '*.local*' .gitignore rule keeps its contents out of git. Git does
+# not check out empty directories, so each worktree needs its own created here.
+LOCAL_DIR = ".local"
 
 
 def slug_arg(value: str) -> str:
@@ -258,9 +265,18 @@ def main() -> None:
     # --- step: create the worktree ------------------------------------------------
 
     cli.section("Step: create worktree")
-    cli.step(f"Create worktree at '{wt_path}' on new branch '{branch}' from 'origin/{args.base}'?")
+    cli.step(
+        f"Create worktree at '{wt_path}' on new branch '{branch}' from "
+        f"'origin/{args.base}' (with a '{LOCAL_DIR}/' scratch directory)?"
+    )
     wt_home.mkdir(parents=True, exist_ok=True)
     cli.run(["git", "worktree", "add", "-b", branch, str(wt_path), f"origin/{args.base}"])
+
+    # Created in this step rather than the bootstrap block below, so it exists
+    # even under --no-bootstrap.
+    local_path = wt_path / LOCAL_DIR
+    cli.echo(f"create {local_path}")
+    local_path.mkdir(exist_ok=True)
 
     # --- step: generate the workspace ---------------------------------------------
 

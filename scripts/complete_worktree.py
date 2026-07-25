@@ -1,22 +1,21 @@
 """Interactively complete a worktree: verify, push, and open a pull request.
 
-Picks up where the agent leaves off. Once the feature/fix is committed and a
-PR description has been written to PR.md, this walks through the remaining
-steps one at a time. Before each action it shows what is about to happen and
-prompts for confirmation (y/n); answering 'n' aborts without taking the
-remaining steps. The output of every git and gh command is shown.
+Once the feature/fix is committed and a PR description has been written to
+.local/PR.md, this walks through the remaining steps one at a time. Before each
+action it shows what is about to happen and prompts for confirmation (y/n);
+answering 'n' aborts without taking the remaining steps. The output of every
+git and gh command is shown.
 
-The procedure mirrors AGENTS.WORKTREE.md:
+The procedure:
   1. Confirm we are on a wt/ branch in a worktree (never main/develop).
-  2. Verify the working tree is clean — everything is committed. PR.md itself
-     is exempt; it may stay uncommitted since it only feeds `gh pr create`.
+  2. Verify the working tree is clean — everything is committed.
   3. Resolve the PR base from the branch's UPSTREAM *before* pushing, since
      `git push -u` repoints tracking. Refuses to target main.
-  4. Show the PR.md body and confirm the title.
+  4. Show the PR body and confirm the title.
   5. Push the branch with -u.
-  6. Open the PR with `gh pr create --base <base> --body-file PR.md`.
-  7. Report the PR URL and stop. The worktree is NOT cleaned up — that is
-     left to the user, per AGENTS.WORKTREE.md.
+  6. Open the PR with `gh pr create --base <base> --body-file .local/PR.md`.
+  7. Report the PR URL and stop. The worktree is NOT cleaned up; that is left
+     to the user.
 
 Pass -y/--yes to answer every prompt with 'y' for non-interactive use.
 
@@ -24,7 +23,7 @@ Cross-device handoff (push on one device, open the PR on another) — for when
 the device with the worktree has no authenticated gh, and nothing may leave the
 repo:
   - On the device with the worktree, run --push-pr-to-notes. It verifies and
-    pushes the branch, then attaches PR.md (with the base and title) as a
+    pushes the branch, then attaches the PR body (with the base and title) as a
     per-slug git note (refs/notes/pr-body-<slug>) and pushes that note to
     origin. The note rides on the commit, so it never appears in the PR diff;
     one ref per slug means concurrent PRs never collide. No PR is created and
@@ -44,10 +43,11 @@ Usage:
 
 Requirements:
     - Run from inside the worktree, on a wt/ branch with all work committed
-      (PR.md itself does not need to be committed).
+      (the PR body file itself does not need to be committed).
     - `git` and `gh` installed and authenticated (gh is NOT needed for
       --push-pr-to-notes or --web-from-notes).
-    - A PR.md body file written by the agent at the worktree root.
+    - A PR body file at .local/PR.md in the worktree, opening with fenced
+      front-matter that sets the PR title.
 """
 
 from __future__ import annotations
@@ -66,12 +66,14 @@ import _cli as cli
 
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
-# breaking CLI change. 1.1.0 ports the --push-pr-to-notes/--gh-from-notes/
-# --web-from-notes cross-device handoff from Complete-WorkTree.ps1. 1.3.0
-# reads the PR title from fenced 'title:' front-matter in the PR body file (was
-# the subject of the last commit); the same fenced format is used for the note,
-# so one parser handles both. Errors out if no title is present (no fallback).
-__version__ = "1.3.0"
+# breaking CLI change.
+__version__ = "1.4.0"
+
+# Default location of the PR description, relative to the worktree root and
+# overridable with --body-file. It lives under .local/ so the repo's '*.local*'
+# .gitignore rule keeps it untracked: the file only feeds `gh pr create` and
+# must never land in the PR diff.
+PR_FILE_PATH = ".local/PR.md"
 
 # The cross-device PR-body handoff stores one note per slug
 # (refs/notes/pr-body-<slug>) so concurrent PRs never share -- or force-push
@@ -307,8 +309,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--body-file",
-        default="PR.md",
-        help="path to the PR body file (default: PR.md at the worktree root)",
+        default=PR_FILE_PATH,
+        help=f"path to the PR body file (default: {PR_FILE_PATH}, relative to the worktree root)",
     )
     parser.add_argument("--draft", action="store_true", help="open the PR as a draft")
     parser.add_argument(
@@ -320,7 +322,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--push-pr-to-notes",
         action="store_true",
-        help="device A: push the branch and attach PR.md as a 'pr-body' note (no PR, no gh)",
+        help="device A: push the branch and attach the PR body as a 'pr-body' note (no PR, no gh)",
     )
     parser.add_argument(
         "--gh-from-notes",
@@ -388,7 +390,8 @@ def create_from_notes(args: argparse.Namespace) -> None:
     if not title:
         cli.die(
             f"No PR title in the '{ref}' note (missing 'title:' front-matter). "
-            "Re-run --push-pr-to-notes with a PR.md whose front-matter sets the title."
+            f"Re-run --push-pr-to-notes with a {PR_FILE_PATH} whose front-matter "
+            "sets the title."
         )
 
     cli.info("Slug", slug)
@@ -546,13 +549,13 @@ def main() -> None:
     if not body_path.exists():
         cli.die(
             f"PR body file not found: {body_path}. "
-            "Have the agent write the PR description to PR.md first."
+            f"Write the PR description to {PR_FILE_PATH} first."
         )
     raw_body = body_path.read_text(encoding="utf-8-sig")
     if not raw_body.strip():
         cli.die(f"PR body file is empty: {body_path}.")
-    # PR.md carries the title in fenced front-matter; the body sent to gh is
-    # everything after the closing fence.
+    # The body file carries the title in fenced front-matter; the body sent to
+    # gh is everything after the closing fence.
     _, fm_title, body_text = parse_front_matter(raw_body)
     cli.info("Body file", str(body_path))
     print()

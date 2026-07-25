@@ -28,6 +28,7 @@
 # .github/workflows/ci.yml
 
 name: CI
+run-name: CI on ${{ github.ref_name }} ${{ github.event_name }} by @${{ github.actor }}
 
 on:
   push:
@@ -58,6 +59,7 @@ jobs:
           enable-cache: true
           version: "0.11.x"
 
+      # <private-repo-deps>
       # FIXME uncomment if using Github app tokens to access private repos
       # - name: Mint a token for private git deps
       #   id: app-token
@@ -77,6 +79,7 @@ jobs:
       #     git config --global \
       #       url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf \
       #       "https://github.com/"
+      # </private-repo-deps>
 
       - name: Sync dependencies
         run: uv sync --locked --all-groups

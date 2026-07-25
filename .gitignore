@@ -1,6 +1,6 @@
 
-*.env.*
-!.env.example
+# ignore .local files
+*.local*
 
 
 # Byte-compiled / optimized / DLL files
@@ -140,7 +140,6 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
 .envrc
 .venv
 env/

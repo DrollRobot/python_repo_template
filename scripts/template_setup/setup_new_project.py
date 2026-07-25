@@ -20,11 +20,15 @@ reading it afterward to know which optional features this project kept.
 Steps always execute in this order, regardless of the config file's own
 table order: strip template headers -> rename -> set GitHub user -> set
 Python version -> set project version -> reset changelog -> Claude command
-hooks -> Claude auto-memory guard -> choose license -> remove mkdocs (if
+hooks -> Claude auto-memory guard -> Claude inline-suppression guard -> choose
+license -> remove mkdocs (if
 declined) -> remove keyring backend (if declined) -> remove KeyVault backend
 (if declined) -> remove the credentials dispatcher (only once both backends
-above are declined) -> re-initialize git (if requested). A read-only FIXME
-report always runs last, whether or not anything failed.
+above are declined) -> remove private-repo-deps workflow steps (if declined)
+-> remove the remote-disposability scripts (if declined) -> remove SECURITY.md
+(if declined) -> remove CONTRIBUTING.md (if declined) -> re-initialize git (if
+requested). A read-only FIXME report always runs last, whether or not anything
+failed.
 
 Each step is also runnable on its own with its own prompts/flags -- see that
 script's module docstring (e.g. ``remove_mkdocs.py``). This script does NOT
@@ -52,18 +56,19 @@ import _common
 import choose_license
 import choose_shell
 import find_fixmes
-import protect_auto_memory
 import reinit_git
-import remove_credentials
-import remove_keyring
-import remove_keyvault
+import remove_contributing_guide
 import remove_mkdocs
+import remove_private_repo_deps
+import remove_remote_disposable_scripts
+import remove_security_policy
 import rename_project
 import reset_changelog
 import set_github_user
 import set_python_version
 import set_version
 import strip_template_headers
+import wire_hook
 
 CONFIG_FILENAME = "setup.toml"
 
@@ -84,9 +89,12 @@ class Config:
     no_chained_commands: bool
     canonical_commands: bool
     auto_memory_guard: bool
+    no_inline_secret_suppressions: bool
     mkdocs: bool
-    keyring: bool
-    azure_keyvault: bool
+    private_repo_deps: bool
+    remote_disposable_scripts: bool
+    security_policy: bool
+    contributing_guide: bool
     reinit: bool
     branch: str
 
@@ -96,7 +104,8 @@ class PlannedStep:
     """One orchestrated setup step, already bound to config values.
 
     Attributes:
-        key: The step's module name, e.g. ``rename_project``.
+        key: The step's module name, e.g. ``rename_project`` -- or, for the
+            hook toggles, the ``wire_hook`` key, e.g. ``auto_memory_guard``.
         label: One-line description shown in the preview/summary.
         call: Runs the step; ``call(root, dry_run)`` forwards to the
             underlying script's own ``run(..., assume_yes=True, dry_run=...)``.
@@ -229,10 +238,15 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
     no_chained_commands = _require_bool(claude, "no_chained_commands", "claude", problems)
     canonical_commands = _require_bool(claude, "canonical_commands", "claude", problems)
     auto_memory_guard = _require_bool(claude, "auto_memory_guard", "claude", problems)
+    no_inline_secrets = _require_bool(claude, "no_inline_secret_suppressions", "claude", problems)
 
     mkdocs = _require_bool(features, "mkdocs", "features", problems)
-    keyring = _require_bool(features, "keyring", "features", problems)
-    azure_keyvault = _require_bool(features, "azure_keyvault", "features", problems)
+    private_repo_deps = _require_bool(features, "private_repo_deps", "features", problems)
+    remote_disposable_scripts = _require_bool(
+        features, "remote_disposable_scripts", "features", problems
+    )
+    security_policy = _require_bool(features, "security_policy", "features", problems)
+    contributing_guide = _require_bool(features, "contributing_guide", "features", problems)
 
     reinit = _require_bool(git, "reinit", "git", problems)
     branch = _require_str(git, "branch", "git", problems)
@@ -305,9 +319,12 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
             no_chained_commands=no_chained_commands,
             canonical_commands=canonical_commands,
             auto_memory_guard=auto_memory_guard,
+            no_inline_secret_suppressions=no_inline_secrets,
             mkdocs=mkdocs,
-            keyring=keyring,
-            azure_keyvault=azure_keyvault,
+            private_repo_deps=private_repo_deps,
+            remote_disposable_scripts=remote_disposable_scripts,
+            security_policy=security_policy,
+            contributing_guide=contributing_guide,
             reinit=reinit,
             branch=branch,
         ),
@@ -408,16 +425,23 @@ def _step_choose_shell(config: Config) -> PlannedStep:
     return PlannedStep("choose_shell", _shell_label(config), call)
 
 
-def _step_memory_guard(config: Config) -> PlannedStep:
-    """Build the auto-memory-guard step, bound to ``config.auto_memory_guard``."""
+def _step_hook_toggle(key: str, wanted: bool) -> PlannedStep:
+    """Build a step that wires one standalone hook in, or removes it.
+
+    Args:
+        key: The :data:`wire_hook.HOOKS` key identifying the hook.
+        wanted: Whether the config asked for it.
+
+    Returns:
+        The planned step, keyed by the hook's own key.
+    """
+    spec = wire_hook.by_key(key)
 
     def call(root: Path, dry_run: bool) -> int:
-        return protect_auto_memory.run(
-            root, install=config.auto_memory_guard, assume_yes=True, dry_run=dry_run
-        )
+        return wire_hook.toggle(root, spec, install=wanted, assume_yes=True, dry_run=dry_run)
 
-    state = "on" if config.auto_memory_guard else "off"
-    return PlannedStep("protect_auto_memory", f"Claude auto-memory guard: {state}", call)
+    state = "on" if wanted else "off"
+    return PlannedStep(key, f"Claude {spec.title}: {state}", call)
 
 
 def _step_license(config: Config) -> PlannedStep:
@@ -446,31 +470,42 @@ def _step_remove_mkdocs() -> PlannedStep:
     return PlannedStep("remove_mkdocs", "Remove mkdocs (documentation site)", call)
 
 
-def _step_remove_keyring() -> PlannedStep:
-    """Build the keyring-backend-removal step (only included when declined)."""
+def _step_remove_private_repo_deps() -> PlannedStep:
+    """Build the private-repo-deps-removal step (only included when declined)."""
 
     def call(root: Path, dry_run: bool) -> int:
-        return remove_keyring.run(root, assume_yes=True, dry_run=dry_run)
+        return remove_private_repo_deps.run(root, assume_yes=True, dry_run=dry_run)
 
-    return PlannedStep("remove_keyring", "Remove keyring credential backend", call)
-
-
-def _step_remove_keyvault() -> PlannedStep:
-    """Build the KeyVault-backend-removal step (only included when declined)."""
-
-    def call(root: Path, dry_run: bool) -> int:
-        return remove_keyvault.run(root, assume_yes=True, dry_run=dry_run)
-
-    return PlannedStep("remove_keyvault", "Remove Azure KeyVault backend", call)
+    return PlannedStep("remove_private_repo_deps", "Remove private-repo-deps workflow steps", call)
 
 
-def _step_remove_credentials() -> PlannedStep:
-    """Build the dispatcher-removal step (only included when both backends are declined)."""
+def _step_remove_remote_disposable_scripts() -> PlannedStep:
+    """Build the remote-disposability-scripts-removal step (only included when declined)."""
 
     def call(root: Path, dry_run: bool) -> int:
-        return remove_credentials.run(root, assume_yes=True, dry_run=dry_run)
+        return remove_remote_disposable_scripts.run(root, assume_yes=True, dry_run=dry_run)
 
-    return PlannedStep("remove_credentials", "Remove the credentials dispatcher", call)
+    return PlannedStep(
+        "remove_remote_disposable_scripts", "Remove remote-disposability scripts", call
+    )
+
+
+def _step_remove_security_policy() -> PlannedStep:
+    """Build the security-policy-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_security_policy.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_security_policy", "Remove SECURITY.md", call)
+
+
+def _step_remove_contributing_guide() -> PlannedStep:
+    """Build the contributor-guide-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_contributing_guide.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_contributing_guide", "Remove CONTRIBUTING.md", call)
 
 
 def _step_reinit_git(config: Config) -> PlannedStep:
@@ -487,7 +522,7 @@ def _step_reinit_git(config: Config) -> PlannedStep:
 def build_steps(config: Config) -> tuple[PlannedStep, ...]:
     """Build the ordered, config-bound steps for one run.
 
-    Every step except the three removable features and ``reinit_git`` always
+    Every step except the removable features and ``reinit_git`` always
     runs. ``find_fixmes`` is intentionally not included here -- it is
     read-only and always runs once, separately, after a successful apply,
     never gated by the confirmation.
@@ -506,17 +541,20 @@ def build_steps(config: Config) -> tuple[PlannedStep, ...]:
         _step_version(config),
         _step_reset_changelog(),
         _step_choose_shell(config),
-        _step_memory_guard(config),
+        _step_hook_toggle("auto_memory_guard", config.auto_memory_guard),
+        _step_hook_toggle("no_inline_secrets", config.no_inline_secret_suppressions),
         _step_license(config),
     ]
     if not config.mkdocs:
         steps.append(_step_remove_mkdocs())
-    if not config.keyring:
-        steps.append(_step_remove_keyring())
-    if not config.azure_keyvault:
-        steps.append(_step_remove_keyvault())
-    if not config.keyring and not config.azure_keyvault:
-        steps.append(_step_remove_credentials())
+    if not config.private_repo_deps:
+        steps.append(_step_remove_private_repo_deps())
+    if not config.remote_disposable_scripts:
+        steps.append(_step_remove_remote_disposable_scripts())
+    if not config.security_policy:
+        steps.append(_step_remove_security_policy())
+    if not config.contributing_guide:
+        steps.append(_step_remove_contributing_guide())
     if config.reinit:
         steps.append(_step_reinit_git(config))
     return tuple(steps)
