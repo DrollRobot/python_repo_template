@@ -1,5 +1,5 @@
 
-# ignore .local files
+# ignore any .local files
 *.local*
 
 

@@ -105,6 +105,7 @@ repos:
   # Pre-push checks
   - repo: local
     hooks:
+      # uv lock file verification
       - id: uv-lock-check
         name: uv lock --locked
         entry: uv lock --locked
@@ -113,6 +114,7 @@ repos:
         pass_filenames: false
         always_run: true
 
+      # dependency vulnerability checking
       - id: uv-audit
         name: uv audit
         entry: uv audit
@@ -121,6 +123,7 @@ repos:
         pass_filenames: false
         always_run: true
 
+      # run non-slow, non-live pytest
       - id: pytest-prepush
         name: pytest (prepush)
         entry: uv run pytest -m "not live and not slow and not destructive_local and not destructive_remote"
