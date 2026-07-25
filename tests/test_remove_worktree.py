@@ -19,6 +19,7 @@ from remove_worktree import (
     diverged_copies,
     is_env_name,
     open_worktree_slugs,
+    parse_args,
     parse_choice,
     parse_worktrees,
     slug_arg,
@@ -283,3 +284,27 @@ def test_diverged_preserves_input_order(tmp_path: Path) -> None:
         (".env", "differs from main repo"),
         (".env.prod", "absent from main repo"),
     ]
+
+
+# --- parse_args ----------------------------------------------------------------------
+
+
+def test_parse_args_defaults_to_remote_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without --no-remote the teardown pulls and prunes against origin."""
+    monkeypatch.setattr(sys, "argv", ["remove_worktree.py", "issue-42"])
+    args = parse_args()
+    assert args.slug == "issue-42"
+    assert args.no_remote is False
+
+
+def test_parse_args_accepts_no_remote(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--no-remote is accepted alongside a slug."""
+    monkeypatch.setattr(sys, "argv", ["remove_worktree.py", "issue-42", "--no-remote"])
+    assert parse_args().no_remote is True
+
+
+def test_parse_args_still_requires_a_slug_with_yes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """-y without a slug is an error; --no-remote does not change that."""
+    monkeypatch.setattr(sys, "argv", ["remove_worktree.py", "-y", "--no-remote"])
+    with pytest.raises(SystemExit):
+        parse_args()

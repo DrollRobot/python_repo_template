@@ -13,6 +13,10 @@ ahead of origin it offers to push (so the new worktree, forked from
 origin/<base>, includes those commits), warns if the base has diverged, and
 warns about uncommitted changes that can never transfer to a worktree.
 
+Pass --no-remote for a repository with no origin (or to stay local): the fetch
+and the base-branch push are skipped and the worktree forks from the local
+<base> branch instead of origin/<base>.
+
 Walks through the steps one at a time. Before each action it shows what is
 about to happen and prompts for confirmation (y/n); answering 'n' aborts
 without taking the remaining steps (anything already created is left in
@@ -25,6 +29,7 @@ Usage:
     python scripts/new_worktree.py fix/login develop
     python scripts/new_worktree.py issue-42 --no-bootstrap
     python scripts/new_worktree.py issue-42 -y
+    python scripts/new_worktree.py issue-42 --no-remote
 
 Worktrees are created in a sibling '<repo>-wt' folder, on 'wt/<slug>' branches,
 forked from 'develop' (or the base branch given as the second argument).
@@ -46,7 +51,7 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 # Scratch directory created in every worktree, for files that stay local to it.
 # The repo's '*.local*' .gitignore rule keeps its contents out of git. Git does
@@ -95,6 +100,11 @@ def parse_args() -> argparse.Namespace:
         "--no-bootstrap",
         action="store_true",
         help="skip the per-worktree dependency install",
+    )
+    parser.add_argument(
+        "--no-remote",
+        action="store_true",
+        help="work locally only: fork from the local base branch, with no fetch or push",
     )
     parser.add_argument(
         "-y",
@@ -198,13 +208,18 @@ def main() -> None:
 
     # --- setup summary ----------------------------------------------------------
 
+    # With --no-remote the worktree forks from the local base branch, since
+    # there is no origin/<base> to fork from.
+    fork_point = args.base if args.no_remote else f"origin/{args.base}"
+
     cli.section("Worktree setup")
     cli.info("Slug", args.slug)
     cli.info("Branch", branch)
-    cli.info("Base", f"origin/{args.base}")
+    cli.info("Base", fork_point)
     cli.info("Worktree", str(wt_path))
     cli.info("Workspace", str(ws_file))
     cli.info("Bootstrap", "no (--no-bootstrap)" if args.no_bootstrap else "yes")
+    cli.info("Remote", "skipped (--no-remote)" if args.no_remote else "origin")
 
     # --- guards -----------------------------------------------------------------
 
@@ -216,8 +231,11 @@ def main() -> None:
     # --- step: fetch origin -------------------------------------------------------
 
     cli.section("Step: fetch origin")
-    cli.step("Fetch 'origin'?")
-    cli.run(["git", "fetch", "origin"])
+    if args.no_remote:
+        cli.info("Skipped", "--no-remote; origin is not contacted")
+    else:
+        cli.step("Fetch 'origin'?")
+        cli.run(["git", "fetch", "origin"])
 
     # --- step: sync base with origin ----------------------------------------------
 
@@ -237,7 +255,13 @@ def main() -> None:
     local_base = cli.capture_ok(["git", "rev-parse", "--verify", f"refs/heads/{args.base}"])
     remote_base = cli.capture_ok(["git", "rev-parse", "--verify", f"refs/remotes/{remote_ref}"])
 
-    if local_base is None:
+    if args.no_remote:
+        # Nothing to sync: the worktree forks from the local base directly, so
+        # the only requirement is that the local base exists.
+        if local_base is None:
+            cli.die(f"No local '{args.base}' branch to fork from (--no-remote).")
+        cli.info("Base sync", f"skipped (--no-remote); forking from local '{args.base}'")
+    elif local_base is None:
         cli.info("Base sync", f"no local '{args.base}' branch; will fork from {remote_ref}")
     elif remote_base is None:
         cli.warn(f"  origin has no '{args.base}' branch yet.")
@@ -267,10 +291,10 @@ def main() -> None:
     cli.section("Step: create worktree")
     cli.step(
         f"Create worktree at '{wt_path}' on new branch '{branch}' from "
-        f"'origin/{args.base}' (with a '{LOCAL_DIR}/' scratch directory)?"
+        f"'{fork_point}' (with a '{LOCAL_DIR}/' scratch directory)?"
     )
     wt_home.mkdir(parents=True, exist_ok=True)
-    cli.run(["git", "worktree", "add", "-b", branch, str(wt_path), f"origin/{args.base}"])
+    cli.run(["git", "worktree", "add", "-b", branch, str(wt_path), fork_point])
 
     # Created in this step rather than the bootstrap block below, so it exists
     # even under --no-bootstrap.

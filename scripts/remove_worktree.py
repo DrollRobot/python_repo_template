@@ -19,6 +19,10 @@ Steps:
   3. Delete branch    - git branch -D wt/<slug>
   4. Prune stale refs - git fetch --prune
 
+Pass --no-remote for a repository with no origin (or to stay local): the pull
+in step 1 and the prune in step 4 are skipped, and the step-3 guard compares
+the branch against the local integration branch instead of origin.
+
 Before each destructive step it warns about work that the force flags would
 otherwise discard silently: uncommitted changes in the worktree (step 2) and
 commits on the branch that were never pushed to origin (step 3). Each warning
@@ -47,6 +51,7 @@ Usage:
     python scripts/remove_worktree.py issue-42
     python scripts/remove_worktree.py fix/login
     python scripts/remove_worktree.py issue-42 -y
+    python scripts/remove_worktree.py issue-42 --no-remote
     python scripts/remove_worktree.py
 
 Paths and names mirror new_worktree.py: the sibling '<repo>-wt' folder and
@@ -70,7 +75,7 @@ import _cli as cli
 # (not symlinked) config file in the worktree - .env / .env.* or a linked
 # .vscode file - differs from the main repo, so force-removal never silently
 # discards those untracked/gitignored edits.
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 
 def slug_arg(value: str) -> str:
@@ -115,6 +120,11 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         default="develop",
         help="integration branch to refresh, that the PR was merged into (default: develop)",
+    )
+    parser.add_argument(
+        "--no-remote",
+        action="store_true",
+        help="work locally only: skip the pull and the prune, and guard against the local base",
     )
     parser.add_argument(
         "-y",
@@ -373,6 +383,7 @@ def main() -> None:
     cli.info("Worktree", str(wt_path))
     cli.info("Integration branch", args.base)
     cli.info("Main worktree", main_repo)
+    cli.info("Remote", "skipped (--no-remote)" if args.no_remote else "origin")
 
     # --- preflight: figure out what actually still exists -----------------------
 
@@ -437,8 +448,11 @@ def main() -> None:
     if current != args.base:
         cli.step(f"Switch from '{current_label}' to '{args.base}'?")
         cli.run(["git", "switch", args.base])
-    cli.step(f"Pull '{args.base}' from origin (fast-forward only)?")
-    cli.run(["git", "pull", "--ff-only", "origin", args.base])
+    if args.no_remote:
+        cli.info("Pull", "skipped (--no-remote)")
+    else:
+        cli.step(f"Pull '{args.base}' from origin (fast-forward only)?")
+        cli.run(["git", "pull", "--ff-only", "origin", args.base])
 
     # --- step 2: remove the worktree --------------------------------------------
 
@@ -469,7 +483,19 @@ def main() -> None:
         # force, though, will discard a branch whose commits never reached
         # origin, so warn about unpushed work before deleting.
         remote_ref = f"refs/remotes/origin/{branch}"
-        if cli.capture_ok(["git", "rev-parse", "--verify", "--quiet", remote_ref]):
+        if args.no_remote:
+            # No origin to compare against, so the local integration branch is
+            # the only record of merged work: commits on the branch that are
+            # not in it would be lost by the force-delete.
+            unmerged = int(cli.capture(["git", "rev-list", "--count", f"{args.base}..{branch}"]))
+            if unmerged > 0:
+                cli.warn(
+                    f"  '{branch}' has {unmerged} commit(s) not in '{args.base}'; "
+                    "force-deleting will lose them."
+                )
+                if not cli.confirm("  Force-delete anyway?"):
+                    cli.die(f"Aborted: merge the branch into '{args.base}' first.")
+        elif cli.capture_ok(["git", "rev-parse", "--verify", "--quiet", remote_ref]):
             rng = f"origin/{branch}..{branch}"
             unpushed = int(cli.capture(["git", "rev-list", "--count", rng]))
             if unpushed > 0:
@@ -492,8 +518,11 @@ def main() -> None:
     # --- step 4: prune stale remote-tracking refs -------------------------------
 
     cli.section("Step: prune")
-    cli.step("Fetch and prune deleted remote branches?")
-    cli.run(["git", "fetch", "--prune"])
+    if args.no_remote:
+        cli.info("Skipped", "--no-remote; origin is not contacted")
+    else:
+        cli.step("Fetch and prune deleted remote branches?")
+        cli.run(["git", "fetch", "--prune"])
 
     # --- done -------------------------------------------------------------------
 
