@@ -87,6 +87,9 @@ def write(root: Path, rel: str, text: str) -> Path:
 def make_flags(
     *,
     mkdocs: bool = True,
+    config_system: bool = True,
+    keyring: bool = True,
+    keyvault: bool = True,
     private_repo_deps: bool = True,
     remote_disposable_scripts: bool = True,
     security_policy: bool = True,
@@ -102,6 +105,9 @@ def make_flags(
     """Build a FeatureFlags with every feature/hook on, unless overridden."""
     return FeatureFlags(
         mkdocs=mkdocs,
+        config_system=config_system,
+        keyring=keyring,
+        keyvault=keyvault,
         private_repo_deps=private_repo_deps,
         remote_disposable_scripts=remote_disposable_scripts,
         security_policy=security_policy,
@@ -834,6 +840,9 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     raw = {
         "features": {
             "mkdocs": False,
+            "config_system": False,
+            "keyring": False,
+            "keyvault": False,
             "private_repo_deps": False,
             "remote_disposable_scripts": False,
             "security_policy": False,
@@ -848,6 +857,9 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     }
     flags = feature_flags_from_config(raw)
     assert flags.mkdocs is False
+    assert flags.config_system is False
+    assert flags.keyring is False
+    assert flags.keyvault is False
     assert flags.private_repo_deps is False
     assert flags.remote_disposable_scripts is False
     assert flags.security_policy is False
@@ -865,12 +877,34 @@ def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
     # are off; a config missing those tables entirely reads the same way.
     flags = feature_flags_from_config({})
     assert flags.mkdocs is True
+    assert flags.config_system is True
+    assert flags.keyring is True
+    assert flags.keyvault is True
     assert flags.private_repo_deps is True
     assert flags.remote_disposable_scripts is True
     assert flags.security_policy is True
     assert flags.contributing_guide is True
     assert flags.hook_no_chained_pwsh is False
     assert flags.hook_auto_memory is False
+
+
+@pytest.mark.unit
+def test_feature_flags_from_config_backends_follow_config_system() -> None:
+    # The backends live inside the config package: declining the package
+    # drops them too, whatever their own flags say.
+    raw = {"features": {"config_system": False, "keyring": True, "keyvault": True}}
+    flags = feature_flags_from_config(raw)
+    assert flags.config_system is False
+    assert flags.keyring is False
+    assert flags.keyvault is False
+
+
+@pytest.mark.unit
+def test_feature_flags_from_config_backends_independent_when_package_kept() -> None:
+    raw = {"features": {"config_system": True, "keyring": False, "keyvault": True}}
+    flags = feature_flags_from_config(raw)
+    assert flags.keyring is False
+    assert flags.keyvault is True
 
 
 @pytest.mark.unit
@@ -1032,12 +1066,61 @@ def test_manifest_community_docs_are_gated_separately() -> None:
 
 
 @pytest.mark.unit
+def test_manifest_config_package_is_gated_and_schema_existence_only() -> None:
+    # The config package is one config-driven feature; its backends are each
+    # behind their own gate so either can be removed alone. schema.py holds
+    # the project's own option definitions, so only its existence is checked;
+    # the generic modules carry a __version__ and join the version pre-flight.
+    prefix = f"src/{TEMPLATE_SNAKE}/config/"
+    entries = {e.path.removeprefix(prefix): e for e in MANIFEST if e.path.startswith(prefix)}
+    assert set(entries) == {
+        "__init__.py",
+        "__main__.py",
+        "cli.py",
+        "file.py",
+        "paths.py",
+        "resolve.py",
+        "schema.py",
+        "secrets.py",
+        "keyring_backend.py",
+        "keyvault_backend.py",
+    }
+    assert entries["keyring_backend.py"].gate == "keyring"
+    assert entries["keyvault_backend.py"].gate == "keyvault"
+    for name, entry in entries.items():
+        if name not in ("keyring_backend.py", "keyvault_backend.py"):
+            assert entry.gate == "config_system"
+    assert entries["schema.py"].compare_content is False
+    for name in ("cli.py", "file.py", "paths.py", "resolve.py", "secrets.py"):
+        assert entries[name].versioned is True
+
+
+@pytest.mark.unit
+def test_manifest_config_tests_follow_their_import_gates() -> None:
+    # The config test suite ships to projects and follows the config-system
+    # gate -- except test_config_secrets.py, which imports the keyring
+    # backend at module scope and so is deleted with that backend.
+    for name in ("cli", "file", "paths", "resolve", "schema"):
+        (entry,) = [e for e in MANIFEST if e.path == f"tests/test_config_{name}.py"]
+        assert entry.gate == "config_system"
+        assert entry.versioned is True
+    (secrets_entry,) = [e for e in MANIFEST if e.path == "tests/test_config_secrets.py"]
+    assert secrets_entry.gate == "keyring"
+    (test_object,) = [e for e in MANIFEST if e.path == "tests/_config_test_object.py"]
+    assert test_object.gate == "config_system"
+    assert test_object.versioned is True
+
+
+@pytest.mark.unit
 def test_manifest_gates_match_feature_flags_fields() -> None:
     # Every gate string must resolve to a real FeatureFlags field (else
     # FeatureFlags.wanted() raises at runtime), and every field should be
     # used by at least one entry, or it's dead code.
     valid_gates = {
         "mkdocs",
+        "config_system",
+        "keyring",
+        "keyvault",
         "remote_disposable_scripts",
         "security_policy",
         "contributing_guide",

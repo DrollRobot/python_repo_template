@@ -1,7 +1,7 @@
 """Tests for the config CLI (init / show / set / unset / profiles / secrets).
 
 Commands run in-process via ``cli.main([...])`` with the config directory
-pointed at ``tmp_path`` and the schema swapped for the fixed toy schema, so
+pointed at ``tmp_path`` and the schema swapped for the fixed test object, so
 nothing here touches the real user config, the real keyring (an in-memory
 fake stands in), or the repo's FIXME example fields.
 """
@@ -19,7 +19,12 @@ import tomlkit
 from python_repo_template.config import cli
 from python_repo_template.config.paths import CONFIG_DIR_ENV
 from python_repo_template.config.schema import APP_NAME, ENV_PREFIX
-from tests._toy_config import ToySettings
+from tests._config_test_object import ConfigTestObject
+
+# Version of this test module. It ships to projects generated from this
+# template (cleanup.py keeps it: no script or hook shares its name), so bump
+# on every change to let scripts/compare_to_template.py flag stale copies.
+__version__ = "1.0.0"
 
 pytestmark = pytest.mark.unit
 
@@ -38,9 +43,9 @@ def config_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _toy_schema(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Run the CLI against the fixed toy schema instead of the FIXME fields."""
-    monkeypatch.setattr("python_repo_template.config.cli.Settings", ToySettings)
+def _test_object_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run the CLI against the fixed test object instead of the FIXME fields."""
+    monkeypatch.setattr("python_repo_template.config.cli.Settings", ConfigTestObject)
 
 
 @pytest.fixture(autouse=True)

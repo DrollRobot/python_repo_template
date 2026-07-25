@@ -37,6 +37,11 @@ from python_repo_template.config.schema import (
     is_secret,
 )
 
+# Version of this module. It ships to projects generated from this template,
+# so bump on every change to let scripts/compare_to_template.py flag stale
+# copies: patch = bugfix, minor = new behavior, major = breaking change.
+__version__ = "1.0.0"
+
 # Environment variable selecting the active profile.
 PROFILE_ENV = ENV_PREFIX + "PROFILE"
 

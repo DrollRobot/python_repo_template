@@ -21,12 +21,12 @@ Steps always execute in this order, regardless of the config file's own
 table order: strip template headers -> rename -> set GitHub user -> set
 Python version -> set project version -> reset changelog -> Claude command
 hooks -> Claude auto-memory guard -> Claude inline-suppression guard -> choose
-license -> remove mkdocs (if
-declined) -> remove keyring backend (if declined) -> remove KeyVault backend
-(if declined) -> remove the credentials dispatcher (only once both backends
-above are declined) -> remove private-repo-deps workflow steps (if declined)
--> remove the remote-disposability scripts (if declined) -> remove SECURITY.md
-(if declined) -> remove CONTRIBUTING.md (if declined) -> re-initialize git (if
+license -> remove mkdocs (if declined) -> remove keyring backend (if
+declined) -> remove Key Vault backend (if declined) -> remove the whole
+config system (if declined; replaces the two backend steps) -> remove
+private-repo-deps workflow steps (if declined) -> remove the
+remote-disposability scripts (if declined) -> remove SECURITY.md (if
+declined) -> remove CONTRIBUTING.md (if declined) -> re-initialize git (if
 requested). A read-only FIXME report always runs last, whether or not anything
 failed.
 
@@ -57,7 +57,10 @@ import choose_license
 import choose_shell
 import find_fixmes
 import reinit_git
+import remove_config_system
 import remove_contributing_guide
+import remove_keyring
+import remove_keyvault
 import remove_mkdocs
 import remove_private_repo_deps
 import remove_remote_disposable_scripts
@@ -91,6 +94,9 @@ class Config:
     auto_memory_guard: bool
     no_inline_secret_suppressions: bool
     mkdocs: bool
+    config_system: bool
+    keyring: bool
+    keyvault: bool
     private_repo_deps: bool
     remote_disposable_scripts: bool
     security_policy: bool
@@ -241,6 +247,9 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
     no_inline_secrets = _require_bool(claude, "no_inline_secret_suppressions", "claude", problems)
 
     mkdocs = _require_bool(features, "mkdocs", "features", problems)
+    config_system = _require_bool(features, "config_system", "features", problems)
+    keyring = _require_bool(features, "keyring", "features", problems)
+    keyvault = _require_bool(features, "keyvault", "features", problems)
     private_repo_deps = _require_bool(features, "private_repo_deps", "features", problems)
     remote_disposable_scripts = _require_bool(
         features, "remote_disposable_scripts", "features", problems
@@ -295,6 +304,16 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
     if branch and not branch.strip():
         problems.append("[git].branch is empty.")
 
+    # The backends live inside the config package: keeping one while removing
+    # the whole package is contradictory, so demand an explicit false.
+    if not config_system:
+        for backend in ("keyring", "keyvault"):
+            if features.get(backend) is True:
+                problems.append(
+                    f"[features].{backend}=true requires [features].config_system=true "
+                    "(the backend lives inside the config package); set it to false."
+                )
+
     if reinit and not reinit_git._is_pristine_template_clone(root):
         problems.append(
             "[git].reinit=true, but this no longer looks like a pristine template clone "
@@ -321,6 +340,9 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
             auto_memory_guard=auto_memory_guard,
             no_inline_secret_suppressions=no_inline_secrets,
             mkdocs=mkdocs,
+            config_system=config_system,
+            keyring=keyring,
+            keyvault=keyvault,
             private_repo_deps=private_repo_deps,
             remote_disposable_scripts=remote_disposable_scripts,
             security_policy=security_policy,
@@ -470,6 +492,33 @@ def _step_remove_mkdocs() -> PlannedStep:
     return PlannedStep("remove_mkdocs", "Remove mkdocs (documentation site)", call)
 
 
+def _step_remove_keyring() -> PlannedStep:
+    """Build the keyring-backend-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_keyring.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_keyring", "Remove the keyring backend", call)
+
+
+def _step_remove_keyvault() -> PlannedStep:
+    """Build the Key-Vault-backend-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_keyvault.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_keyvault", "Remove the Key Vault backend", call)
+
+
+def _step_remove_config_system() -> PlannedStep:
+    """Build the config-system-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_config_system.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_config_system", "Remove the config system", call)
+
+
 def _step_remove_private_repo_deps() -> PlannedStep:
     """Build the private-repo-deps-removal step (only included when declined)."""
 
@@ -547,6 +596,16 @@ def build_steps(config: Config) -> tuple[PlannedStep, ...]:
     ]
     if not config.mkdocs:
         steps.append(_step_remove_mkdocs())
+    # Declining the whole config system removes the package directory, which
+    # covers both backends; the per-backend steps only run when the package
+    # itself is kept.
+    if config.config_system:
+        if not config.keyring:
+            steps.append(_step_remove_keyring())
+        if not config.keyvault:
+            steps.append(_step_remove_keyvault())
+    else:
+        steps.append(_step_remove_config_system())
     if not config.private_repo_deps:
         steps.append(_step_remove_private_repo_deps())
     if not config.remote_disposable_scripts:

@@ -27,6 +27,11 @@ from typing import Any
 
 from python_repo_template.config.schema import ConfigError
 
+# Version of this module. It ships to projects generated from this template,
+# so bump on every change to let scripts/compare_to_template.py flag stale
+# copies: patch = bugfix, minor = new behavior, major = breaking change.
+__version__ = "1.0.0"
+
 # secrets.py includes this hint when a write is attempted against this backend.
 READ_ONLY_HINT = (
     "update the secret in Azure instead (portal, or "
