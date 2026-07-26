@@ -89,7 +89,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.18.0"
+__version__ = "1.18.1"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -312,6 +312,7 @@ EXCLUDED_PREFIXES = ("src/", "scripts/template_setup/")
 EXCLUDED_GLOBS = (
     "CHANGELOG.md",
     "CHANGELOG.md.FIXME",
+    "README.md.FIXME",
     "LICENSE.*.FIXME",
     "uv.lock",
     ".python-version",  # compared indirectly: replayed onto the template side
