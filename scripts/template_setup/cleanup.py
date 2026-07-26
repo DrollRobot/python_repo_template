@@ -19,7 +19,7 @@ downstream project should not have its type check fail on them. Run mypy on
 them by path (``uv run mypy scripts``) if you do edit them.
 
 It does NOT edit prose for you; it prints reminders for the manual bits (such as
-removing the template instructions from README.md).
+working through the FIXMEs left in the project's own files).
 
 Usage:
     uv run scripts/template_setup/cleanup.py
@@ -37,7 +37,6 @@ from pathlib import Path
 import _common
 
 REMINDERS = [
-    "Remove the 'Making a new repo from this template' section from README.md.",
     "Run find_fixmes (before deleting) to confirm no FIXMEs remain.",
 ]
 

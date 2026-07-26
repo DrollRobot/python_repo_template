@@ -18,8 +18,8 @@ folder -- leaves it in place: ``scripts/compare_to_template.py`` keeps
 reading it afterward to know which optional features this project kept.
 
 Steps always execute in this order, regardless of the config file's own
-table order: strip template headers -> rename -> set GitHub user -> set
-Python version -> set project version -> reset changelog -> Claude command
+table order: strip template headers -> reset README -> rename -> set GitHub
+user -> set Python version -> set project version -> reset changelog -> Claude command
 hooks -> Claude auto-memory guard -> Claude inline-suppression guard -> choose
 license -> remove mkdocs (if declined) -> remove keyring backend (if
 declined) -> remove Key Vault backend (if declined) -> remove the whole
@@ -67,6 +67,7 @@ import remove_remote_disposable_scripts
 import remove_security_policy
 import rename_project
 import reset_changelog
+import reset_readme
 import set_github_user
 import set_python_version
 import set_version
@@ -363,6 +364,15 @@ def _step_strip_headers() -> PlannedStep:
     return PlannedStep("strip_template_headers", "Strip template headers", call)
 
 
+def _step_reset_readme() -> PlannedStep:
+    """Build the README-reset step (always runs)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return reset_readme.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("reset_readme", "Reset the README", call)
+
+
 def _step_rename(config: Config) -> PlannedStep:
     """Build the project-rename step, bound to ``config.name``."""
 
@@ -584,6 +594,9 @@ def build_steps(config: Config) -> tuple[PlannedStep, ...]:
     """
     steps = [
         _step_strip_headers(),
+        # Before the rename/user/version steps: they rewrite README.md by name,
+        # so the skeleton has to be README.md by the time they run.
+        _step_reset_readme(),
         _step_rename(config),
         _step_github_user(config),
         _step_python_version(config),

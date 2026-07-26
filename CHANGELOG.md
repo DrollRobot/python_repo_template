@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `README.md.FIXME`, a skeleton README for the new project, and
+  `scripts/template_setup/reset_readme.py`, the setup step that writes it over
+  `README.md` and deletes the `.FIXME` file -- the same swap
+  `reset_changelog.py` does for the changelog. Until now the template's own
+  README (its tool choices and how-to-start-a-project instructions) was left in
+  place for the user to rewrite by hand, and `cleanup.py` could only print a
+  reminder to do it. The step runs before the rename, GitHub-user and
+  Python-version steps so those rewrite the skeleton's placeholders and version
+  badge (`set_python_version.py` edits `README.md` by name, so a skeleton still
+  sitting at `README.md.FIXME` would keep the template's badge). Its
+  idempotency guard is the missing skeleton: a second run finds no
+  `README.md.FIXME`, reports "already reset", and leaves the project's own
+  README untouched.
 - A `--no-remote` option to `scripts/push_new_tag_to_main.py`, for repositories
   with no origin (or releases meant to stay on one machine). It skips the
   fetch/fast-forward sync with origin and all three pushes (`main`, tags, and
@@ -71,6 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `cleanup.py` no longer reminds the user to remove the "Making a new repo from
+  this template" section from `README.md`: `reset_readme.py` replaces that
+  README wholesale during setup, so the section is already gone. Only the
+  FIXME-sweep reminder remains.
 - Hook wiring is now one script. `scripts/template_setup/wire_hook.py` holds a
   registry describing every hook the template ships (file, matcher,
   interpreter) and owns `.claude/settings.json`; a hook is either kept and

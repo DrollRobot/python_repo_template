@@ -35,6 +35,7 @@ import remove_remote_disposable_scripts
 import remove_security_policy
 import rename_project
 import reset_changelog
+import reset_readme
 import set_github_user
 import set_python_version
 import set_version
@@ -381,6 +382,7 @@ def test_validate_config_reinit_true_not_pristine_reports_problem(
 
 _ALWAYS_ON_KEYS = [
     "strip_template_headers",
+    "reset_readme",
     "rename_project",
     "set_github_user",
     "set_python_version",
@@ -507,7 +509,9 @@ def test_step_rename_forwards_name_and_assume_yes(
 ) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(rename_project, "run", _recording_run(calls))
-    step = setup_new_project.build_steps(_make_config(name="other-name"))[1]
+    step = setup_new_project.build_steps(_make_config(name="other-name"))[
+        _ALWAYS_ON_KEYS.index("rename_project")
+    ]
     assert step.key == "rename_project"
     step.call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path, "other-name")
@@ -520,7 +524,9 @@ def test_step_github_user_forwards_username(
 ) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(set_github_user, "run", _recording_run(calls))
-    step = setup_new_project.build_steps(_make_config(github_user="octocat"))[2]
+    step = setup_new_project.build_steps(_make_config(github_user="octocat"))[
+        _ALWAYS_ON_KEYS.index("set_github_user")
+    ]
     step.call(tmp_path, True)
     assert calls[0]["args"] == (tmp_path, "octocat")
     assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": True}
@@ -532,7 +538,9 @@ def test_step_python_version_forwards_version(
 ) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(set_python_version, "run", _recording_run(calls))
-    step = setup_new_project.build_steps(_make_config(python_version="3.13"))[3]
+    step = setup_new_project.build_steps(_make_config(python_version="3.13"))[
+        _ALWAYS_ON_KEYS.index("set_python_version")
+    ]
     step.call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path, "3.13")
 
@@ -541,7 +549,9 @@ def test_step_python_version_forwards_version(
 def test_step_version_forwards_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(set_version, "run", _recording_run(calls))
-    step = setup_new_project.build_steps(_make_config(version="1.2.3"))[4]
+    step = setup_new_project.build_steps(_make_config(version="1.2.3"))[
+        _ALWAYS_ON_KEYS.index("set_version")
+    ]
     step.call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path, "1.2.3")
 
@@ -552,7 +562,21 @@ def test_step_strip_headers_forwards_assume_yes(
 ) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(strip_template_headers, "run", _recording_run(calls))
-    step = setup_new_project.build_steps(_make_config())[0]
+    step = setup_new_project.build_steps(_make_config())[
+        _ALWAYS_ON_KEYS.index("strip_template_headers")
+    ]
+    step.call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
+def test_step_reset_readme_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(reset_readme, "run", _recording_run(calls))
+    step = setup_new_project.build_steps(_make_config())[_ALWAYS_ON_KEYS.index("reset_readme")]
     step.call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path,)
     assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
@@ -564,7 +588,7 @@ def test_step_reset_changelog_forwards_assume_yes(
 ) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(reset_changelog, "run", _recording_run(calls))
-    step = setup_new_project.build_steps(_make_config())[5]
+    step = setup_new_project.build_steps(_make_config())[_ALWAYS_ON_KEYS.index("reset_changelog")]
     step.call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path,)
 
@@ -578,7 +602,7 @@ def test_step_choose_shell_forwards_hook_kinds_and_shell(
     config = _make_config(  # noqa: S604  (shell= here is the hook-shell field, not subprocess)
         shell="bash", no_chained_commands=True, canonical_commands=False
     )
-    step = setup_new_project.build_steps(config)[6]
+    step = setup_new_project.build_steps(config)[_ALWAYS_ON_KEYS.index("choose_shell")]
     step.call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path, "bash")
     assert calls[0]["kwargs"]["no_chained_commands"] is True
@@ -798,6 +822,7 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
     """Monkeypatch every step module's run() to record its call and dry_run value."""
     modules = [
         strip_template_headers,
+        reset_readme,
         rename_project,
         set_github_user,
         set_python_version,

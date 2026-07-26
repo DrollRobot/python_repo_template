@@ -52,8 +52,11 @@ uv run scripts/template_setup/setup_new_project.py
    Add `--dry-run` to preview only, or `-y`/`--yes` to skip the confirmation
    (the preview still runs first).
 
-   After choosing a license, update the license badge near the top of this
-   README to match.
+   It also replaces this README with `README.md.FIXME`, a skeleton README for
+   your project, and deletes the `.FIXME` file. Work through the FIXMEs it
+   leaves — including the license badge, which must match the license you
+   chose. Re-running the setup will not touch that README again: the skeleton
+   is gone, so the step reports "already reset" and leaves your version alone.
 
    This does **not** delete `scripts/template_setup/` — that stays a
    separate, manual step (`cleanup.py`, or just delete the folder) once
