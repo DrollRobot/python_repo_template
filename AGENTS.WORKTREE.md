@@ -1,7 +1,7 @@
 # AGENTS.WORKTREE.md
 
-Instructions for working inside an isolated git worktree. Complements any
-repo-level `AGENTS.md`; this file wins on worktree/PR matters.
+- If the user asked you to read this file, treat that as them asking you to
+  perform the prodedure described below.
 
 ## Assume
 - You're in a worktree the user already opened, on branch `wt/<slug>`, forked
@@ -18,11 +18,11 @@ repo-level `AGENTS.md`; this file wins on worktree/PR matters.
 
 ## Completing the worktree
 Opening the PR is **not** your job. Do **not** run `gh pr create`.
-When the user says the worktree is ready to close, your job is to leave it in 
+When the user says the worktree is ready to close, your job is to leave it in
 this state:
 
 **1. Commit everything**
-Commit all files in logical units according to instructions in: 
+Commit all files in logical units according to instructions in:
 [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
 
 **2. Write the PR description to `.local/PR.md`**
