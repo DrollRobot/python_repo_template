@@ -2,7 +2,7 @@
 =============================================================================
 TEMPLATE SETUP NOTES -- remove this block - FIXME
 =============================================================================
-This AGENTS.md is part of python_repo_template, a starter repo scaffold.
+This AGENTS.md is part of a starter repo scaffold.
 It instructs AI coding agents (GitHub Copilot, Cursor, etc.) on project
 conventions, required checks, and how to run tests.
 - Fill in the Package Purpose section.

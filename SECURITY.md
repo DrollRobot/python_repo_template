@@ -2,7 +2,7 @@
 =============================================================================
 TEMPLATE SETUP NOTES -- remove this block - FIXME
 =============================================================================
-This SECURITY.md is part of python_repo_template, a starter repo scaffold.
+This SECURITY.md is part of a starter repo scaffold.
 
 Purpose: SECURITY.md is recognized automatically by GitHub. It appears on
 your repository's Security tab and is linked whenever someone tries to open

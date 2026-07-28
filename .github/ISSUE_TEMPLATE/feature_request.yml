@@ -1,8 +1,7 @@
 # =============================================================================
 # TEMPLATE SETUP NOTES -- remove this block when you use this template
 # =============================================================================
-# This feature_request.yml is part of python_repo_template, a starter repo
-# scaffold.
+# This feature_request.yml is part of a starter repo scaffold.
 #
 # Purpose: Defines a structured GitHub issue form for feature requests.
 # Prompts contributors to explain the problem they are solving and the

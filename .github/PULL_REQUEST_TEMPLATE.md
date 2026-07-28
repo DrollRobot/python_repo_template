@@ -2,8 +2,7 @@
 =============================================================================
 TEMPLATE SETUP NOTES -- remove this block - FIXME
 =============================================================================
-This PULL_REQUEST_TEMPLATE.md is part of python_repo_template, a starter
-repo scaffold.
+This PULL_REQUEST_TEMPLATE.md is part of a starter repo scaffold.
 
 Purpose: GitHub pre-fills the PR description box with this content whenever
 a contributor opens a pull request. It prompts them to summarize their

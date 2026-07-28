@@ -1,13 +1,12 @@
 """Rename the template throughout the project.
 
-Replaces every occurrence of the template's package name in two forms:
+Replaces every occurrence of the template's own package name in two forms:
 
-    python_repo_template   (snake_case  -> import name / package dir)
-    python-repo-template   (kebab-case  -> PyPI/distribution name)
+    ``OLD_SNAKE``   (snake_case  -> import name / package dir)
+    ``OLD_KEBAB``   (kebab-case  -> PyPI/distribution name)
 
-with names derived from the one you supply, then renames the
-``src/python_repo_template/`` package folder and the ``.code-workspace`` file
-to match.
+with names derived from the one you supply, then renames the ``src/<package>/``
+folder and the ``.code-workspace`` file to match.
 
 Usage:
     uv run scripts/template_setup/rename_project.py my-project

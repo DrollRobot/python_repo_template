@@ -2,7 +2,7 @@
 =============================================================================
 TEMPLATE SETUP NOTES -- remove this block when you use this template
 =============================================================================
-This docs/index.md is part of python_repo_template, a starter repo scaffold.
+This docs/index.md is part of a starter repo scaffold.
 It becomes the homepage of your MkDocs site (and the PyPI long description
 - Fill in the overview, installation, and quick-start sections.
 =============================================================================

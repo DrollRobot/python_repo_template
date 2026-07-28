@@ -1,8 +1,8 @@
 """Replace the template author's GitHub username with your own.
 
-Finds every occurrence of ``DrollRobot`` (case-insensitive) -- in clone URLs,
-badges, docs, and config -- and replaces it with the username you supply,
-written exactly as you type it.
+Finds every occurrence of the template author's username (``OLD_USER``, matched
+case-insensitively) -- in clone URLs, badges, docs, and config -- and replaces
+it with the username you supply, written exactly as you type it.
 
 Usage:
     uv run scripts/template_setup/set_github_user.py your-username

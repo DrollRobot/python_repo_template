@@ -1,17 +1,16 @@
 # =============================================================================
 # TEMPLATE SETUP NOTES -- remove this block when you use this template
 # =============================================================================
-# This bug_report.yml is part of python_repo_template, a starter repo scaffold.
+# This bug_report.yml is part of a starter repo scaffold.
 #
 # Purpose: Defines a structured GitHub issue form for bug reports. GitHub
 # renders this as a web form instead of a blank text box, which produces
 # more complete and consistent reports.
 #
 # To customize:
-#   - Update the version label ("python_repo_template version") to your package name.
+#   - Update the version label to name your package.
 #   - Replace the placeholder text in "Steps to reproduce" with a
 #     relevant example from your own API.
-#   - Do a find/replace on "DrollRobot" to substitute your GitHub username.
 # =============================================================================
 
 # .github/ISSUE_TEMPLATE/bug_report.yml

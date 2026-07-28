@@ -1,8 +1,8 @@
 # =============================================================================
 # TEMPLATE SETUP NOTES -- remove this block when you use this template
 # =============================================================================
-# This .pre-commit-config.yaml is part of python_repo_template, a starter
-# repo scaffold. pre-commit runs a suite of checks automatically on every
+# This .pre-commit-config.yaml is part of a starter repo scaffold.
+# pre-commit runs a suite of checks automatically on every
 # git commit, catching lint errors, formatting issues, type errors, and
 # accidentally committed secrets before they reach the repo.
 #

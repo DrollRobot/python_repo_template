@@ -2,7 +2,7 @@
 =============================================================================
 TEMPLATE SETUP NOTES -- remove this block when you use this template
 =============================================================================
-This CONTRIBUTING.md is part of python_repo_template, a starter repo scaffold.
+This CONTRIBUTING.md is part of a starter repo scaffold.
 
 Purpose: CONTRIBUTING.md is recognized automatically by GitHub. It is linked
 in the sidebar when someone opens a new issue or pull request, prompting them

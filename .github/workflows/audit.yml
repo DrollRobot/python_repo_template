@@ -1,7 +1,7 @@
 # =============================================================================
 # TEMPLATE SETUP NOTES -- remove this block when you use this template
 # =============================================================================
-# This audit.yml is part of python_repo_template, a starter repo scaffold.
+# This audit.yml is part of a starter repo scaffold.
 #
 # Purpose: Runs the security gates on every push and pull request to main.
 #

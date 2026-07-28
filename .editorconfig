@@ -1,7 +1,7 @@
 # =============================================================================
 # TEMPLATE SETUP NOTES -- remove this block when you use this template
 # =============================================================================
-# This .editorconfig is part of python_repo_template, a starter repo scaffold.
+# This .editorconfig is part of a starter repo scaffold.
 #
 # Purpose: .editorconfig is read by most editors (VS Code, PyCharm, Vim, etc.)
 # to enforce consistent whitespace and encoding rules across all contributors,

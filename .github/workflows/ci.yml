@@ -1,7 +1,7 @@
 # =============================================================================
 # TEMPLATE SETUP NOTES -- remove this block - FIXME
 # =============================================================================
-# This ci.yml is part of python_repo_template, a starter repo scaffold.
+# This ci.yml is part of a starter repo scaffold.
 #
 # Purpose: Runs on every push and pull request to main. Blocks merges if
 # lint, formatting, type checking, or unit tests fail. Integration tests

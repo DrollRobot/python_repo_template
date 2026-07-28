@@ -1,7 +1,7 @@
 # =============================================================================
 # TEMPLATE SETUP NOTES -- remove this block - FIXME
 # =============================================================================
-# This config.yml is part of python_repo_template, a starter repo scaffold.
+# This config.yml is part of a starter repo scaffold.
 #
 # Purpose: Controls the GitHub "New Issue" chooser. Setting
 # blank_issues_enabled: false forces contributors to use one of the issue
@@ -9,7 +9,7 @@
 # issue. The contact_links entry points them to your docs site first.
 #
 # To customize:
-#   - Replace "DrollRobot" with your GitHub username in the docs URL.
+#   - Replace the GitHub username in the docs URL with your own.
 #   - Update the URL if you host docs somewhere other than GitHub Pages.
 # =============================================================================
 

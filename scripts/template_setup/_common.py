@@ -19,7 +19,7 @@ from pathlib import Path
 
 # Directory holding these setup scripts. Excluded from every scan so a script
 # never edits or flags itself (each one contains the literal strings it searches
-# for, e.g. "python_repo_template" and "FIXME").
+# for, e.g. the template's own package name and "FIXME").
 SETUP_DIR = Path(__file__).resolve().parent
 
 # Directory names that are never scanned, regardless of depth.

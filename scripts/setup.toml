@@ -18,7 +18,8 @@
 # kebab-case distribution name. No-op until changed from the template's own.
 name = "python_repo_template"
 
-# Your GitHub username; replaces "DrollRobot" everywhere. No-op until changed.
+# Your GitHub username; replaces the template author's everywhere it appears
+# (clone URLs, badges, docs). No-op until changed from the template's own.
 github_user = "DrollRobot"
 
 # Python version (MAJOR.MINOR or MAJOR.MINOR.PATCH).
