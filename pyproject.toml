@@ -15,7 +15,6 @@ dependencies = [
     # FIXME add depencencies
     "platformdirs>=4.3,<5",
     "tomlkit>=0.13,<1",
-    "keyring>=25.0,<26",
     "azure-identity>=1.17,<2",
     "azure-keyvault-secrets>=4.8,<5",
 ]
@@ -26,15 +25,22 @@ docs = [
     "mkdocs-material>=9.7,<10",
     "mkdocstrings[python]>=1.0.4,<2",
 ]
+keyring = [
+    "keyring>=25.0,<26",
+]
+keyvault = [
+    "azure-identity>=1.25,<2",
+    "azure-keyvault-secrets>=4.11,<5",
+]
 test = [
     "pytest>=9.0.3,<10",
     "pytest-cov>=7.1,<8",
 ]
 dev = [
     {include-group = "docs"},
+    {include-group = "keyring"},
+    {include-group = "keyvault"},
     {include-group = "test"},
-    "azure-identity>=1.17,<2",
-    "azure-keyvault-secrets>=4.8,<5",
     "debugpy>=1.8,<2",
     "detect-secrets>=1.5,<2",
     "mypy>=2.1,<3",

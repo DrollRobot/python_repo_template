@@ -960,7 +960,6 @@ source = { editable = "." }
 dependencies = [
     { name = "azure-identity" },
     { name = "azure-keyvault-secrets" },
-    { name = "keyring" },
     { name = "platformdirs" },
     { name = "tomlkit" },
 ]
@@ -971,6 +970,7 @@ dev = [
     { name = "azure-keyvault-secrets" },
     { name = "debugpy" },
     { name = "detect-secrets" },
+    { name = "keyring" },
     { name = "mkdocs" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
@@ -985,6 +985,13 @@ docs = [
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
 ]
+keyring = [
+    { name = "keyring" },
+]
+keyvault = [
+    { name = "azure-identity" },
+    { name = "azure-keyvault-secrets" },
+]
 test = [
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -994,17 +1001,17 @@ test = [
 requires-dist = [
     { name = "azure-identity", specifier = ">=1.17,<2" },
     { name = "azure-keyvault-secrets", specifier = ">=4.8,<5" },
-    { name = "keyring", specifier = ">=25.0,<26" },
     { name = "platformdirs", specifier = ">=4.3,<5" },
     { name = "tomlkit", specifier = ">=0.13,<1" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "azure-identity", specifier = ">=1.17,<2" },
-    { name = "azure-keyvault-secrets", specifier = ">=4.8,<5" },
+    { name = "azure-identity", specifier = ">=1.25,<2" },
+    { name = "azure-keyvault-secrets", specifier = ">=4.11,<5" },
     { name = "debugpy", specifier = ">=1.8,<2" },
     { name = "detect-secrets", specifier = ">=1.5,<2" },
+    { name = "keyring", specifier = ">=25.0,<26" },
     { name = "mkdocs", specifier = ">=1.6,<2" },
     { name = "mkdocs-material", specifier = ">=9.7,<10" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.4,<2" },
@@ -1018,6 +1025,11 @@ docs = [
     { name = "mkdocs", specifier = ">=1.6,<2" },
     { name = "mkdocs-material", specifier = ">=9.7,<10" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.4,<2" },
+]
+keyring = [{ name = "keyring", specifier = ">=25.0,<26" }]
+keyvault = [
+    { name = "azure-identity", specifier = ">=1.25,<2" },
+    { name = "azure-keyvault-secrets", specifier = ">=4.11,<5" },
 ]
 test = [
     { name = "pytest", specifier = ">=9.0.3,<10" },
