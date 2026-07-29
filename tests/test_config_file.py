@@ -1,7 +1,15 @@
-"""Unit tests for config.toml reading and validation in config/file.py."""
+"""Unit tests for config.toml reading and validation in config/file.py.
+
+Deliberately independent of the secret-storage machinery: no document here
+uses ``credential_backend`` or any backend-declared key (those cases live in
+test_config_secrets.py, which is deleted with the machinery), so this file
+keeps passing in a project that removed it.
+"""
 
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -9,12 +17,12 @@ import pytest
 
 from python_repo_template.config import file as config_file
 from python_repo_template.config.schema import ConfigError
-from tests._config_test_object import ConfigTestObject
+from tests._config_test_object import ConfigTestObject, block_secrets_module
 
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 pytestmark = pytest.mark.unit
 
@@ -53,17 +61,45 @@ def test_validate_accepts_full_valid_document(tmp_path: Path) -> None:
         tmp_path,
         """
         name = "top"
-        credential_backend = "keyring"
         default_profile = "a"
 
         [profiles.a]
         name = "prof"
         count = 7
-        credential_backend = "keyvault"
-        keyvault_url = "https://kv.example.invalid/"
         """,
     )
     config_file.validate_config(document, ConfigTestObject, path)
+
+
+def test_validate_accepts_backend_reserved_keys(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Reserved keys come from the secret machinery, not from this module."""
+    module = types.ModuleType("python_repo_template.config.fake_backend")
+    module.RESERVED_KEYS = {"fake_url": "help"}  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    document, path = _load(
+        tmp_path,
+        """
+        name = "top"
+        credential_backend = "fake"
+
+        [profiles.a]
+        fake_url = "https://x.invalid/"
+        """,
+    )
+    config_file.validate_config(document, ConfigTestObject, path)
+
+
+def test_secret_reserved_keys_empty_when_machinery_removed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With secrets.py gone, no backend keys are legal and none leak through."""
+    block_secrets_module(monkeypatch)
+    assert config_file.secret_reserved_keys() == frozenset()
+    document, path = _load(tmp_path, 'name = "top"\ncredential_backend = "keyring"\n')
+    with pytest.raises(ConfigError, match="Unknown key 'credential_backend'"):
+        config_file.validate_config(document, ConfigTestObject, path)
 
 
 def test_validate_rejects_unknown_top_level_key(tmp_path: Path) -> None:

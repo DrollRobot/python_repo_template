@@ -13,7 +13,12 @@ File shape::
 
     [profiles.contoso]
     tenant_id = "..."
-    credential_backend = "keyring"
+
+Beyond the schema's own option names, the secret-backend machinery
+(``secrets.py`` and the ``*_backend.py`` modules) reserves keys of its own
+(``credential_backend`` plus whatever each backend declares); this module
+learns them from ``secrets.py`` at validation time and knows none of them
+itself. When the secret machinery has been deleted, no such keys are legal.
 
 Validation is strict and fails loudly (see AGENTS.md): unknown keys, secret
 values stored in the file, or malformed tables all raise
@@ -22,6 +27,7 @@ values stored in the file, or malformed tables all raise
 
 from __future__ import annotations
 
+import importlib
 import tomllib
 from dataclasses import fields
 from pathlib import Path
@@ -32,16 +38,31 @@ from python_repo_template.config.schema import ConfigError, is_secret
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 # Keys legal only at the top level of the file.
 RESERVED_TOP_LEVEL_KEYS = frozenset({"default_profile", "profiles"})
 
-# Keys legal inside a profile table (and at the top level, which acts as the
-# unnamed profile in single-tenant mode) but which are not Settings fields.
-# credential_backend / keyvault_url select and configure the secret backend;
-# are consumed by secrets.py, not by the Settings schema.
-RESERVED_PROFILE_KEYS = frozenset({"credential_backend", "keyvault_url"})
+
+def secret_reserved_keys() -> frozenset[str]:
+    """Return the profile keys reserved by the secret-backend machinery.
+
+    Asks ``secrets.py`` (imported lazily, so this module never depends on it)
+    for ``credential_backend`` plus every available backend's declared keys.
+    When the secret machinery has been deleted from the package, there are no
+    reserved profile keys and any such key in config.toml fails validation.
+
+    Returns:
+        The reserved key names, or an empty set when ``secrets.py`` is absent.
+    """
+    module_name = f"{__package__}.secrets"
+    try:
+        secrets = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        if exc.name != module_name:
+            raise  # secrets.py exists but something it imports is missing
+        return frozenset()
+    return cast("frozenset[str]", secrets.reserved_profile_keys())
 
 
 def read_config(path: Path) -> dict[str, Any] | None:
@@ -90,6 +111,7 @@ def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> No
     option_names = {f.name for f in fields(schema)}
     secret_names = {f.name for f in fields(schema) if is_secret(f)}
     plain_names = option_names - secret_names
+    reserved_profile_keys = secret_reserved_keys()
 
     def check_keys(table: dict[str, Any], allowed: frozenset[str], where: str) -> None:
         for key in table:
@@ -102,7 +124,7 @@ def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> No
                 valid = ", ".join(sorted(plain_names | allowed))
                 raise ConfigError(f"Unknown key {key!r} in {where} of {path}. Valid keys: {valid}.")
 
-    check_keys(config, RESERVED_TOP_LEVEL_KEYS | RESERVED_PROFILE_KEYS, "the top level")
+    check_keys(config, RESERVED_TOP_LEVEL_KEYS | reserved_profile_keys, "the top level")
 
     default_profile = config.get("default_profile")
     if default_profile is not None and not isinstance(default_profile, str):
@@ -120,28 +142,7 @@ def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> No
             raise ConfigError(
                 f"Profile 'profiles.{name}' in {path} must be a table, got {type(table).__name__}."
             )
-        check_keys(table, RESERVED_PROFILE_KEYS, f"profile 'profiles.{name}'")
-
-
-def reserved_config(config: dict[str, Any], profile_values: dict[str, Any]) -> dict[str, Any]:
-    """Return the merged reserved-key table for the active profile.
-
-    Reserved keys (``credential_backend``, ``keyvault_url``) configure the
-    secret backend. Top-level values act as shared fallbacks; the profile
-    table wins where both define a key.
-
-    Args:
-        config: Parsed TOML document.
-        profile_values: The active profile's table (may be empty).
-
-    Returns:
-        The merged reserved-key mapping.
-    """
-    merged = {key: value for key, value in config.items() if key in RESERVED_PROFILE_KEYS}
-    merged.update(
-        {key: value for key, value in profile_values.items() if key in RESERVED_PROFILE_KEYS}
-    )
-    return merged
+        check_keys(table, reserved_profile_keys, f"profile 'profiles.{name}'")
 
 
 def profile_table(config: dict[str, Any], name: str | None, path: Path) -> dict[str, Any]:

@@ -9,6 +9,10 @@ The fake is a module registered in ``sys.modules`` under the name the
 dispatcher imports, so the CLI reaches it through the real lookup in
 ``secrets.py``. Nothing here imports a concrete backend or its third-party
 dependency, so this file keeps working in a project that deleted one.
+
+There is no default backend, so tests that store secrets configure
+``credential_backend`` explicitly (in the config file, or through init's
+backend prompt); the fake registered as ``fake`` stands in for a real store.
 """
 
 from __future__ import annotations
@@ -25,12 +29,12 @@ import tomlkit
 from python_repo_template.config import cli
 from python_repo_template.config.paths import CONFIG_DIR_ENV
 from python_repo_template.config.schema import APP_NAME, ENV_PREFIX, ConfigError
-from tests._config_test_object import ConfigTestObject
+from tests._config_test_object import ConfigTestObject, block_secrets_module
 
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "1.1.0"
+__version__ = "2.0.0"
 
 pytestmark = pytest.mark.unit
 
@@ -84,9 +88,14 @@ def _memory_backend(monkeypatch: pytest.MonkeyPatch, name: str) -> dict[tuple[st
 
 
 @pytest.fixture(autouse=True)
-def fake_keyring(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
-    """In-memory stand-in for the default backend, so no test touches a real store."""
-    return _memory_backend(monkeypatch, "keyring")
+def fake_backend(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
+    """In-memory backend named 'fake', so no test touches a real store.
+
+    Registered in sys.modules, it shows up in available_backends() like a
+    real backend file would, so init's backend prompt and the
+    credential_backend validation accept it.
+    """
+    return _memory_backend(monkeypatch, "fake")
 
 
 def _feed_input(monkeypatch: pytest.MonkeyPatch, responses: list[str]) -> None:
@@ -118,28 +127,30 @@ def test_path_prints_config_location(config_dir: Path, capsys: pytest.CaptureFix
 def test_init_writes_config_and_stores_secret(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
-    fake_keyring: dict[tuple[str, str], str],
+    fake_backend: dict[tuple[str, str], str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # name, count, ratio, flag, tags -- empty keeps the default.
-    _feed_input(monkeypatch, ["n", "7", "", "", ""])
+    # name, count, ratio, flag, tags -- empty keeps the default -- then the
+    # backend choice.
+    _feed_input(monkeypatch, ["n", "7", "", "", "", "fake"])
     _feed_getpass(monkeypatch, ["tok"])
     assert cli.main(["init"]) == 0
 
     document = tomlkit.parse(_config_text(config_dir))
     assert document["name"] == "n"
     assert document["count"] == 7
+    assert document["credential_backend"] == "fake"  # the user's choice is recorded
     assert "ratio" not in document  # empty input keeps the schema default
     assert "token" not in document  # secrets never reach the file
-    assert fake_keyring == {(APP_NAME, "token"): "tok"}
+    assert fake_backend == {(APP_NAME, "token"): "tok"}
     assert "Stored token" in capsys.readouterr().out
 
 
 @pytest.mark.integration
 def test_init_required_field_reprompts(monkeypatch: pytest.MonkeyPatch, config_dir: Path) -> None:
-    # First response empty for required 'name'; it must re-prompt.
-    _feed_input(monkeypatch, ["", "n", "", "", "", ""])
-    _feed_getpass(monkeypatch, [""])  # skip the secret
+    # First response empty for required 'name'; it must re-prompt. The last
+    # empty response declines the backend choice.
+    _feed_input(monkeypatch, ["", "n", "", "", "", "", ""])
     assert cli.main(["init"]) == 0
     assert tomlkit.parse(_config_text(config_dir))["name"] == "n"
 
@@ -148,14 +159,59 @@ def test_init_required_field_reprompts(monkeypatch: pytest.MonkeyPatch, config_d
 def test_init_profile_scopes_secret_service(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
-    fake_keyring: dict[tuple[str, str], str],
+    fake_backend: dict[tuple[str, str], str],
 ) -> None:
-    _feed_input(monkeypatch, ["n", "", "", "", ""])
+    _feed_input(monkeypatch, ["n", "", "", "", "", "fake"])
     _feed_getpass(monkeypatch, ["tok"])
     assert cli.main(["init", "--profile", "p"]) == 0
     document = tomlkit.parse(_config_text(config_dir))
     assert document["profiles"]["p"]["name"] == "n"
-    assert fake_keyring == {(f"{APP_NAME}:p", "token"): "tok"}
+    assert document["profiles"]["p"]["credential_backend"] == "fake"
+    assert fake_backend == {(f"{APP_NAME}:p", "token"): "tok"}
+
+
+@pytest.mark.integration
+def test_init_rejects_unknown_backend_and_reprompts(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _feed_input(monkeypatch, ["n", "", "", "", "", "nope", "fake"])
+    _feed_getpass(monkeypatch, ["tok"])
+    assert cli.main(["init"]) == 0
+    assert "Unknown backend 'nope'" in capsys.readouterr().out
+    assert tomlkit.parse(_config_text(config_dir))["credential_backend"] == "fake"
+
+
+@pytest.mark.integration
+def test_init_backend_skipped_prints_guidance_and_stores_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _feed_input(monkeypatch, ["n", "", "", "", "", ""])
+    assert cli.main(["init"]) == 0
+    out = capsys.readouterr().out
+    assert "No credential_backend chosen" in out
+    assert "set credential_backend" in out
+    assert fake_backend == {}
+    assert "credential_backend" not in tomlkit.parse(_config_text(config_dir))
+
+
+@pytest.mark.integration
+def test_init_skips_backend_prompt_when_already_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+) -> None:
+    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    # Only the schema fields are prompted; no backend answer is queued.
+    _feed_input(monkeypatch, ["n", "", "", "", ""])
+    _feed_getpass(monkeypatch, ["tok"])
+    assert cli.main(["init"]) == 0
+    assert fake_backend == {(APP_NAME, "token"): "tok"}
 
 
 def test_init_refuses_configured_target(
@@ -185,7 +241,45 @@ def test_set_rejects_secret_key(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_set_rejects_unknown_key(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["set", "nope", "x"]) == 1
-    assert "Unknown option 'nope'" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "Unknown option 'nope'" in err
+    assert "credential_backend" in err  # reserved keys join the listing
+
+
+def test_set_credential_backend_rejects_unknown_backend(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["set", "credential_backend", "nope"]) == 1
+    err = capsys.readouterr().err
+    assert "Unknown credential backend 'nope'" in err
+    assert "fake" in err  # the available backends are listed
+
+
+def test_set_credential_backend_writes_choice(config_dir: Path) -> None:
+    assert cli.main(["set", "credential_backend", "fake"]) == 0
+    assert tomlkit.parse(_config_text(config_dir))["credential_backend"] == "fake"
+
+
+def test_set_backend_declared_key_writes(monkeypatch: pytest.MonkeyPatch, config_dir: Path) -> None:
+    """Keys a backend declares in RESERVED_KEYS are settable while it exists."""
+    _install_backend(
+        monkeypatch,
+        "vaulted",
+        get=lambda key, service, config: None,
+        RESERVED_KEYS={"vaulted_url": "Vault URL"},
+    )
+    assert cli.main(["set", "vaulted_url", "https://x.invalid/"]) == 0
+    assert tomlkit.parse(_config_text(config_dir))["vaulted_url"] == "https://x.invalid/"
+
+
+def test_unset_credential_backend_removes_choice(
+    config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    assert cli.main(["unset", "credential_backend"]) == 0
+    out = capsys.readouterr().out
+    assert "is required" not in out  # reserved keys are never schema-required
+    assert "credential_backend" not in tomlkit.parse(_config_text(config_dir))
 
 
 def test_set_unknown_profile_is_actionable(capsys: pytest.CaptureFixture[str]) -> None:
@@ -254,17 +348,19 @@ def test_use_unknown_profile_fails(config_dir: Path, capsys: pytest.CaptureFixtu
 def test_show_masks_secrets_and_reports_sources(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
-    fake_keyring: dict[tuple[str, str], str],
+    fake_backend: dict[tuple[str, str], str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    (config_dir / "config.toml").write_text('name = "n"\n', encoding="utf-8")
-    fake_keyring[(APP_NAME, "token")] = "sekrit-value-xyz"
+    (config_dir / "config.toml").write_text(
+        'name = "n"\ncredential_backend = "fake"\n', encoding="utf-8"
+    )
+    fake_backend[(APP_NAME, "token")] = "sekrit-value-xyz"
     monkeypatch.setenv(ENV_PREFIX + "COUNT", "9")
     assert cli.main(["show"]) == 0
     out = capsys.readouterr().out
     assert "sekrit-value-xyz" not in out  # masked
     assert "********" in out
-    assert "<- keyring" in out
+    assert "<- fake" in out  # provenance names the user's backend
     assert "<- file:top-level" in out
     assert f"<- env:{ENV_PREFIX}COUNT" in out
     assert "<- default" in out
@@ -280,27 +376,40 @@ def test_show_missing_required_is_actionable(capsys: pytest.CaptureFixture[str])
 
 def test_set_secret_stores_via_backend(
     monkeypatch: pytest.MonkeyPatch,
-    fake_keyring: dict[tuple[str, str], str],
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
     _feed_getpass(monkeypatch, ["s3"])
     assert cli.main(["set-secret", "token"]) == 0
-    assert fake_keyring == {(APP_NAME, "token"): "s3"}
+    assert fake_backend == {(APP_NAME, "token"): "s3"}
     out = capsys.readouterr().out
     assert "s3" not in out  # value never echoed
+
+
+def test_set_secret_without_backend_is_actionable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No credential_backend configured: the error names the choice to make."""
+    _feed_getpass(monkeypatch, ["s3"])
+    assert cli.main(["set-secret", "token"]) == 1
+    err = capsys.readouterr().err
+    assert "no credential_backend is configured" in err
+    assert "set credential_backend" in err
 
 
 def test_set_secret_uses_default_profile_service(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
-    fake_keyring: dict[tuple[str, str], str],
+    fake_backend: dict[tuple[str, str], str],
 ) -> None:
     (config_dir / "config.toml").write_text(
-        'default_profile = "p"\n[profiles.p]\n', encoding="utf-8"
+        'credential_backend = "fake"\ndefault_profile = "p"\n[profiles.p]\n', encoding="utf-8"
     )
     _feed_getpass(monkeypatch, ["s3"])
     assert cli.main(["set-secret", "token"]) == 0
-    assert fake_keyring == {(f"{APP_NAME}:p", "token"): "s3"}
+    assert fake_backend == {(f"{APP_NAME}:p", "token"): "s3"}
 
 
 def test_set_secret_rejects_empty_value(
@@ -317,14 +426,19 @@ def test_set_secret_rejects_non_secret_key(capsys: pytest.CaptureFixture[str]) -
 
 
 def test_delete_secret_removes_stored_value(
-    fake_keyring: dict[tuple[str, str], str],
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
 ) -> None:
-    fake_keyring[(APP_NAME, "token")] = "s3"
+    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    fake_backend[(APP_NAME, "token")] = "s3"
     assert cli.main(["delete-secret", "token"]) == 0
-    assert fake_keyring == {}
+    assert fake_backend == {}
 
 
-def test_delete_secret_missing_fails_loudly(capsys: pytest.CaptureFixture[str]) -> None:
+def test_delete_secret_missing_fails_loudly(
+    config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
     assert cli.main(["delete-secret", "token"]) == 1
     assert "nothing deleted" in capsys.readouterr().err
 
@@ -350,6 +464,38 @@ def test_set_secret_on_read_only_backend_names_the_manual_route(
     err = capsys.readouterr().err
     assert "read-only" in err
     assert "update the secret in the vault console" in err
+
+
+# --- optional secret machinery -------------------------------------------------------
+
+
+def test_secret_commands_absent_without_secret_fields(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A schema with no secret fields gets no set-secret/delete-secret commands."""
+    monkeypatch.setattr(cli, "_HAS_SECRET_FIELDS", False)
+    with pytest.raises(SystemExit):
+        cli.main(["set-secret", "token"])
+    assert "invalid choice: 'set-secret'" in capsys.readouterr().err
+
+
+def test_set_secret_with_machinery_removed_is_actionable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Secret fields still in the schema after removal fail loudly, not weirdly."""
+    block_secrets_module(monkeypatch)
+    _feed_getpass(monkeypatch, ["s3"])
+    assert cli.main(["set-secret", "token"]) == 1
+    assert "secret-storage machinery" in capsys.readouterr().err
+
+
+def test_backend_keys_unknown_when_machinery_removed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With secrets.py gone there are no reserved keys for set to accept."""
+    block_secrets_module(monkeypatch)
+    assert cli.main(["set", "credential_backend", "fake"]) == 1
+    assert "Unknown option 'credential_backend'" in capsys.readouterr().err
 
 
 # --- file permissions ----------------------------------------------------------------

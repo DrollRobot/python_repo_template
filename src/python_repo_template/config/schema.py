@@ -19,10 +19,12 @@ Field conventions:
   missing from every layer.
 - ``metadata={"help": ...}`` provides the human description used in prompts
   and generated comments.
-- ``metadata={"secret": True}`` marks a secret: its value lives in the OS
-  keyring or Azure Key Vault, never in config.toml, and it must also set
-  ``repr=False`` so the value cannot leak through ``repr()``/tracebacks
-  (enforced by a unit test).
+- ``metadata={"secret": True}`` marks a secret: its value lives in the
+  user-selected credential backend (see ``secrets.py``), never in
+  config.toml, and it must also set ``repr=False`` so the value cannot leak
+  through ``repr()``/tracebacks (enforced by a unit test). A schema with no
+  secret fields never touches the secret machinery, which can then be
+  removed from the package entirely.
 """
 
 from __future__ import annotations

@@ -8,9 +8,10 @@ Public API::
     settings.api_url
 
 Non-secret values live in a per-user ``config.toml`` (see ``paths.py`` for
-the OS-specific location); secrets live in the OS keyring or Azure Key Vault
-and are never written to the file. The config CLI creates and edits the file;
-no hand-editing is required.
+the OS-specific location); secrets live in whichever credential backend the
+user selects (``credential_backend`` in config.toml) and are never written
+to the file. The config CLI creates and edits the file; no hand-editing is
+required.
 
 Module map (each module's docstring carries its own removal instructions
 where applicable):
@@ -20,6 +21,10 @@ where applicable):
 - ``paths.py``   — config-directory resolution.
 - ``file.py``    — config.toml reading and validation.
 - ``resolve.py`` — the precedence engine behind :func:`load_settings`.
+- ``secrets.py`` + ``*_backend.py`` — optional secret-storage machinery:
+  the backend dispatcher and the individual credential backends. Only
+  consulted when the schema marks fields ``secret``; deletable as a unit
+  when it marks none.
 """
 
 from __future__ import annotations

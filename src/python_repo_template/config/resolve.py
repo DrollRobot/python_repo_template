@@ -4,10 +4,15 @@ Precedence, highest wins:
 
 1. Explicit overrides passed by calling code (e.g. from CLI flags).
 2. Environment variables: ``<ENV_PREFIX><UPPER_FIELD_NAME>`` — the
-   CI/headless path; works with zero files and zero keyring.
-3. Secret backend (keyring / Key Vault) — secret fields only.
+   CI/headless path; works with zero files and zero secret storage.
+3. Credential backend — secret fields only, and only when the user has
+   configured a ``credential_backend`` for the profile.
 4. config.toml: the selected profile table, then bare top-level keys.
 5. Schema field defaults.
+
+The secret layer is optional: ``secrets.py`` is imported lazily and only
+when the schema marks at least one field ``secret``, so a schema without
+secret fields runs with the secret-storage machinery deleted entirely.
 
 Profile selection, first match wins: the explicit ``profile`` argument, the
 ``<ENV_PREFIX>PROFILE`` environment variable, the ``default_profile`` key in
@@ -23,14 +28,15 @@ resolver never auto-creates config and never silently defaults.
 
 from __future__ import annotations
 
+import importlib
 import os
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, cast, get_args, get_origin, get_type_hints
 
 from python_repo_template.config import file as config_file
-from python_repo_template.config import paths, secrets
+from python_repo_template.config import paths
 from python_repo_template.config.schema import (
     CLI_NAME,
     ENV_PREFIX,
@@ -43,7 +49,7 @@ from python_repo_template.config.schema import (
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "1.0.1"
+__version__ = "2.0.0"
 
 # Environment variable selecting the active profile.
 PROFILE_ENV = ENV_PREFIX + "PROFILE"
@@ -170,10 +176,13 @@ def _resolve(
 
     profile_name = select_profile_name(profile, config, path)
     profile_values = config_file.profile_table(config, profile_name, path)
-    backend_config = config_file.reserved_config(config, profile_values)
 
     hints = get_type_hints(schema)
     secret_names = {f.name for f in fields(schema) if is_secret(f)}
+    secrets_module: Any = _secrets_module(secret_names) if secret_names else None
+    backend_config: dict[str, Any] = (
+        secrets_module.reserved_config(config, profile_values) if secrets_module else {}
+    )
     values: dict[str, Any] = {}
     sources: dict[str, str] = {}
     missing: list[str] = []
@@ -189,10 +198,10 @@ def _resolve(
             sources[f.name] = f"env:{env_name}"
             continue
         if is_secret(f):
-            secret = secrets.get_secret(f.name, profile_name, backend_config)
+            secret = secrets_module.get_secret(f.name, profile_name, backend_config)
             if secret is not None:
                 values[f.name] = secret
-                sources[f.name] = secrets.backend_name(backend_config)
+                sources[f.name] = secrets_module.backend_name(backend_config)
                 continue
         else:
             if f.name in profile_values:
@@ -212,10 +221,50 @@ def _resolve(
 
     if missing:
         missing_secrets = [name for name in missing if name in secret_names]
+        backend_hint = None
+        if missing_secrets and secrets_module.backend_name(backend_config) is None:
+            available = ", ".join(secrets_module.available_backends()) or "none"
+            backend_hint = (
+                f"No credential_backend is configured; choose one with "
+                f"'{CLI_NAME} set credential_backend <name>' (available: {available})."
+            )
         raise ConfigError(
-            _missing_message(missing, missing_secrets, document is not None, path, profile_name)
+            _missing_message(
+                missing, missing_secrets, document is not None, path, profile_name, backend_hint
+            )
         )
     return schema(**values), sources, profile_name
+
+
+def _secrets_module(secret_fields: Iterable[str]) -> Any:
+    """Import and return the secret-machinery module (``secrets.py``), lazily.
+
+    Called only when the schema marks at least one field ``secret``, so a
+    schema without secret fields never touches -- and can be shipped
+    without -- the secret-storage machinery.
+
+    Args:
+        secret_fields: The schema's secret field names, for the error message.
+
+    Returns:
+        The imported ``secrets`` module.
+
+    Raises:
+        ConfigError: When ``secrets.py`` has been removed from the package
+            while the schema still declares secret fields.
+    """
+    module_name = f"{__package__}.secrets"
+    try:
+        return importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        if exc.name != module_name:
+            raise
+        raise ConfigError(
+            f"The settings schema marks {', '.join(sorted(secret_fields))} as secret, but "
+            "the secret-storage machinery (secrets.py) has been removed from this package. "
+            "Restore it (plus at least one *_backend.py module), or remove the "
+            '"secret": True fields from the schema.'
+        ) from exc
 
 
 def select_profile_name(
@@ -341,6 +390,7 @@ def _missing_message(
     file_exists: bool,
     path: Path,
     profile_name: str | None,
+    backend_hint: str | None,
 ) -> str:
     """Build the actionable error message for missing required values.
 
@@ -350,6 +400,8 @@ def _missing_message(
         file_exists: Whether the config file was found at all.
         path: Config file path.
         profile_name: The active profile, or None for bare top-level mode.
+        backend_hint: Extra sentence naming how to configure a credential
+            backend, when secrets are missing and none is configured.
 
     Returns:
         A single-string message naming every missing field, its env var, and
@@ -362,11 +414,13 @@ def _missing_message(
         source = f"no config file found at {path}"
     message = (
         f"Missing required configuration value(s): {', '.join(missing)}. "
-        f"Searched overrides, environment ({env_vars}), secret backend (secret fields), "
+        f"Searched overrides, environment ({env_vars}), credential backend (secret fields), "
         f"and {source}. "
         f"Run '{CLI_NAME} init' to create the config interactively, or set the "
         "environment variable(s) above."
     )
+    if backend_hint:
+        message += f" {backend_hint}"
     if missing_secrets:
         stores = " ".join(f"'{CLI_NAME} set-secret {name}'" for name in missing_secrets)
         message += f" Store missing secret(s) with: {stores}."

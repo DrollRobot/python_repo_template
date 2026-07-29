@@ -15,14 +15,22 @@ import pytest
 
 from python_repo_template.config.resolve import PROFILE_ENV, resolve_settings
 from python_repo_template.config.schema import CLI_NAME, ENV_PREFIX, ConfigError
-from tests._config_test_object import ConfigTestObject
+from tests._config_test_object import (
+    ConfigTestObject,
+    NoSecretsTestObject,
+    block_secrets_module,
+)
 
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 pytestmark = pytest.mark.unit
+
+# No test here configures a credential_backend, so the resolver never touches
+# a real credential store: with no backend configured the secret layer is
+# skipped by design (the old autouse get_secret stub is unnecessary).
 
 
 @pytest.fixture(autouse=True)
@@ -31,19 +39,6 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ):
         if key.startswith(ENV_PREFIX):
             monkeypatch.delenv(key)
-
-
-@pytest.fixture(autouse=True)
-def _no_real_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub the secret-backend layer to 'nothing stored'.
-
-    Keeps these resolver tests off the host's real keyring; the dispatcher
-    and backends have their own tests in test_config_secrets.py.
-    """
-    monkeypatch.setattr(
-        "python_repo_template.config.secrets.get_secret",
-        lambda key, profile, config: None,
-    )
 
 
 @pytest.fixture
@@ -86,6 +81,49 @@ def test_missing_required_is_actionable(config_path: Path) -> None:
     assert ENV_PREFIX + "TOKEN" in message
     assert f"{CLI_NAME} init" in message
     assert str(config_path) in message
+
+
+def test_missing_secret_without_backend_names_the_choice(config_path: Path) -> None:
+    """A missing secret with no backend configured points at picking one."""
+    with pytest.raises(ConfigError) as excinfo:
+        _resolve(config_path)
+    message = str(excinfo.value)
+    assert "No credential_backend is configured" in message
+    assert f"{CLI_NAME} set credential_backend" in message
+
+
+# --- optional secret machinery -------------------------------------------------------
+
+
+def test_no_secret_fields_resolves_without_secret_machinery(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    """A schema with no secret fields runs with config/secrets.py deleted."""
+    block_secrets_module(monkeypatch)
+    _write(config_path, 'name = "n"\n')
+    settings: NoSecretsTestObject = resolve_settings(NoSecretsTestObject, config_path=config_path)
+    assert settings.name == "n"
+    assert settings.count == 3
+
+
+def test_secret_fields_with_machinery_removed_is_actionable(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    """Secret fields left in the schema after removal fail loudly, not weirdly."""
+    block_secrets_module(monkeypatch)
+    _write(config_path, 'name = "n"\n')
+    with pytest.raises(ConfigError, match=r"secret-storage machinery.*removed"):
+        resolve_settings(ConfigTestObject, config_path=config_path)
+
+
+def test_backend_keys_rejected_when_machinery_removed(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    """With secrets.py gone there are no reserved keys; leftovers fail loudly."""
+    block_secrets_module(monkeypatch)
+    _write(config_path, 'name = "n"\ncredential_backend = "keyring"\n')
+    with pytest.raises(ConfigError, match="Unknown key 'credential_backend'"):
+        resolve_settings(NoSecretsTestObject, config_path=config_path)
 
 
 # --- precedence ----------------------------------------------------------------------

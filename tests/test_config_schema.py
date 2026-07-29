@@ -25,7 +25,7 @@ from python_repo_template.config.schema import (
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 pytestmark = pytest.mark.unit
 
@@ -49,7 +49,7 @@ def test_field_names_avoid_reserved_keys() -> None:
     """Option names must not collide with reserved config.toml or env-var names."""
     reserved = (
         config_file.RESERVED_TOP_LEVEL_KEYS
-        | config_file.RESERVED_PROFILE_KEYS
+        | config_file.secret_reserved_keys()  # credential_backend + backend keys
         | {"profile", "config_dir"}  # PROFILE_ENV / CONFIG_DIR_ENV suffixes
     )
     collisions = {f.name for f in fields(Settings)} & reserved
