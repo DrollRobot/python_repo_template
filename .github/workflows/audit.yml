@@ -74,7 +74,7 @@ jobs:
       # </private-repo-deps>
 
       - name: Sync dependencies
-        run: uv sync --locked --all-groups
+        run: uv sync --locked --all-groups --all-extras
 
       - name: Audit dependencies
         run: uv audit
@@ -95,7 +95,7 @@ jobs:
           version: "0.11.x"
 
       - name: Sync dependencies
-        run: uv sync --locked --all-groups
+        run: uv sync --locked --all-groups --all-extras
 
       # Fails if any tracked file contains a detection that is not already
       # recorded in .secrets.baseline.

@@ -101,6 +101,23 @@ def test_iter_dependencies_reads_project_and_groups_ignoring_includes() -> None:
     assert iter_dependencies(data) == ["requests>=2.0", "mkdocs>=1.6,<2", "ruff>=0.15,<1"]
 
 
+def test_iter_dependencies_reads_optional_dependency_extras() -> None:
+    data = {
+        "project": {
+            "dependencies": ["requests>=2.0"],
+            "optional-dependencies": {
+                "keyring": ["keyring>=25.0,<26"],
+                "keyvault": ["azure-identity>=1.25,<2", 123],
+            },
+        },
+    }
+    assert iter_dependencies(data) == [
+        "requests>=2.0",
+        "keyring>=25.0,<26",
+        "azure-identity>=1.25,<2",
+    ]
+
+
 def test_iter_dependencies_tolerates_missing_tables() -> None:
     assert iter_dependencies({}) == []
 

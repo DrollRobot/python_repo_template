@@ -1,5 +1,8 @@
 # Agent releasing instructions
 
+- If the user asked you to read this file, treat that as them asking you to
+  perform the prodedure described below.
+
 ## Update precommit
 ```
 # update precommit dependencies
@@ -60,7 +63,7 @@ uv run pre-commit autoupdate
 
 5. **Install the final lockfile and test:**
    ```
-   uv sync --all-groups                  # install the refreshed lockfile
+   uv sync --all-groups --all-extras     # install the refreshed lockfile
    ```
    Re-run the test suite as described in [AGENTS.TESTING.md](AGENTS.TESTING.md)
    before continuing.

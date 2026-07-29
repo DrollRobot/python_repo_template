@@ -17,7 +17,7 @@ from python_repo_template.config.schema import ConfigError
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 pytestmark = pytest.mark.unit
 
@@ -25,6 +25,11 @@ pytestmark = pytest.mark.unit
 def test_keyvault_requires_vault_url() -> None:
     with pytest.raises(ConfigError, match="keyvault_url"):
         keyvault_backend.get("token", "svc", {})
+
+
+def test_keyvault_declares_its_vault_url_key() -> None:
+    """keyvault_url is legal in config.toml only because this module declares it."""
+    assert "keyvault_url" in keyvault_backend.RESERVED_KEYS
 
 
 def test_keyvault_is_read_only_and_names_the_azure_route() -> None:

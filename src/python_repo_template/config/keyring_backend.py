@@ -1,48 +1,79 @@
-"""OS-keyring credential backend (the default).
+"""OS-keyring credential backend.
 
 Stores secrets in the OS-native credential store: Windows Credential Manager,
 macOS Keychain, or Linux Secret Service (GNOME Keyring / KWallet). Selected
-by ``credential_backend = "keyring"`` in a profile, or by default when no
-backend is named. Secrets are namespaced per profile via the keyring
-*service* (``python_repo_template:<profile>``); the *username* slot holds the
-schema field name.
+by ``credential_backend = "keyring"`` in a profile. Secrets are namespaced
+per profile via the keyring *service* (``python_repo_template:<profile>``);
+the *username* slot holds the schema field name.
+
+The ``keyring`` package is an optional dependency (the ``keyring`` extra) and
+is imported lazily, so this module is importable — and the rest of the config
+system fully usable — without it installed.
 
 Headless hosts (Linux without D-Bus/SecretService, containers, CI) have no
 usable keyring; ``keyring`` then selects a fail/null backend. That is
 detected on first use and raised as an actionable error naming the
 alternatives -- this backend never falls back to writing plaintext anywhere.
 
-To remove the keyring backend entirely: delete this file, its test module
-``tests/test_keyring_backend.py``, and the marked ``keyring`` line in
-``pyproject.toml``'s ``[project] dependencies`` (then run ``uv lock`` and
-``uv sync``). With this file gone there are no ``keyring`` imports anywhere,
-and profiles must select another backend.
+To remove the keyring backend entirely: delete this file and its test module
+``tests/test_keyring_backend.py``, and delete the ``keyring`` extra in
+``pyproject.toml``'s ``[project.optional-dependencies]`` (then run
+``uv lock`` and ``uv sync --all-extras``). With this file gone there are no
+``keyring`` imports anywhere, and profiles must select another backend.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
-
-import keyring
-import keyring.backends.chainer
-import keyring.backends.fail
-import keyring.errors
+from types import ModuleType
+from typing import Any, cast
 
 from python_repo_template.config.schema import CLI_NAME, ConfigError
 
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "1.0.1"
+__version__ = "2.0.0"
+
+# Backend-specific config.toml keys this backend consumes, mapped to the help
+# text shown when prompting for them. The dispatcher (secrets.py) unions these
+# into the set of reserved profile keys; the keyring backend needs none.
+RESERVED_KEYS: dict[str, str] = {}
 
 
-def _require_usable_backend() -> None:
+def _import_keyring() -> ModuleType:
+    """Import and return the ``keyring`` package, failing loudly when absent.
+
+    Returns:
+        The imported ``keyring`` module (with the submodules used here loaded).
+
+    Raises:
+        ConfigError: When the ``keyring`` package is not installed.
+    """
+    try:
+        import keyring
+        import keyring.backends.chainer
+        import keyring.backends.fail
+        import keyring.errors
+    except ModuleNotFoundError as exc:
+        raise ConfigError(
+            "The keyring credential backend needs the 'keyring' package, which is an "
+            "optional dependency. Install it with the 'keyring' extra (e.g. "
+            "'uv sync --extra keyring', or 'pip install <package>[keyring]'), or select "
+            "another credential_backend."
+        ) from exc
+    return keyring
+
+
+def _require_usable_backend(keyring: ModuleType) -> None:
     """Raise when the active keyring backend cannot actually store secrets.
+
+    Args:
+        keyring: The imported ``keyring`` module.
 
     Raises:
         ConfigError: On fail/null backends (headless Linux, containers), with
-            the env-var and Key Vault alternatives named.
+            the alternatives named.
     """
     active = keyring.get_keyring()
     unusable = isinstance(active, keyring.backends.fail.Keyring) or (
@@ -52,8 +83,8 @@ def _require_usable_backend() -> None:
         raise ConfigError(
             "No usable OS keyring backend is available on this host (common on headless "
             "Linux and containers). Provide secrets via environment variables instead, or "
-            'use the Azure Key Vault backend (credential_backend = "keyvault"). Secrets '
-            "are never written to disk as a fallback."
+            "select another credential_backend. Secrets are never written to disk as a "
+            "fallback."
         )
 
 
@@ -69,10 +100,12 @@ def get(key: str, service: str, config: Mapping[str, Any]) -> str | None:
         The stored value, or None when not present.
 
     Raises:
-        ConfigError: When no usable keyring backend exists.
+        ConfigError: When the keyring package is missing or no usable keyring
+            backend exists.
     """
-    _require_usable_backend()
-    return keyring.get_password(service, key)
+    keyring = _import_keyring()
+    _require_usable_backend(keyring)
+    return cast("str | None", keyring.get_password(service, key))
 
 
 def set(key: str, value: str, service: str, config: Mapping[str, Any]) -> None:
@@ -85,9 +118,11 @@ def set(key: str, value: str, service: str, config: Mapping[str, Any]) -> None:
         config: Merged reserved-key table (unused by this backend).
 
     Raises:
-        ConfigError: When no usable keyring backend exists.
+        ConfigError: When the keyring package is missing or no usable keyring
+            backend exists.
     """
-    _require_usable_backend()
+    keyring = _import_keyring()
+    _require_usable_backend(keyring)
     keyring.set_password(service, key, value)
 
 
@@ -100,10 +135,12 @@ def delete(key: str, service: str, config: Mapping[str, Any]) -> None:
         config: Merged reserved-key table (unused by this backend).
 
     Raises:
-        ConfigError: When no usable keyring backend exists, or the key is not
-            stored (so a typo'd delete fails loudly instead of silently).
+        ConfigError: When the keyring package is missing, no usable keyring
+            backend exists, or the key is not stored (so a typo'd delete fails
+            loudly instead of silently).
     """
-    _require_usable_backend()
+    keyring = _import_keyring()
+    _require_usable_backend(keyring)
     try:
         keyring.delete_password(service, key)
     except keyring.errors.PasswordDeleteError as exc:

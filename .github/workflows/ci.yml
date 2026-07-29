@@ -82,7 +82,7 @@ jobs:
       # </private-repo-deps>
 
       - name: Sync dependencies
-        run: uv sync --locked --all-groups
+        run: uv sync --locked --all-groups --all-extras
 
       - name: Lint (ruff check)
         run: uv run ruff check .

@@ -15,8 +15,19 @@ dependencies = [
     # FIXME add depencencies
     "platformdirs>=4.3,<5",
     "tomlkit>=0.13,<1",
-    "azure-identity>=1.17,<2",
-    "azure-keyvault-secrets>=4.8,<5",
+]
+
+[project.optional-dependencies]
+# Credential-backend extras: each installs what one secret backend needs, so
+# the end user picks a backend at install time (e.g. 'uv sync --extra keyring'
+# or 'pip install <package>[keyvault]'). Contributors install all of them with
+# 'uv sync --all-extras'. Delete an extra together with its backend module.
+keyring = [
+    "keyring>=25.0,<26",
+]
+keyvault = [
+    "azure-identity>=1.25,<2",
+    "azure-keyvault-secrets>=4.11,<5",
 ]
 
 [dependency-groups]
@@ -25,21 +36,12 @@ docs = [
     "mkdocs-material>=9.7,<10",
     "mkdocstrings[python]>=1.0.4,<2",
 ]
-keyring = [
-    "keyring>=25.0,<26",
-]
-keyvault = [
-    "azure-identity>=1.25,<2",
-    "azure-keyvault-secrets>=4.11,<5",
-]
 test = [
     "pytest>=9.0.3,<10",
     "pytest-cov>=7.1,<8",
 ]
 dev = [
     {include-group = "docs"},
-    {include-group = "keyring"},
-    {include-group = "keyvault"},
     {include-group = "test"},
     "debugpy>=1.8,<2",
     "detect-secrets>=1.5,<2",

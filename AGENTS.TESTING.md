@@ -28,7 +28,7 @@
 - Use the test procedure below.
 ```
 # if pyproject.toml was changed:
-uv sync
+uv sync --all-extras
 uv lock --check
 
 # code checks and formatting

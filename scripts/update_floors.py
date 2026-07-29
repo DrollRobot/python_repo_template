@@ -1,8 +1,9 @@
 """Raise every direct dependency's lower-version bound to the latest allowed.
 
-For each dependency declared in ``[project.dependencies]`` and every
-``[dependency-groups]`` table, this sets the ``>=`` floor to the newest version
-the project's existing upper bounds already permit, sourced from ``uv.lock``.
+For each dependency declared in ``[project.dependencies]``, every
+``[project.optional-dependencies]`` extra, and every ``[dependency-groups]``
+table, this sets the ``>=`` floor to the newest version the project's existing
+upper bounds already permit, sourced from ``uv.lock``.
 
 The flow is index-aware and cap-respecting by design:
 
@@ -53,7 +54,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 # The distribution name at the start of a PEP 508 requirement, plus optional
 # extras (e.g. ``mkdocstrings[python]``). The rest of the string is the
@@ -146,8 +147,9 @@ def raise_floor(requirement: str, new_version: str) -> str:
 def iter_dependencies(pyproject: dict[str, Any]) -> list[str]:
     """Collect every string requirement declared in a parsed pyproject.toml.
 
-    Reads ``[project.dependencies]`` and every ``[dependency-groups]`` table.
-    Non-string group entries (``{include-group = ...}``) are ignored.
+    Reads ``[project.dependencies]``, every ``[project.optional-dependencies]``
+    extra, and every ``[dependency-groups]`` table. Non-string group entries
+    (``{include-group = ...}``) are ignored.
 
     Args:
         pyproject: The parsed pyproject.toml document.
@@ -161,6 +163,11 @@ def iter_dependencies(pyproject: dict[str, Any]) -> list[str]:
         raw = project.get("dependencies")
         if isinstance(raw, list):
             deps.extend(item for item in raw if isinstance(item, str))
+        extras = project.get("optional-dependencies")
+        if isinstance(extras, dict):
+            for entries in extras.values():
+                if isinstance(entries, list):
+                    deps.extend(item for item in entries if isinstance(item, str))
     groups = pyproject.get("dependency-groups")
     if isinstance(groups, dict):
         for entries in groups.values():
@@ -366,7 +373,10 @@ def main() -> None:
 
     cli.section("Done")
     cli.success(f"  Raised {len(bumps)} floor(s) to the latest allowed versions.")
-    cli.info("Reminder", "run 'uv sync --all-groups' and the test suite before committing.")
+    cli.info(
+        "Reminder",
+        "run 'uv sync --all-groups --all-extras' and the test suite before committing.",
+    )
 
 
 if __name__ == "__main__":

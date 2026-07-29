@@ -23,7 +23,7 @@ Requires Python 3.14+ and [uv](https://docs.astral.sh/uv/).
 ```
 git clone https://github.com/FIXME/python-repo-template.git
 cd python-repo-template
-uv sync --all-groups
+uv sync --all-groups --all-extras
 uv run pre-commit install
 ```
 

@@ -9,6 +9,9 @@ scope, so it is deleted along with the backend when a project drops it.
 
 from __future__ import annotations
 
+import sys
+from typing import Any
+
 import keyring
 import keyring.backends.fail
 import pytest
@@ -19,7 +22,7 @@ from python_repo_template.config.schema import APP_NAME, ConfigError
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 pytestmark = pytest.mark.unit
 
@@ -61,6 +64,28 @@ def test_keyring_headless_backend_is_actionable(monkeypatch: pytest.MonkeyPatch)
     fail_backend = keyring.backends.fail.Keyring()  # type: ignore[no-untyped-call]
     monkeypatch.setattr(keyring, "get_keyring", lambda: fail_backend)
     with pytest.raises(ConfigError, match=r"No usable OS keyring.*environment variables"):
+        keyring_backend.get("token", "svc", {})
+
+
+def test_keyring_declares_no_reserved_keys() -> None:
+    """The OS keyring needs no config.toml keys beyond credential_backend."""
+    assert keyring_backend.RESERVED_KEYS == {}
+
+
+def test_missing_keyring_package_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without the optional 'keyring' package the error names how to get it."""
+
+    class BlockKeyring:
+        def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> None:
+            if fullname == "keyring" or fullname.startswith("keyring."):
+                raise ModuleNotFoundError(f"No module named {fullname!r}", name=fullname)
+            return None
+
+    for name in list(sys.modules):
+        if name == "keyring" or name.startswith("keyring."):
+            monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setattr(sys, "meta_path", [BlockKeyring(), *sys.meta_path])
+    with pytest.raises(ConfigError, match=r"'keyring' extra"):
         keyring_backend.get("token", "svc", {})
 
 
