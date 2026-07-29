@@ -9,7 +9,7 @@ This module can also be run directly:
 
 Configuration comes from the config system (see
 ``src/python_repo_template/config/``): non-secret values from the per-user
-config.toml, secrets from the OS keyring or Azure Key Vault, with env-var
+config.toml, secrets from the user-selected credential backend, with env-var
 overrides for CI. The ``--profile`` flag below is the standard shape for
 multi-tenant use; keep it even if your project starts single-tenant.
 """

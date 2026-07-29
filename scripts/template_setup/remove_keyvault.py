@@ -16,9 +16,8 @@ backends and are deliberately not touched: ``secrets.py`` stays.
 
 Manual follow-ups (this script only deletes files):
 
-- Delete the two azure lines in ``pyproject.toml`` (in ``[project]
-  dependencies`` and the ``dev`` group), then run ``uv lock`` and
-  ``uv sync``.
+- Delete the ``keyvault`` extra in ``pyproject.toml``'s
+  ``[project.optional-dependencies]``, then run ``uv lock`` and ``uv sync``.
 
 Usage:
     uv run scripts/template_setup/remove_keyvault.py
@@ -94,8 +93,8 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
         print(f"  Deleted {path.relative_to(root)}")
 
     print(f"\n  Removed the Key Vault backend: {len(deletions)} path(s) deleted.")
-    print("  Reminder: delete the two azure lines in pyproject.toml ([project]")
-    print("  dependencies and the dev group), then run 'uv lock' and 'uv sync'.")
+    print("  Reminder: delete the 'keyvault' extra in pyproject.toml's")
+    print("  [project.optional-dependencies], then run 'uv lock' and 'uv sync'.")
     return 0
 
 

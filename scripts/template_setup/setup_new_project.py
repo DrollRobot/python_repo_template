@@ -23,7 +23,8 @@ user -> set Python version -> set project version -> reset changelog -> Claude c
 hooks -> Claude auto-memory guard -> Claude inline-suppression guard -> choose
 license -> remove mkdocs (if declined) -> remove keyring backend (if
 declined) -> remove Key Vault backend (if declined) -> remove the whole
-config system (if declined; replaces the two backend steps) -> remove
+secret-storage machinery (if declined; replaces the two backend steps) ->
+remove the whole config system (if declined; replaces all three) -> remove
 private-repo-deps workflow steps (if declined) -> remove the
 remote-disposability scripts (if declined) -> remove SECURITY.md (if
 declined) -> remove CONTRIBUTING.md (if declined) -> re-initialize git (if
@@ -64,6 +65,7 @@ import remove_keyvault
 import remove_mkdocs
 import remove_private_repo_deps
 import remove_remote_disposable_scripts
+import remove_secret_storage
 import remove_security_policy
 import rename_project
 import reset_changelog
@@ -96,6 +98,7 @@ class Config:
     no_inline_secret_suppressions: bool
     mkdocs: bool
     config_system: bool
+    secret_storage: bool
     keyring: bool
     keyvault: bool
     private_repo_deps: bool
@@ -249,6 +252,7 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
 
     mkdocs = _require_bool(features, "mkdocs", "features", problems)
     config_system = _require_bool(features, "config_system", "features", problems)
+    secret_storage = _require_bool(features, "secret_storage", "features", problems)
     keyring = _require_bool(features, "keyring", "features", problems)
     keyvault = _require_bool(features, "keyvault", "features", problems)
     private_repo_deps = _require_bool(features, "private_repo_deps", "features", problems)
@@ -305,14 +309,23 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
     if branch and not branch.strip():
         problems.append("[git].branch is empty.")
 
-    # The backends live inside the config package: keeping one while removing
-    # the whole package is contradictory, so demand an explicit false.
+    # The secret machinery lives inside the config package, and the backends
+    # live inside the secret machinery: keeping an inner piece while removing
+    # its container is contradictory, so demand an explicit false.
     if not config_system:
+        for feature in ("secret_storage", "keyring", "keyvault"):
+            if features.get(feature) is True:
+                problems.append(
+                    f"[features].{feature}=true requires [features].config_system=true "
+                    "(it lives inside the config package); set it to false."
+                )
+    elif not secret_storage:
         for backend in ("keyring", "keyvault"):
             if features.get(backend) is True:
                 problems.append(
-                    f"[features].{backend}=true requires [features].config_system=true "
-                    "(the backend lives inside the config package); set it to false."
+                    f"[features].{backend}=true requires [features].secret_storage=true "
+                    "(the backend lives inside the secret-storage machinery); "
+                    "set it to false."
                 )
 
     if reinit and not reinit_git._is_pristine_template_clone(root):
@@ -342,6 +355,7 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
             no_inline_secret_suppressions=no_inline_secrets,
             mkdocs=mkdocs,
             config_system=config_system,
+            secret_storage=secret_storage,
             keyring=keyring,
             keyvault=keyvault,
             private_repo_deps=private_repo_deps,
@@ -520,6 +534,15 @@ def _step_remove_keyvault() -> PlannedStep:
     return PlannedStep("remove_keyvault", "Remove the Key Vault backend", call)
 
 
+def _step_remove_secret_storage() -> PlannedStep:
+    """Build the secret-storage-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_secret_storage.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_secret_storage", "Remove the secret-storage machinery", call)
+
+
 def _step_remove_config_system() -> PlannedStep:
     """Build the config-system-removal step (only included when declined)."""
 
@@ -610,15 +633,18 @@ def build_steps(config: Config) -> tuple[PlannedStep, ...]:
     if not config.mkdocs:
         steps.append(_step_remove_mkdocs())
     # Declining the whole config system removes the package directory, which
-    # covers both backends; the per-backend steps only run when the package
-    # itself is kept.
-    if config.config_system:
+    # covers the secret machinery and both backends; declining the secret
+    # machinery covers both backends; the per-backend steps only run when
+    # everything containing them is kept.
+    if not config.config_system:
+        steps.append(_step_remove_config_system())
+    elif not config.secret_storage:
+        steps.append(_step_remove_secret_storage())
+    else:
         if not config.keyring:
             steps.append(_step_remove_keyring())
         if not config.keyvault:
             steps.append(_step_remove_keyvault())
-    else:
-        steps.append(_step_remove_config_system())
     if not config.private_repo_deps:
         steps.append(_step_remove_private_repo_deps())
     if not config.remote_disposable_scripts:

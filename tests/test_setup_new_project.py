@@ -32,6 +32,7 @@ import remove_keyvault
 import remove_mkdocs
 import remove_private_repo_deps
 import remove_remote_disposable_scripts
+import remove_secret_storage
 import remove_security_policy
 import rename_project
 import reset_changelog
@@ -66,6 +67,7 @@ no_inline_secret_suppressions = false
 [features]
 mkdocs = true
 config_system = true
+secret_storage = true
 keyring = true
 keyvault = true
 private_repo_deps = true
@@ -99,6 +101,7 @@ def _valid_raw() -> dict[str, Any]:
         "features": {
             "mkdocs": True,
             "config_system": True,
+            "secret_storage": True,
             "keyring": True,
             "keyvault": True,
             "private_repo_deps": True,
@@ -128,6 +131,7 @@ def _make_config(**overrides: Any) -> setup_new_project.Config:
         "no_inline_secret_suppressions": False,
         "mkdocs": True,
         "config_system": True,
+        "secret_storage": True,
         "keyring": True,
         "keyvault": True,
         "private_repo_deps": True,
@@ -330,6 +334,18 @@ def test_validate_config_backend_without_config_system_reports_problem(tmp_path:
     raw["features"]["config_system"] = False
     config, problems = setup_new_project.validate_config(tmp_path, raw)
     assert config is None
+    assert any("[features].secret_storage=true" in problem for problem in problems)
+    assert any("[features].keyring=true" in problem for problem in problems)
+    assert any("[features].keyvault=true" in problem for problem in problems)
+
+
+@pytest.mark.unit
+def test_validate_config_backend_without_secret_storage_reports_problem(tmp_path: Path) -> None:
+    """Keeping a backend while removing the secret machinery is contradictory."""
+    raw = _valid_raw()
+    raw["features"]["secret_storage"] = False
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert config is None
     assert any("[features].keyring=true" in problem for problem in problems)
     assert any("[features].keyvault=true" in problem for problem in problems)
 
@@ -338,15 +354,31 @@ def test_validate_config_backend_without_config_system_reports_problem(tmp_path:
 def test_validate_config_declining_config_system_with_backends_false_passes(
     tmp_path: Path,
 ) -> None:
-    """config_system=false is valid once both backend flags are false too."""
+    """config_system=false is valid once the nested feature flags are false too."""
     raw = _valid_raw()
     raw["features"]["config_system"] = False
+    raw["features"]["secret_storage"] = False
     raw["features"]["keyring"] = False
     raw["features"]["keyvault"] = False
     config, problems = setup_new_project.validate_config(tmp_path, raw)
     assert problems == []
     assert config is not None
     assert config.config_system is False
+
+
+@pytest.mark.unit
+def test_validate_config_declining_secret_storage_with_backends_false_passes(
+    tmp_path: Path,
+) -> None:
+    """secret_storage=false is valid once both backend flags are false too."""
+    raw = _valid_raw()
+    raw["features"]["secret_storage"] = False
+    raw["features"]["keyring"] = False
+    raw["features"]["keyvault"] = False
+    config, problems = setup_new_project.validate_config(tmp_path, raw)
+    assert problems == []
+    assert config is not None
+    assert config.secret_storage is False
 
 
 @pytest.mark.unit
@@ -431,14 +463,28 @@ def test_build_steps_orders_both_backend_removals() -> None:
 
 
 @pytest.mark.unit
-def test_build_steps_config_system_declined_replaces_backend_steps() -> None:
-    """config_system=false adds only remove_config_system -- the package
+def test_build_steps_secret_storage_declined_replaces_backend_steps() -> None:
+    """secret_storage=false adds only remove_secret_storage -- the machinery
     removal already covers both backends."""
     steps = setup_new_project.build_steps(
-        _make_config(config_system=False, keyring=False, keyvault=False)
+        _make_config(secret_storage=False, keyring=False, keyvault=False)
+    )
+    keys = [step.key for step in steps]
+    assert steps[-1].key == "remove_secret_storage"
+    assert "remove_keyring" not in keys
+    assert "remove_keyvault" not in keys
+
+
+@pytest.mark.unit
+def test_build_steps_config_system_declined_replaces_backend_steps() -> None:
+    """config_system=false adds only remove_config_system -- the package
+    removal already covers the secret machinery and both backends."""
+    steps = setup_new_project.build_steps(
+        _make_config(config_system=False, secret_storage=False, keyring=False, keyvault=False)
     )
     keys = [step.key for step in steps]
     assert steps[-1].key == "remove_config_system"
+    assert "remove_secret_storage" not in keys
     assert "remove_keyring" not in keys
     assert "remove_keyvault" not in keys
 
@@ -695,13 +741,27 @@ def test_step_remove_keyvault_forwards_assume_yes(
 
 
 @pytest.mark.unit
+def test_step_remove_secret_storage_forwards_assume_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(remove_secret_storage, "run", _recording_run(calls))
+    steps = setup_new_project.build_steps(
+        _make_config(secret_storage=False, keyring=False, keyvault=False)
+    )
+    steps[-1].call(tmp_path, False)
+    assert calls[0]["args"] == (tmp_path,)
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+
+
+@pytest.mark.unit
 def test_step_remove_config_system_forwards_assume_yes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(remove_config_system, "run", _recording_run(calls))
     steps = setup_new_project.build_steps(
-        _make_config(config_system=False, keyring=False, keyvault=False)
+        _make_config(config_system=False, secret_storage=False, keyring=False, keyvault=False)
     )
     steps[-1].call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path,)
@@ -833,6 +893,7 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
         remove_mkdocs,
         remove_keyring,
         remove_keyvault,
+        remove_secret_storage,
         remove_config_system,
         remove_private_repo_deps,
         remove_remote_disposable_scripts,

@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `[features].secret_storage` setup flag and
+  `scripts/template_setup/remove_secret_storage.py`, so a project whose
+  configuration holds no secrets can drop the entire secret-storage machinery
+  -- the backend dispatcher (`config/secrets.py`), every credential backend,
+  and their tests -- while keeping the rest of the config system. The config
+  package no longer hard-imports any of it: `resolve.py` and `cli.py` load
+  `secrets.py` lazily and only when the settings schema marks a field
+  `secret`, `file.py` learns the reserved profile keys from `secrets.py` at
+  validation time (empty set when it is gone), and the CLI registers
+  `set-secret`/`delete-secret` only when secret fields exist.
+  `compare_to_template.py` gates the machinery's files behind the new flag.
+- The config CLI's `set`/`unset` now accept the reserved backend keys, so
+  picking where secrets live is a user action, not a hand-edit:
+  `<cli> set credential_backend keyvault` (validated against the backends
+  actually present), `<cli> set keyvault_url ...`. `init` prompts for the
+  backend choice (and the chosen backend's own keys) when the schema has
+  secret fields and none is configured yet.
+
 - `README.md.FIXME`, a skeleton README for the new project, and
   `scripts/template_setup/reset_readme.py`, the setup step that writes it over
   `README.md` and deletes the `.FIXME` file -- the same swap
@@ -84,6 +102,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Which credential backend stores secrets is now entirely the user's choice.
+  The developer-hardcoded `DEFAULT_BACKEND = "keyring"` is gone: with no
+  `credential_backend` configured, secret reads skip the backend layer
+  (env-var-only CI keeps working with zero config) and secret writes fail
+  loudly naming the available backends. Backends now describe themselves: each
+  `*_backend.py` module declares the config keys it consumes in a
+  `RESERVED_KEYS` mapping, `secrets.py` discovers backends by scanning the
+  package for `*_backend.py` files, and `file.py`'s hardcoded
+  `RESERVED_PROFILE_KEYS` (which baked the keyvault-specific `keyvault_url`
+  into core validation) is gone -- deleting a backend file now removes its
+  keys from the legal config.toml set too.
+- The `keyring` and `keyvault` dependency groups are now
+  `[project.optional-dependencies]` extras. PEP 735 groups are dev-only and
+  never ship in the wheel, so an end user of an installed package had no way
+  to opt into a backend; extras restore that (`pip install <package>[keyring]`,
+  `uv sync --extra keyvault`). Contributors and CI use
+  `--all-extras`; `update_floors.py` now raises floors in extras too.
+  `keyring_backend.py` imports the `keyring` package lazily with an actionable
+  error naming the extra, matching the keyvault backend's existing pattern.
 - `cleanup.py` no longer reminds the user to remove the "Making a new repo from
   this template" section from `README.md`: `reset_readme.py` replaces that
   README wholesale during setup, so the section is already gone. Only the
@@ -101,6 +138,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `azure-identity` and `azure-keyvault-secrets` were still listed in
+  `[project] dependencies` (a leftover from moving them into the `keyvault`
+  dependency group), forcing the azure SDK onto every downstream install even
+  with the Key Vault backend unused or deleted. They now live only in the
+  `keyvault` extra.
 - Hook wiring is now portable across a team's machines. `.claude/settings.json`
   is committed, but it used to hardcode an interpreter (`python` for the
   powershell flavor, `python3` for bash) and rely on a shell to expand

@@ -17,10 +17,9 @@ Manual follow-ups (this script only deletes files):
 
 - Delete the config CLI entry point in ``pyproject.toml``'s
   ``[project.scripts]`` table.
-- Delete the ``keyring`` line and the two azure lines in ``pyproject.toml``
-  (in ``[project] dependencies`` and the ``dev`` group), plus ``tomlkit`` and
-  ``platformdirs`` if nothing else uses them, then run ``uv lock`` and
-  ``uv sync``.
+- Delete the ``keyring`` and ``keyvault`` extras in ``pyproject.toml``'s
+  ``[project.optional-dependencies]``, plus ``tomlkit`` and ``platformdirs``
+  if nothing else uses them, then run ``uv lock`` and ``uv sync``.
 - Remove the ``load_settings`` usage from ``src/<package>/main.py`` and the
   settings fixture from ``tests/conftest.py``.
 
@@ -112,9 +111,9 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
     print(f"\n  Removed the config system: {len(deletions)} path(s) deleted.")
     print("  Reminders (not done automatically):")
     print("    - Delete the config CLI entry point in pyproject.toml's [project.scripts].")
-    print("    - Delete the keyring and azure dependency lines in pyproject.toml (and")
-    print("      tomlkit/platformdirs if nothing else uses them), then run 'uv lock'")
-    print("      and 'uv sync'.")
+    print("    - Delete the 'keyring' and 'keyvault' extras in pyproject.toml's")
+    print("      [project.optional-dependencies] (and tomlkit/platformdirs if nothing")
+    print("      else uses them), then run 'uv lock' and 'uv sync'.")
     print("    - Remove the load_settings usage from the package's main.py and the")
     print("      settings fixture from tests/conftest.py.")
     return 0

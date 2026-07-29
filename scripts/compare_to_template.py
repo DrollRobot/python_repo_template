@@ -89,7 +89,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.18.1"
+__version__ = "1.19.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -258,7 +258,7 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(
         f"src/{TEMPLATE_SNAKE}/config/schema.py", compare_content=False, gate="config_system"
     ),
-    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/secrets.py", versioned=True, gate="config_system"),
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/secrets.py", versioned=True, gate="secret_storage"),
     BaselineFile(f"src/{TEMPLATE_SNAKE}/config/keyring_backend.py", versioned=True, gate="keyring"),
     BaselineFile(
         f"src/{TEMPLATE_SNAKE}/config/keyvault_backend.py", versioned=True, gate="keyvault"
@@ -269,14 +269,16 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # The config package's unit tests ship to projects (cleanup.py keeps
     # them: no script shares their names) and must track the template, so
     # they are compared here despite the blanket tests/test_*.py exclusion.
-    # None of them import a concrete backend, so they all follow the package's
-    # own gate; the per-backend tests are the two entries below.
+    # None of them import a concrete backend, so they follow the package's
+    # own gate -- except the dispatcher's tests, which go with the
+    # secret-storage machinery; the per-backend tests are the two entries
+    # below.
     BaselineFile("tests/test_config_cli.py", versioned=True, gate="config_system"),
     BaselineFile("tests/test_config_file.py", versioned=True, gate="config_system"),
     BaselineFile("tests/test_config_paths.py", versioned=True, gate="config_system"),
     BaselineFile("tests/test_config_resolve.py", versioned=True, gate="config_system"),
     BaselineFile("tests/test_config_schema.py", versioned=True, gate="config_system"),
-    BaselineFile("tests/test_config_secrets.py", versioned=True, gate="config_system"),
+    BaselineFile("tests/test_config_secrets.py", versioned=True, gate="secret_storage"),
     # Each backend's tests import that backend at module scope, so they follow
     # its gate and are deleted with it.
     BaselineFile("tests/test_keyring_backend.py", versioned=True, gate="keyring"),
@@ -375,14 +377,20 @@ class FeatureFlags:
         config_system: The config package (per-user config.toml, config CLI,
             secret backends) and its tests kept
             (``[features].config_system``).
+        secret_storage: The secret-storage machinery inside the config
+            package -- the backend dispatcher ``config/secrets.py`` and its
+            tests -- kept (``[features].secret_storage``). Forced ``False``
+            when ``config_system`` is ``False`` -- it lives inside the
+            config package.
         keyring: OS-keyring secret backend kept (``[features].keyring``).
             Also gates ``tests/test_keyring_backend.py``, which imports the
-            backend at module scope. Forced ``False`` when ``config_system``
-            is ``False`` -- the backend lives inside the config package.
+            backend at module scope. Forced ``False`` when
+            ``secret_storage`` is ``False`` -- the backend lives inside the
+            secret-storage machinery.
         keyvault: Azure Key Vault secret backend kept
             (``[features].keyvault``). Also gates
             ``tests/test_keyvault_backend.py``, as above. Forced ``False``
-            when ``config_system`` is ``False``, as above.
+            when ``secret_storage`` is ``False``, as above.
         private_repo_deps: Commented-out private-git-deps GitHub Actions
             steps kept in ci.yml/audit.yml/docs.yml
             (``[features].private_repo_deps``). Not a ``gate`` on any
@@ -412,6 +420,7 @@ class FeatureFlags:
 
     mkdocs: bool
     config_system: bool
+    secret_storage: bool
     keyring: bool
     keyvault: bool
     private_repo_deps: bool
@@ -1010,15 +1019,18 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
     no_chained_commands = bool(claude.get("no_chained_commands", False))
     canonical_commands = bool(claude.get("canonical_commands", False))
 
-    # The backends live inside the config package, so declining the package
-    # drops them too, whatever their own flags say.
+    # The secret machinery lives inside the config package and the backends
+    # live inside the secret machinery, so declining a container drops its
+    # contents too, whatever their own flags say.
     config_system = bool(features.get("config_system", True))
+    secret_storage = config_system and bool(features.get("secret_storage", True))
 
     return FeatureFlags(
         mkdocs=bool(features.get("mkdocs", True)),
         config_system=config_system,
-        keyring=config_system and bool(features.get("keyring", True)),
-        keyvault=config_system and bool(features.get("keyvault", True)),
+        secret_storage=secret_storage,
+        keyring=secret_storage and bool(features.get("keyring", True)),
+        keyvault=secret_storage and bool(features.get("keyvault", True)),
         private_repo_deps=bool(features.get("private_repo_deps", True)),
         remote_disposable_scripts=bool(features.get("remote_disposable_scripts", True)),
         security_policy=bool(features.get("security_policy", True)),
@@ -1781,6 +1793,7 @@ def open_diffs_in_vscode(
 _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("mkdocs", "mkdocs"),
     ("config_system", "config package"),
+    ("secret_storage", "secret-storage machinery"),
     ("keyring", "keyring secret backend"),
     ("keyvault", "Key Vault secret backend"),
     ("private_repo_deps", "private-repo-deps workflow steps"),

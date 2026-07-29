@@ -91,6 +91,7 @@ def make_flags(
     *,
     mkdocs: bool = True,
     config_system: bool = True,
+    secret_storage: bool = True,
     keyring: bool = True,
     keyvault: bool = True,
     private_repo_deps: bool = True,
@@ -109,6 +110,7 @@ def make_flags(
     return FeatureFlags(
         mkdocs=mkdocs,
         config_system=config_system,
+        secret_storage=secret_storage,
         keyring=keyring,
         keyvault=keyvault,
         private_repo_deps=private_repo_deps,
@@ -929,6 +931,7 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
         "features": {
             "mkdocs": False,
             "config_system": False,
+            "secret_storage": False,
             "keyring": False,
             "keyvault": False,
             "private_repo_deps": False,
@@ -946,6 +949,7 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     flags = feature_flags_from_config(raw)
     assert flags.mkdocs is False
     assert flags.config_system is False
+    assert flags.secret_storage is False
     assert flags.keyring is False
     assert flags.keyvault is False
     assert flags.private_repo_deps is False
@@ -966,6 +970,7 @@ def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
     flags = feature_flags_from_config({})
     assert flags.mkdocs is True
     assert flags.config_system is True
+    assert flags.secret_storage is True
     assert flags.keyring is True
     assert flags.keyvault is True
     assert flags.private_repo_deps is True
@@ -978,11 +983,30 @@ def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
 
 @pytest.mark.unit
 def test_feature_flags_from_config_backends_follow_config_system() -> None:
-    # The backends live inside the config package: declining the package
-    # drops them too, whatever their own flags say.
-    raw = {"features": {"config_system": False, "keyring": True, "keyvault": True}}
+    # The secret machinery lives inside the config package and the backends
+    # inside the machinery: declining a container drops its contents too,
+    # whatever their own flags say.
+    raw = {
+        "features": {
+            "config_system": False,
+            "secret_storage": True,
+            "keyring": True,
+            "keyvault": True,
+        }
+    }
     flags = feature_flags_from_config(raw)
     assert flags.config_system is False
+    assert flags.secret_storage is False
+    assert flags.keyring is False
+    assert flags.keyvault is False
+
+
+@pytest.mark.unit
+def test_feature_flags_from_config_backends_follow_secret_storage() -> None:
+    raw = {"features": {"secret_storage": False, "keyring": True, "keyvault": True}}
+    flags = feature_flags_from_config(raw)
+    assert flags.config_system is True
+    assert flags.secret_storage is False
     assert flags.keyring is False
     assert flags.keyvault is False
 
@@ -1175,8 +1199,9 @@ def test_manifest_config_package_is_gated_and_schema_existence_only() -> None:
     }
     assert entries["keyring_backend.py"].gate == "keyring"
     assert entries["keyvault_backend.py"].gate == "keyvault"
+    assert entries["secrets.py"].gate == "secret_storage"
     for name, entry in entries.items():
-        if name not in ("keyring_backend.py", "keyvault_backend.py"):
+        if name not in ("keyring_backend.py", "keyvault_backend.py", "secrets.py"):
             assert entry.gate == "config_system"
     assert entries["schema.py"].compare_content is False
     for name in ("cli.py", "file.py", "paths.py", "resolve.py", "secrets.py"):
@@ -1185,13 +1210,17 @@ def test_manifest_config_package_is_gated_and_schema_existence_only() -> None:
 
 @pytest.mark.unit
 def test_manifest_config_tests_follow_their_import_gates() -> None:
-    # The config test suite imports no concrete backend, so all of it follows
-    # the config-system gate. Only the per-backend test modules, which import
-    # their backend at module scope, follow a backend gate.
-    for name in ("cli", "file", "paths", "resolve", "schema", "secrets"):
+    # The config test suite imports no concrete backend, so it follows the
+    # config-system gate -- except the dispatcher's tests, which go with the
+    # secret-storage machinery. Only the per-backend test modules, which
+    # import their backend at module scope, follow a backend gate.
+    for name in ("cli", "file", "paths", "resolve", "schema"):
         (entry,) = [e for e in MANIFEST if e.path == f"tests/test_config_{name}.py"]
         assert entry.gate == "config_system"
         assert entry.versioned is True
+    (secrets_entry,) = [e for e in MANIFEST if e.path == "tests/test_config_secrets.py"]
+    assert secrets_entry.gate == "secret_storage"
+    assert secrets_entry.versioned is True
     for backend, gate in (("keyring", "keyring"), ("keyvault", "keyvault")):
         (entry,) = [e for e in MANIFEST if e.path == f"tests/test_{backend}_backend.py"]
         assert entry.gate == gate
@@ -1209,6 +1238,7 @@ def test_manifest_gates_match_feature_flags_fields() -> None:
     valid_gates = {
         "mkdocs",
         "config_system",
+        "secret_storage",
         "keyring",
         "keyvault",
         "remote_disposable_scripts",

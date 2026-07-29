@@ -17,8 +17,8 @@ Based on some personal preference, and what I understand are the most widely use
 - **mypy** for static type checking.
 - **pytest** for testing.
 - **mkdocs** for documentation. Integrates easily with GitHub Pages for hosting.
-- **keyring** for local credential storage. Cross-platform. Allows never keeping secrets in the repo.
-- **Azure Keyvault** for remote secret storage.
+- **keyring** for local credential storage (optional backend). Cross-platform. Allows never keeping secrets in the repo.
+- **Azure Keyvault** for remote secret storage (optional backend).
 - **detect-secrets** for real-time secret scanning. Helps prevent accidental leaks.
 - **GitHub Actions** for CI and docs deployment. Free for public repos, and widely used.
 - **VSCode** for development. Most popular IDE. Lots of documentation. Many extensions.
@@ -29,8 +29,9 @@ Some of the design choices I've made for this project:
 
 - **No .env** To avoid keeping secrets/environment values within the repo, project
 keeps non-secret environment values and user config options in a config.toml in a
-standard OS-specific location. All secrets are designed to be kept within keyring
-or keyvault.
+standard OS-specific location. Secrets are kept in a credential backend the user
+selects (keyring or keyvault ship as options); the whole secret-storage layer is
+removable for projects whose config holds no secrets.
 
 ## Making a new repo from this template
 

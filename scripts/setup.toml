@@ -70,13 +70,19 @@ no_inline_secret_suppressions = false
 mkdocs = true
 # The config system: the per-user config.toml package (src/<package>/config/
 # -- schema, config CLI, credential backends) and its tests. false deletes
-# the whole package; keyring/keyvault below must then be false too.
+# the whole package; secret_storage/keyring/keyvault below must then be
+# false too.
 config_system = true
+# The secret-storage machinery inside the config package: the backend
+# dispatcher (config/secrets.py), every credential backend, and their tests.
+# Requires config_system. false deletes them all (for projects whose config
+# holds no secrets); keyring/keyvault below must then be false too.
+secret_storage = true
 # OS-keyring secret backend (config/keyring_backend.py) and its unit-test
-# suite. Requires config_system. false deletes both files.
+# suite. Requires config_system and secret_storage. false deletes both files.
 keyring = true
 # Azure Key Vault secret backend (config/keyvault_backend.py). Requires
-# config_system. false deletes it.
+# config_system and secret_storage. false deletes it.
 keyvault = true
 # Commented-out "mint a GitHub App token" steps in .github/workflows/
 # {ci,audit,docs}.yml, for cloning private git deps in CI. false deletes them.

@@ -11,14 +11,13 @@ backends and are deliberately not touched: ``secrets.py`` stays.
 
 Only those files are deleted; nothing else is edited. The dispatcher
 (``secrets.py``) selects backends by naming convention and never names
-"keyring", so it stays functional -- profiles simply have to select another
-backend (``keyring`` is the default backend name, so every profile that
-stores secrets must then set ``credential_backend`` explicitly).
+"keyring", so it stays functional -- profiles simply cannot select
+``credential_backend = "keyring"`` any more.
 
 Manual follow-ups (this script only deletes files):
 
-- Delete the marked ``keyring`` line in ``pyproject.toml``'s
-  ``[project] dependencies``, then run ``uv lock`` and ``uv sync``.
+- Delete the ``keyring`` extra in ``pyproject.toml``'s
+  ``[project.optional-dependencies]``, then run ``uv lock`` and ``uv sync``.
 
 Usage:
     uv run scripts/template_setup/remove_keyring.py
@@ -94,11 +93,8 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
         print(f"  Deleted {path.relative_to(root)}")
 
     print(f"\n  Removed the keyring backend: {len(deletions)} path(s) deleted.")
-    print("  Reminders (not done automatically):")
-    print("    - Delete the 'keyring' line in pyproject.toml's [project] dependencies,")
-    print("      then run 'uv lock' and 'uv sync'.")
-    print("    - 'keyring' is the default credential_backend, so every profile that")
-    print("      stores secrets must now set credential_backend explicitly.")
+    print("  Reminder: delete the 'keyring' extra in pyproject.toml's")
+    print("  [project.optional-dependencies], then run 'uv lock' and 'uv sync'.")
     return 0
 
 
