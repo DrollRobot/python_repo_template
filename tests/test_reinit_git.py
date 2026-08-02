@@ -11,6 +11,7 @@ the scaffolding, so it never lingers in a project started from the template.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -24,12 +25,17 @@ import reinit_git
 
 _GIT = shutil.which("git")
 
+# The temp repos these tests commit in must not inherit the developer's
+# global/system git config: e.g. a global commit.gpgsign=true fails outright
+# in a repo where no signing key resolves.
+_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
+
 
 def _git(args: list[str], cwd: Path) -> None:
     """Run a git command in *cwd*, failing the test on a non-zero exit."""
     assert _GIT is not None, "git must be on PATH to run this test"
     subprocess.run(  # noqa: S603  (git path resolved via shutil.which)
-        [_GIT, *args], cwd=cwd, check=True, capture_output=True, text=True
+        [_GIT, *args], cwd=cwd, check=True, capture_output=True, text=True, env=_ENV
     )
 
 
@@ -37,7 +43,7 @@ def _git_output(args: list[str], cwd: Path) -> str:
     """Run a read-only git command in *cwd* and return its stripped stdout."""
     assert _GIT is not None, "git must be on PATH to run this test"
     result = subprocess.run(  # noqa: S603  (git path resolved via shutil.which)
-        [_GIT, *args], cwd=cwd, check=True, capture_output=True, text=True
+        [_GIT, *args], cwd=cwd, check=True, capture_output=True, text=True, env=_ENV
     )
     return result.stdout.strip()
 
