@@ -36,7 +36,9 @@ from compare_to_template import (
     FeatureFlags,
     ProjectNames,
     carries_version,
+    check_self_update,
     check_versioned_file,
+    check_versioned_files,
     compare_one,
     diff_files_for,
     effective_required,
@@ -52,6 +54,7 @@ from compare_to_template import (
     normalize_project_text,
     normalize_template_text,
     offer_missing_installs,
+    offer_setup_config_install,
     pyproject_name,
     python_version_forms,
     replace_case_insensitive,
@@ -63,6 +66,7 @@ from compare_to_template import (
     script_version,
     script_version_note,
     self_check_action,
+    setup_config_name_unchanged,
     strip_package_purpose,
     strip_template_header,
     version_tuple,
@@ -876,6 +880,68 @@ def test_check_versioned_file_leaves_optional_missing_file_alone(
     assert not check_versioned_file(_renamed_entry(), ctx, required=False, allow_update=True)
 
 
+# --- self check ----------------------------------------------------------------------
+
+
+_SELF_REL = "scripts/compare_to_template.py"
+_CLI_REL = "scripts/_cli.py"
+
+
+@pytest.mark.unit
+def test_check_self_update_runs_without_setup_toml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The whole point of the early self-check: an outdated script copy is
+    # offered before setup.toml is ever read, so neither side needs one here.
+    template_root = tmp_path / "template"
+    project_root = tmp_path / "project"
+    write(template_root, _SELF_REL, '__version__ = "9.9.9"\nnew = True\n')
+    write(template_root, _CLI_REL, '__version__ = "1.0.0"\n')
+    write(project_root, _SELF_REL, '__version__ = "1.0.0"\n')
+    write(project_root, _CLI_REL, '__version__ = "1.0.0"\n')
+    monkeypatch.setattr(cli, "confirm", lambda _msg: True)
+    check_self_update(template_root, project_root, NAMES, allow_update=True)
+    written = (project_root / _SELF_REL).read_bytes().decode("utf-8")
+    assert written == '__version__ = "9.9.9"\nnew = True\n'
+
+
+@pytest.mark.unit
+def test_check_self_update_leaves_up_to_date_copies_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_root = tmp_path / "template"
+    project_root = tmp_path / "project"
+    for rel in (_SELF_REL, _CLI_REL):
+        write(template_root, rel, '__version__ = "1.0.0"\n')
+        write(project_root, rel, '__version__ = "1.0.0"\n')
+
+    def unexpected(_msg: str) -> bool:
+        raise AssertionError("confirm() should not be called for up-to-date copies")
+
+    monkeypatch.setattr(cli, "confirm", unexpected)
+    check_self_update(template_root, project_root, NAMES, allow_update=True)
+
+
+@pytest.mark.unit
+def test_check_versioned_files_skips_the_self_check_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The early self-check already handled these two; re-checking here would
+    # re-prompt for a copy the user just declined.
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, _SELF_REL, '__version__ = "9.9.9"\n')
+    write(ctx.template_root, _CLI_REL, '__version__ = "9.9.9"\n')
+    write(ctx.project_root, _SELF_REL, '__version__ = "1.0.0"\n')
+    write(ctx.project_root, _CLI_REL, '__version__ = "1.0.0"\n')
+
+    def unexpected(_msg: str) -> bool:
+        raise AssertionError("confirm() should not be called for the self-check pair")
+
+    monkeypatch.setattr(cli, "confirm", unexpected)
+    check_versioned_files(ctx, allow_update=True)
+    assert (ctx.project_root / _SELF_REL).read_bytes() == b'__version__ = "1.0.0"\n'
+
+
 # --- feature gating ------------------------------------------------------------------
 
 
@@ -1069,6 +1135,111 @@ def test_resolve_feature_flags_errors_when_config_unparsable(tmp_path: Path) -> 
     write(tmp_path, SETUP_CONFIG_REL, "not [ valid toml")
     with pytest.raises(SystemExit):
         resolve_feature_flags(tmp_path)
+
+
+@pytest.mark.unit
+def test_resolve_feature_flags_errors_when_name_still_template(tmp_path: Path) -> None:
+    # A config still naming the project after the template was never filled
+    # in, so its flags are just the template's defaults -- a hard error.
+    write(tmp_path, SETUP_CONFIG_REL, f'[project]\nname = "{TEMPLATE_SNAKE}"\n')
+    with pytest.raises(SystemExit):
+        resolve_feature_flags(tmp_path)
+
+
+@pytest.mark.unit
+def test_resolve_feature_flags_accepts_a_renamed_project(tmp_path: Path) -> None:
+    write(tmp_path, SETUP_CONFIG_REL, '[project]\nname = "my_proj"\n[features]\nmkdocs = false\n')
+    flags = resolve_feature_flags(tmp_path)
+    assert flags.mkdocs is False
+
+
+@pytest.mark.unit
+def test_setup_config_name_unchanged_folds_case_and_separators() -> None:
+    # Mirrors rename_project.derive_names(): any case, spaces/hyphens fold to
+    # underscores, so every spelling of the template's name is caught.
+    assert setup_config_name_unchanged({"project": {"name": TEMPLATE_SNAKE}}) is True
+    assert setup_config_name_unchanged({"project": {"name": TEMPLATE_KEBAB}}) is True
+    assert (
+        setup_config_name_unchanged({"project": {"name": TEMPLATE_SNAKE.replace("_", " ").title()}})
+        is True
+    )
+
+
+@pytest.mark.unit
+def test_setup_config_name_unchanged_false_for_other_or_missing_names() -> None:
+    assert setup_config_name_unchanged({"project": {"name": "my_proj"}}) is False
+    # A trimmed or malformed [project] table is tolerated, like every other
+    # hand-trimmed key -- only a present template name is the error signal.
+    assert setup_config_name_unchanged({}) is False
+    assert setup_config_name_unchanged({"project": "not a table"}) is False
+    assert setup_config_name_unchanged({"project": {"name": 3}}) is False
+
+
+# --- offer_setup_config_install ------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_offer_setup_config_install_copies_verbatim_and_exits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The copy must be byte-for-byte -- the template's own name included --
+    # so the unfilled copy still trips the name guard on the next run.
+    template_root = tmp_path / "template"
+    project_root = tmp_path / "project"
+    text = f'[project]\nname = "{TEMPLATE_SNAKE}"\n[features]\nmkdocs = true\n'
+    write(template_root, SETUP_CONFIG_REL, text)
+    project_root.mkdir()
+    monkeypatch.setattr(cli, "confirm", lambda prompt: True)
+    with pytest.raises(SystemExit) as excinfo:
+        offer_setup_config_install(template_root, project_root, allow_update=True)
+    assert excinfo.value.code == 1
+    assert (project_root / SETUP_CONFIG_REL).read_text(encoding="utf-8") == text
+
+
+@pytest.mark.unit
+def test_offer_setup_config_install_declined_leaves_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_root = tmp_path / "template"
+    project_root = tmp_path / "project"
+    write(template_root, SETUP_CONFIG_REL, "[features]\n")
+    project_root.mkdir()
+    monkeypatch.setattr(cli, "confirm", lambda prompt: False)
+    with pytest.raises(SystemExit):
+        offer_setup_config_install(template_root, project_root, allow_update=True)
+    assert not (project_root / SETUP_CONFIG_REL).exists()
+
+
+@pytest.mark.unit
+def test_offer_setup_config_install_never_prompts_under_no_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_root = tmp_path / "template"
+    project_root = tmp_path / "project"
+    write(template_root, SETUP_CONFIG_REL, "[features]\n")
+    project_root.mkdir()
+
+    def _fail(prompt: str) -> bool:
+        raise AssertionError("confirm() must not be called under --no-update")
+
+    monkeypatch.setattr(cli, "confirm", _fail)
+    with pytest.raises(SystemExit):
+        offer_setup_config_install(template_root, project_root, allow_update=False)
+    assert not (project_root / SETUP_CONFIG_REL).exists()
+
+
+@pytest.mark.unit
+def test_offer_setup_config_install_errors_when_template_also_lacks_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_root = tmp_path / "template"
+    project_root = tmp_path / "project"
+    template_root.mkdir()
+    project_root.mkdir()
+    monkeypatch.setattr(cli, "confirm", lambda prompt: True)
+    with pytest.raises(SystemExit):
+        offer_setup_config_install(template_root, project_root, allow_update=True)
+    assert not (project_root / SETUP_CONFIG_REL).exists()
 
 
 # --- manifest ------------------------------------------------------------------------

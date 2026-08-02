@@ -27,8 +27,11 @@ wholesale. Files the project adds on top of the template are ignored.
 Files belonging to a config-driven optional feature (mkdocs, the config
 system and its credential backends, the remote-disposability scripts,
 SECURITY.md, CONTRIBUTING.md, the Claude Code command hooks) are gated on
-that project's own choices, read from ``scripts/setup.toml`` (a missing or
-unparsable file is a hard error, not a cue to guess). A feature the
+that project's own choices, read from ``scripts/setup.toml``. When that file
+is missing the script offers to copy the template's own over verbatim and
+exits so it can be filled in; an unparsable file, or one whose ``[project]``
+name is still the template's (the file was never filled in, so its flags
+cannot be trusted), is a hard error -- never a cue to guess. A feature the
 project declined is left out of the comparison, the version preflight, and
 ``--diff`` entirely: it is never reported and never offered for copy, exactly
 like a file the project simply doesn't have. A feature the project kept is
@@ -39,12 +42,17 @@ stay required and strict either way) -- instead its commented-out steps are
 replayed away from the template side before comparing, per
 ``replay_private_repo_deps()``.
 
-Before comparing, the script checks the version of every versioned file (the
-dev helper scripts ``scripts/*.py`` and the ``mypy`` stub-guard test, minus
-the existence-only ones) on both sides and offers to copy over any that are
-out of date or missing in the project, so those files -- and the manifest
-and replay logic this script compares against -- match the template's
-current ones. After comparing, any other required file found missing is also
+Before anything else -- reading ``setup.toml`` included -- the script checks
+its own copy and its ``_cli`` module against the template and offers to copy
+either over when out of date, stopping for a re-run if the executing copy
+was replaced; a project whose config is missing or unfilled still gets the
+current script first, whose setup handling may be the very thing that
+changed. Then, before comparing, it checks the version of every other
+versioned file (the dev helper scripts ``scripts/*.py`` and the ``mypy``
+stub-guard test, minus the existence-only ones) on both sides and offers to
+copy over any that are out of date or missing in the project, so those files
+-- and the manifest and replay logic this script compares against -- match
+the template's current ones. After comparing, any other required file found missing is also
 offered for install. Every install writes the template's *normalized* text
 (banner stripped, names/version/cleanup replayed), so a freshly installed
 file compares as a match; ``--no-update`` suppresses every offer.
@@ -77,7 +85,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from os.path import normcase, normpath
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import _cli as cli
 
@@ -89,7 +97,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.19.0"
+__version__ = "1.20.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -99,8 +107,11 @@ TEMPLATE_SNAKE = "_".join(("python", "repo", "template"))
 TEMPLATE_KEBAB = "-".join(("python", "repo", "template"))
 TEMPLATE_USER = "".join(("droll", "robot"))
 
-# This script's own path, used by the self-check/update step.
+# This script's own path and its shared _cli module, checked against the
+# template before anything else -- setup.toml included -- by the early
+# self-check/update step (see check_self_update()).
 SELF_REL = "scripts/compare_to_template.py"
+_SELF_CHECK_PATHS = (SELF_REL, "scripts/_cli.py")
 
 # Path (relative to a project root) of the config-driven setup's input file.
 # It lives outside scripts/template_setup/ specifically so cleanup.py's
@@ -996,6 +1007,30 @@ def load_setup_config(project_root: Path) -> dict[str, Any] | None:
         return None
 
 
+def setup_config_name_unchanged(raw: dict[str, Any]) -> bool:
+    """Whether ``setup.toml``'s ``[project] name`` is still the template's own.
+
+    Setup replaces the template name everywhere -- ``setup.toml`` included --
+    so a config that still names the project after the template was never
+    filled in, and its feature flags cannot be trusted. The name is folded
+    the same way ``rename_project.py``'s ``derive_names()`` folds its input
+    (any case, spaces/hyphens/underscores all equivalent). A missing table or
+    name is tolerated, like every other hand-trimmed key.
+
+    Args:
+        raw: Parsed TOML content.
+
+    Returns:
+        ``True`` when the name is present and still the template's.
+    """
+    project_raw = raw.get("project")
+    project = project_raw if isinstance(project_raw, dict) else {}
+    name = project.get("name")
+    if not isinstance(name, str):
+        return False
+    return re.sub(r"[\s\-]+", "_", name.strip()).lower() == TEMPLATE_SNAKE
+
+
 def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
     """Derive :class:`FeatureFlags` from parsed ``setup.toml`` content.
 
@@ -1053,7 +1088,12 @@ def resolve_feature_flags(project_root: Path) -> FeatureFlags:
     here. Its absence or an unparsable body is a hard error, not a cue to
     guess: inferring the feature set from which files happen to exist would
     silently mask a genuinely deleted or broken config, and every gated file
-    of a wrongly-guessed feature would then be mis-reported.
+    of a wrongly-guessed feature would then be mis-reported. (For the missing
+    case, ``main()`` first runs :func:`offer_setup_config_install`, so this
+    error is only the non-interactive backstop.) A config whose ``[project]``
+    name is still the template's is equally fatal: the file was never filled
+    in -- e.g. freshly copied over -- so every flag in it is just the
+    template's default, not this project's choice.
 
     Args:
         project_root: Root of the project checkout.
@@ -1062,8 +1102,8 @@ def resolve_feature_flags(project_root: Path) -> FeatureFlags:
         The resolved flags.
 
     Raises:
-        SystemExit: If :data:`SETUP_CONFIG_REL` is missing or cannot be
-            parsed as TOML.
+        SystemExit: If :data:`SETUP_CONFIG_REL` is missing, cannot be parsed
+            as TOML, or still carries the template's own project name.
     """
     path = project_root / SETUP_CONFIG_REL
     if not path.is_file():
@@ -1075,6 +1115,12 @@ def resolve_feature_flags(project_root: Path) -> FeatureFlags:
     raw = load_setup_config(project_root)
     if raw is None:
         cli.die(f"Could not parse {path} as TOML; fix it before comparing.")
+    if setup_config_name_unchanged(raw):
+        cli.die(
+            f"{path} still has [project] name "
+            f"('{TEMPLATE_SNAKE}'). Change project name and fill in desired "
+            "features."
+        )
     return feature_flags_from_config(raw)
 
 
@@ -1466,19 +1512,28 @@ def check_versioned_file(
     if action == "ok":
         return False
 
+    # Two lines per file, matching the missing-file branch above: one status
+    # line carrying the path and both versions, then the confirmation prompt.
     display = rel if project_rel == rel else f"{rel} -> {project_rel}"
-    cli.info(
-        display,
-        f"template {template_version or 'unversioned'}, project {project_version or 'unversioned'}",
-    )
+    template_label = template_version or "unversioned"
+    project_label = project_version or "unversioned"
     if action == "ahead":
-        cli.warn(f"  The project's copy of {project_rel} is NEWER than the template's.")
+        cli.warn(
+            f"  The project's copy of {display} is NEWER than the template's "
+            f"(project {project_label}, template {template_label})."
+        )
         cli.warn("  Consider upstreaming the change to the template; not overwriting it.")
         return False
     if action == "update":
-        cli.warn("  The project's copy is outdated.")
+        cli.warn(
+            f"  The project's copy of {display} is outdated "
+            f"(project {project_label}, template {template_label})."
+        )
     else:  # "refresh": same version, different content
-        cli.warn("  The copies share a version but their contents differ (missing bump?).")
+        cli.warn(
+            f"  The copies of {display} share version {template_label} but their "
+            "contents differ (missing bump?)."
+        )
     if not allow_update:
         cli.warn("  Skipping the update offer (--no-update).")
         return False
@@ -1486,19 +1541,88 @@ def check_versioned_file(
         cli.warn("  Continuing with the current copy; it will be flagged in the comparison.")
         return False
     install_from_template(entry, ctx)
-    cli.success(f"  Updated {project_rel}.")
     return True
+
+
+def exit_if_running_copy_replaced(entry: BaselineFile, ctx: CompareContext) -> None:
+    """Stop the program when the file it is running from was just replaced.
+
+    Both this script and the ``_cli`` module it imports are baseline files:
+    once the executing copy is overwritten from the template, the manifest and
+    replay logic in memory are stale, so the program stops right then (exit
+    code 0) and the user re-runs the freshly copied version, which re-checks
+    everything. A no-op when the updated copy is not the executing one (the
+    script running from the template checkout updating the project's copy).
+
+    Args:
+        entry: The manifest entry whose project-side copy was just written.
+        ctx: Comparison context (roots, names, normalization switches).
+    """
+    running_files = {
+        normcase(normpath(str(Path(__file__).resolve()))),
+        normcase(normpath(str(Path(cli.__file__).resolve()))),
+    }
+    project_rel = map_project_path(entry.path, ctx.names)
+    project_path = normcase(normpath(str((ctx.project_root / project_rel).resolve())))
+    if project_path not in running_files:
+        return
+    print()
+    cli.warn(f"  Updated {entry.path}, which this program is running from.")
+    print("  Stopping now; re-run the script to use the new version.")
+    sys.exit(0)
+
+
+def check_self_update(
+    template_root: Path, project_root: Path, names: ProjectNames, *, allow_update: bool
+) -> None:
+    """Check this script and its ``_cli`` module against the template.
+
+    Runs before ``setup.toml`` is even read, so a project whose config is
+    missing or unfilled is still offered the template's current script first
+    -- whose setup handling may be the very thing that changed. Only these
+    two files can be checked this early: they are ungated, and normalization
+    is a no-op for them by construction (their template tokens are built from
+    pieces and the replays are path-scoped), so a provisional context built
+    from template-default flags compares them correctly without the project's
+    real feature choices. The remaining versioned files are handled afterward
+    by :func:`check_versioned_files`, once the real flags are known.
+
+    Args:
+        template_root: Root of the template checkout.
+        project_root: Root of the project checkout.
+        names: Project-side identity tokens.
+        allow_update: Whether updating may be offered (``False`` under
+            ``--no-update``).
+    """
+    cli.section("Self check")
+    ctx = CompareContext(
+        template_root=template_root,
+        project_root=project_root,
+        names=names,
+        dotted=None,
+        compact=None,
+        ran_cleanup=False,
+        flags=feature_flags_from_config({}),
+    )
+    updated = 0
+    for entry in MANIFEST:
+        if entry.path not in _SELF_CHECK_PATHS:
+            continue
+        if check_versioned_file(entry, ctx, required=True, allow_update=allow_update):
+            updated += 1
+            exit_if_running_copy_replaced(entry, ctx)
+    if updated == 0:
+        cli.success("  This script and its _cli module are up to date with the template.")
 
 
 def check_versioned_files(ctx: CompareContext, *, allow_update: bool) -> None:
     """Compare every versioned file and offer to update the project's copies.
 
     Runs before the main comparison so outdated copies (whose manifest and
-    replay logic may lag the template) are refreshed first. When a script this
-    program is running from -- this file or the ``_cli`` module it imports -- is
-    itself replaced, the script stops right then, before offering to update the
-    remaining versioned files or running the comparison, so the user re-runs the
-    updated version (with its current manifest and replay logic). Entries tied to
+    replay logic may lag the template) are refreshed first. This script and
+    its ``_cli`` module are not re-checked here: the earlier
+    :func:`check_self_update` already handled them -- and stopped the program
+    for a re-run if the executing copy was replaced. Entries tied to
     a declined feature (:func:`is_applicable` is ``False``) are skipped entirely
     -- never offered for copy, same as they're never reported as drift in the
     main comparison.
@@ -1509,12 +1633,10 @@ def check_versioned_files(ctx: CompareContext, *, allow_update: bool) -> None:
             ``--no-update``).
     """
     cli.section("Versioned files")
-    running_files = {
-        normcase(normpath(str(Path(__file__).resolve()))),
-        normcase(normpath(str(Path(cli.__file__).resolve()))),
-    }
     updated = 0
     for entry in versioned_entries():
+        if entry.path in _SELF_CHECK_PATHS:
+            continue
         if not is_applicable(entry, ctx.flags):
             continue
         if not check_versioned_file(
@@ -1525,17 +1647,6 @@ def check_versioned_files(ctx: CompareContext, *, allow_update: bool) -> None:
         ):
             continue
         updated += 1
-        project_rel = map_project_path(entry.path, ctx.names)
-        project_path = normcase(normpath(str((ctx.project_root / project_rel).resolve())))
-        if project_path in running_files:
-            # This script (or the _cli module it imports) was just replaced.
-            # Stop before touching the remaining versioned files or running the
-            # comparison: both rely on this file's now-stale manifest and replay
-            # logic. The freshly copied version re-checks everything next run.
-            print()
-            cli.warn(f"  Updated {entry.path}, which this program is running from.")
-            print("  Stopping now; re-run the script to use the new version.")
-            sys.exit(0)
     if updated == 0:
         cli.success("  All versioned files are up to date with the template.")
 
@@ -1571,6 +1682,49 @@ def offer_missing_installs(
         install_from_template(result.entry, ctx)
         replacements[result.entry.path] = compare_one(result.entry, ctx)
     return [replacements.get(r.entry.path, r) for r in results]
+
+
+def offer_setup_config_install(
+    template_root: Path, project_root: Path, *, allow_update: bool
+) -> NoReturn:
+    """Offer to copy the template's ``setup.toml`` into a project lacking one.
+
+    The comparison cannot run without :data:`SETUP_CONFIG_REL` (see
+    :func:`resolve_feature_flags`), so either way this exits. The copy is
+    byte-for-byte on purpose -- not :func:`install_from_template`'s
+    normalization, which would rename the ``[project]`` name in passing and
+    let the freshly copied file (whose flags are all still the template's
+    defaults) slip past :func:`setup_config_name_unchanged`'s guard. The user
+    must fill the copy in and re-run.
+
+    Args:
+        template_root: Root of the template checkout.
+        project_root: Root of the project checkout.
+        allow_update: Whether the copy may be offered (``False`` under
+            ``--no-update``).
+
+    Raises:
+        SystemExit: Always -- code 1 whether the copy was made, declined, or
+            impossible; the comparison never ran.
+    """
+    path = project_root / SETUP_CONFIG_REL
+    template_path = template_root / SETUP_CONFIG_REL
+    cli.warn(f"  The project has no {SETUP_CONFIG_REL} ({path}).")
+    cli.warn("  It records which optional features the project kept; the comparison")
+    cli.warn("  cannot run without it.")
+    if not template_path.is_file():
+        cli.die(f"The template has no {SETUP_CONFIG_REL} either; restore the project's copy.")
+    if not allow_update:
+        cli.die("Restore it before comparing (--no-update: not offering to copy it).")
+    if not cli.confirm(f"  Copy the template's {SETUP_CONFIG_REL} into the project?"):
+        cli.die("Restore it before comparing.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(template_path, path)
+    cli.success(f"  Copied {SETUP_CONFIG_REL} into the project.")
+    cli.die(
+        "Configure this project's settings in setup.toml, then run compare_to_template.py again."
+    )
+    sys.exit(1)
 
 
 def build_context(
@@ -1852,6 +2006,11 @@ def main() -> None:
     else:
         cli.info("GitHub user", names.github_user)
 
+    check_self_update(template_root, project_root, names, allow_update=not args.no_update)
+
+    if not (project_root / SETUP_CONFIG_REL).is_file():
+        cli.section("Setup configuration")
+        offer_setup_config_install(template_root, project_root, allow_update=not args.no_update)
     flags = resolve_feature_flags(project_root)
     cli.section("Feature configuration")
     cli.info("Source", flags.source)
