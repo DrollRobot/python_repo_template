@@ -27,6 +27,10 @@
 #                        project venv (dev dependency, version from uv.lock).
 #                        Requires a baseline file; create it once with:
 #                          uv run detect-secrets scan > .secrets.baseline
+#   no-inline-secret-suppressions
+#                     -- fails the commit if any file in the repo contains an
+#                        inline detect-secrets suppression pragma (runs the
+#                        enforcement test against the whole working tree)
 #
 # Pre-push hooks (run once on `git push`, slower whole-repo gates):
 #   uv-lock-check     -- fails if uv.lock is out of sync with pyproject.toml
@@ -99,6 +103,16 @@ repos:
         language: system
         files: ^pyproject\.toml$
         pass_filenames: false
+
+  # Block inline secret-scanner suppressions at commit time
+  - repo: local
+    hooks:
+      - id: no-inline-secret-suppressions
+        name: no inline secret suppressions
+        entry: uv run pytest tests/test_no_inline_suppressions_for_secrets.py --no-cov -q
+        language: system
+        pass_filenames: false
+        always_run: true
 
   # Pre-push checks
   - repo: local
