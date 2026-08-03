@@ -1,6 +1,6 @@
 """Run the whole template-to-project transition from one config file.
 
-Edit ``scripts/setup.toml`` with your values (project name, GitHub username,
+Edit ``scripts/template_setup.toml`` with your values (project name, GitHub username,
 Python/project version, license choice, which optional features to keep,
 whether to re-initialize git), then run:
 
@@ -12,7 +12,7 @@ change every step would make (nothing applied yet), asks for a single
 confirmation, and applies everything. ``--dry-run`` stops after the preview;
 ``-y``/``--yes`` skips the confirmation (the preview still runs first).
 
-``scripts/setup.toml`` deliberately lives outside ``scripts/template_setup/``
+``scripts/template_setup.toml`` deliberately lives outside ``scripts/template_setup/``
 (this script's own folder) so ``cleanup.py`` -- which deletes that whole
 folder -- leaves it in place: ``scripts/compare_to_template.py`` keeps
 reading it afterward to know which optional features this project kept.
@@ -76,12 +76,12 @@ import set_version
 import strip_template_headers
 import wire_hook
 
-CONFIG_FILENAME = "setup.toml"
+CONFIG_FILENAME = "template_setup.toml"
 
 
 @dataclass(frozen=True)
 class Config:
-    """Fully validated setup.toml contents, ready to drive every step."""
+    """Fully validated template_setup.toml contents, ready to drive every step."""
 
     name: str
     github_user: str
@@ -129,7 +129,7 @@ class PlannedStep:
 
 
 def _load_toml(path: Path) -> tuple[dict[str, Any], str | None]:
-    """Read and parse ``setup.toml``.
+    """Read and parse ``template_setup.toml``.
 
     Args:
         path: Path to the config file.
@@ -694,11 +694,11 @@ def apply_steps(root: Path, steps: Sequence[PlannedStep]) -> list[str]:
 def run_setup(
     root: Path, config_path: Path, *, assume_yes: bool = False, dry_run: bool = False
 ) -> int:
-    """Load, validate, preview, confirm (unless ``assume_yes``), and apply ``setup.toml``.
+    """Load, validate, preview, confirm (unless ``assume_yes``), and apply the setup config.
 
     Args:
         root: Project root directory.
-        config_path: Path to the ``setup.toml`` config file.
+        config_path: Path to the ``template_setup.toml`` config file.
         assume_yes: Skip the confirmation prompt.
         dry_run: Preview every step without applying anything.
 
@@ -763,7 +763,7 @@ def main() -> None:
         "--config",
         type=Path,
         default=None,
-        help="Path to setup.toml (default: scripts/setup.toml).",
+        help="Path to template_setup.toml (default: scripts/template_setup.toml).",
     )
     args = parser.parse_args()
 

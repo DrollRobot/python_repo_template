@@ -11,7 +11,7 @@ The two halves are kept in sync by ``test_patterns_match_the_steering_hook``,
 which compares this module's patterns to the hook's whenever the hook is
 present. The patterns are duplicated rather than imported because a project may
 decline the hook at setup time (``[claude].no_inline_secret_suppressions`` in
-``scripts/setup.toml`` deletes the file): the CI gate must not disappear with
+``scripts/template_setup.toml`` deletes the file): the CI gate must not disappear with
 it.
 
 File list: ``git ls-files``, so what gets scanned is what ``git add .`` would
@@ -51,7 +51,7 @@ import pytest
 # (cleanup.py keeps it: no script or hook shares its name), so bump on every
 # change to let scripts/compare_to_template.py flag stale copies: patch =
 # bugfix, minor = new/loosened check, major = removed or renamed check.
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # ---------------------------------------------------------------------------
 # Configuration

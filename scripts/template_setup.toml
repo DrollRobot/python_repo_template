@@ -1,4 +1,4 @@
-# scripts/setup.toml
+# scripts/template_setup.toml
 #
 # Config-driven template setup. Edit the values below, then run:
 #   uv run scripts/template_setup/setup_new_project.py

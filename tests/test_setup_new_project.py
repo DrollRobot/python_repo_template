@@ -172,7 +172,7 @@ def test_load_toml_missing_file_returns_error(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_load_toml_valid_file_returns_parsed_dict(tmp_path: Path) -> None:
     """A well-formed file parses with no error."""
-    path = tmp_path / "setup.toml"
+    path = tmp_path / "template_setup.toml"
     path.write_text(VALID_TOML, encoding="utf-8")
     raw, error = setup_new_project._load_toml(path)
     assert error is None
@@ -182,7 +182,7 @@ def test_load_toml_valid_file_returns_parsed_dict(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_load_toml_malformed_file_returns_error(tmp_path: Path) -> None:
     """Invalid TOML syntax is reported, not raised."""
-    path = tmp_path / "setup.toml"
+    path = tmp_path / "template_setup.toml"
     path.write_text("this is not [ valid toml", encoding="utf-8")
     raw, error = setup_new_project._load_toml(path)
     assert raw == {}
@@ -938,7 +938,7 @@ def test_run_setup_invalid_config_returns_one_and_calls_nothing(
     """An invalid config aborts before any step's run() is ever called."""
     calls: list[str] = []
     _patch_all_steps(monkeypatch, calls)
-    config_path = tmp_path / "setup.toml"
+    config_path = tmp_path / "template_setup.toml"
     config_path.write_text(VALID_TOML.replace('key = "mit"', 'key = "bogus"'), encoding="utf-8")
 
     assert setup_new_project.run_setup(tmp_path, config_path, assume_yes=True) == 1
@@ -953,7 +953,7 @@ def test_run_setup_dry_run_calls_every_step_with_dry_run_true_only(
     """A dry run previews every step and applies nothing."""
     calls: list[str] = []
     _patch_all_steps(monkeypatch, calls)
-    config_path = tmp_path / "setup.toml"
+    config_path = tmp_path / "template_setup.toml"
     config_path.write_text(VALID_TOML, encoding="utf-8")
 
     assert setup_new_project.run_setup(tmp_path, config_path, dry_run=True) == 0
@@ -970,7 +970,7 @@ def test_run_setup_confirmed_apply_runs_steps_then_find_fixmes(
     """A confirmed apply previews, then applies for real, then reports FIXMEs."""
     calls: list[str] = []
     _patch_all_steps(monkeypatch, calls)
-    config_path = tmp_path / "setup.toml"
+    config_path = tmp_path / "template_setup.toml"
     config_path.write_text(VALID_TOML, encoding="utf-8")
 
     assert setup_new_project.run_setup(tmp_path, config_path, assume_yes=True) == 0
@@ -987,7 +987,7 @@ def test_run_setup_step_failure_continues_and_returns_one(
     """One failing step does not block the rest; the overall result is still 1."""
     calls: list[str] = []
     _patch_all_steps(monkeypatch, calls, exit_code=1)
-    config_path = tmp_path / "setup.toml"
+    config_path = tmp_path / "template_setup.toml"
     config_path.write_text(VALID_TOML, encoding="utf-8")
 
     assert setup_new_project.run_setup(tmp_path, config_path, assume_yes=True) == 1
@@ -1003,7 +1003,7 @@ def test_run_setup_declined_confirmation_returns_one_and_applies_nothing(
     calls: list[str] = []
     _patch_all_steps(monkeypatch, calls)
     monkeypatch.setattr(_common, "confirm", lambda *a, **k: False)
-    config_path = tmp_path / "setup.toml"
+    config_path = tmp_path / "template_setup.toml"
     config_path.write_text(VALID_TOML, encoding="utf-8")
 
     assert setup_new_project.run_setup(tmp_path, config_path, assume_yes=False) == 1

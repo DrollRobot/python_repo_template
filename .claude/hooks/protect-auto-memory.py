@@ -17,7 +17,7 @@ unchanged whether it is wired at project scope or globally (see INSTALLATION).
 # This hook ships OFF by default. The template setup step
 # scripts/template_setup/wire_hook.py (key: auto_memory_guard; also run by the
 # guided setup_new_project.py) wires it in when
-# [claude].auto_memory_guard in scripts/setup.toml is true. That wires the hook
+# [claude].auto_memory_guard in scripts/template_setup.toml is true. That wires the hook
 # *project-scoped* into this repo's .claude/settings.json -- so it only runs for
 # Claude Code sessions started inside this repository -- like this (settings.json
 # is strict JSON and cannot hold comments, which is why this note lives here):

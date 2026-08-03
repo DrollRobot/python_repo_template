@@ -40,7 +40,7 @@ removable for projects whose config holds no secrets.
 git clone https://github.com/DrollRobot/python_repo_template.git YOUR-PROJECT-NAME
 ```
 
-2. **Edit `scripts/setup.toml`** to determine which features you want to keep.
+2. **Edit `scripts/template_setup.toml`** to determine which features you want to keep.
 
 3. **Run the setup script:**
 ```powershell

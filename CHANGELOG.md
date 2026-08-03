@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `scripts/setup.toml` renamed to `scripts/template_setup.toml` to make its
+  purpose (one-time template setup input, also read by
+  `compare_to_template.py`) unmistakable and to avoid any confusion with the
+  per-user runtime `config.toml`. `setup_new_project.py`,
+  `compare_to_template.py`, and every doc reference now use the new name.
+  Downstream projects: rename your existing `scripts/setup.toml` to
+  `scripts/template_setup.toml` when adopting the updated scripts.
+
 ### Added
 
 - A `[features].secret_storage` setup flag and

@@ -892,7 +892,7 @@ def test_check_self_update_runs_without_setup_toml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The whole point of the early self-check: an outdated script copy is
-    # offered before setup.toml is ever read, so neither side needs one here.
+    # offered before template_setup.toml is ever read, so neither side needs one here.
     template_root = tmp_path / "template"
     project_root = tmp_path / "project"
     write(template_root, _SELF_REL, '__version__ = "9.9.9"\nnew = True\n')
@@ -1123,7 +1123,7 @@ def test_resolve_feature_flags_reads_config(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_resolve_feature_flags_errors_when_config_absent(tmp_path: Path) -> None:
-    # A missing setup.toml is a hard error, not a cue to guess from file
+    # A missing template_setup.toml is a hard error, not a cue to guess from file
     # presence -- even when feature files exist on disk.
     write(tmp_path, "mkdocs.yml", "site_name: x\n")
     with pytest.raises(SystemExit):

@@ -11,7 +11,7 @@ Used by the setup steps rather than run directly:
 * ``choose_shell.py`` resolves a shell and hook kinds, then hands over the
   files to keep and the files to delete.
 * ``setup_new_project.py`` toggles the standalone guards straight from
-  ``scripts/setup.toml`` via :func:`toggle`.
+  ``scripts/template_setup.toml`` via :func:`toggle`.
 
 Enabled specs sharing a matcher are wired as one ``PreToolUse`` entry carrying
 several commands, which is how the shell hook pair has always been written.

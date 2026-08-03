@@ -27,7 +27,7 @@ wholesale. Files the project adds on top of the template are ignored.
 Files belonging to a config-driven optional feature (mkdocs, the config
 system and its credential backends, the remote-disposability scripts,
 SECURITY.md, CONTRIBUTING.md, the Claude Code command hooks) are gated on
-that project's own choices, read from ``scripts/setup.toml``. When that file
+that project's own choices, read from ``scripts/template_setup.toml``. When that file
 is missing the script offers to copy the template's own over verbatim and
 exits so it can be filled in; an unparsable file, or one whose ``[project]``
 name is still the template's (the file was never filled in, so its flags
@@ -42,7 +42,7 @@ stay required and strict either way) -- instead its commented-out steps are
 replayed away from the template side before comparing, per
 ``replay_private_repo_deps()``.
 
-Before anything else -- reading ``setup.toml`` included -- the script checks
+Before anything else -- reading ``template_setup.toml`` included -- the script checks
 its own copy and its ``_cli`` module against the template and offers to copy
 either over when out of date, stopping for a re-run if the executing copy
 was replaced; a project whose config is missing or unfilled still gets the
@@ -97,7 +97,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.20.0"
+__version__ = "1.21.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -108,7 +108,7 @@ TEMPLATE_KEBAB = "-".join(("python", "repo", "template"))
 TEMPLATE_USER = "".join(("droll", "robot"))
 
 # This script's own path and its shared _cli module, checked against the
-# template before anything else -- setup.toml included -- by the early
+# template before anything else -- template_setup.toml included -- by the early
 # self-check/update step (see check_self_update()).
 SELF_REL = "scripts/compare_to_template.py"
 _SELF_CHECK_PATHS = (SELF_REL, "scripts/_cli.py")
@@ -117,7 +117,7 @@ _SELF_CHECK_PATHS = (SELF_REL, "scripts/_cli.py")
 # It lives outside scripts/template_setup/ specifically so cleanup.py's
 # deletion of that folder leaves it behind -- resolve_feature_flags() below
 # keeps reading it long after the rest of the setup scaffolding is gone.
-SETUP_CONFIG_REL = "scripts/setup.toml"
+SETUP_CONFIG_REL = "scripts/template_setup.toml"
 
 # The template-header banner marker (see scripts/template_setup/
 # strip_template_headers.py). Assigning it here is safe: the strip script only
@@ -1008,9 +1008,9 @@ def load_setup_config(project_root: Path) -> dict[str, Any] | None:
 
 
 def setup_config_name_unchanged(raw: dict[str, Any]) -> bool:
-    """Whether ``setup.toml``'s ``[project] name`` is still the template's own.
+    """Whether ``template_setup.toml``'s ``[project] name`` is still the template's own.
 
-    Setup replaces the template name everywhere -- ``setup.toml`` included --
+    Setup replaces the template name everywhere -- ``template_setup.toml`` included --
     so a config that still names the project after the template was never
     filled in, and its feature flags cannot be trusted. The name is folded
     the same way ``rename_project.py``'s ``derive_names()`` folds its input
@@ -1032,12 +1032,12 @@ def setup_config_name_unchanged(raw: dict[str, Any]) -> bool:
 
 
 def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
-    """Derive :class:`FeatureFlags` from parsed ``setup.toml`` content.
+    """Derive :class:`FeatureFlags` from parsed ``template_setup.toml`` content.
 
     Tolerant of missing or malformed tables/keys -- a hand-trimmed config
     still yields a usable result -- by falling back to the template's own
     "keep everything, no hooks" defaults for anything unreadable, mirroring
-    what an unedited ``setup.toml`` means for each of these fields.
+    what an unedited ``template_setup.toml`` means for each of these fields.
 
     Args:
         raw: Parsed TOML content.
@@ -1577,7 +1577,7 @@ def check_self_update(
 ) -> None:
     """Check this script and its ``_cli`` module against the template.
 
-    Runs before ``setup.toml`` is even read, so a project whose config is
+    Runs before ``template_setup.toml`` is even read, so a project whose config is
     missing or unfilled is still offered the template's current script first
     -- whose setup handling may be the very thing that changed. Only these
     two files can be checked this early: they are ungated, and normalization
@@ -1687,7 +1687,7 @@ def offer_missing_installs(
 def offer_setup_config_install(
     template_root: Path, project_root: Path, *, allow_update: bool
 ) -> NoReturn:
-    """Offer to copy the template's ``setup.toml`` into a project lacking one.
+    """Offer to copy the template's ``template_setup.toml`` into a project lacking one.
 
     The comparison cannot run without :data:`SETUP_CONFIG_REL` (see
     :func:`resolve_feature_flags`), so either way this exits. The copy is
@@ -1722,7 +1722,8 @@ def offer_setup_config_install(
     shutil.copyfile(template_path, path)
     cli.success(f"  Copied {SETUP_CONFIG_REL} into the project.")
     cli.die(
-        "Configure this project's settings in setup.toml, then run compare_to_template.py again."
+        "Configure this project's settings in template_setup.toml, then run "
+        "compare_to_template.py again."
     )
     sys.exit(1)
 
