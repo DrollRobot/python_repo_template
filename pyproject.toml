@@ -51,6 +51,11 @@ dev = [
     #"other-project", # FIXME add any local/github dependencies here
 ]
 
+[tool.uv]
+constraint-dependencies = [
+    "cryptography>=50.0.0",  # GHSA-g6cj-pr64-35w5; prune when upstream requires it
+]
+
 [tool.uv.sources]
 # FIXME add any local/github dependencies here.
 # other-project = { git = "https://github.com/USERNAME/other-project.git", tag = "v1.2.3" }
