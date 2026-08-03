@@ -27,6 +27,12 @@
 #                        project venv (dev dependency, version from uv.lock).
 #                        Requires a baseline file; create it once with:
 #                          uv run detect-secrets scan > .secrets.baseline
+#   secrets-baseline-audited
+#                     -- fails the commit if any .secrets.baseline entry has
+#                        not been audited as a false positive (blocks blindly
+#                        regenerated baselines from smuggling a real secret
+#                        past the detect-secrets hook); fix with:
+#                          uv run detect-secrets audit .secrets.baseline
 #   no-inline-secret-suppressions
 #                     -- fails the commit if any file in the repo contains an
 #                        inline detect-secrets suppression pragma (runs the
@@ -77,6 +83,17 @@ repos:
         name: Detect secrets
         entry: uv run detect-secrets-hook --baseline .secrets.baseline
         language: system
+
+      # The hook above only checks that findings are *in* the baseline; this
+      # gate requires every entry to be an audited false positive, so a
+      # blindly regenerated baseline cannot smuggle a real secret into a
+      # commit (and therefore into pushed history).
+      - id: secrets-baseline-audited
+        name: secrets baseline audited
+        entry: uv run pytest tests/test_secrets_baseline_audited.py --no-cov -q
+        language: system
+        pass_filenames: false
+        always_run: true
 
   # Ruff: lint + format
   - repo: https://github.com/astral-sh/ruff-pre-commit
