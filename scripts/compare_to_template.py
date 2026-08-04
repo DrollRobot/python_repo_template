@@ -97,7 +97,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.21.0"
+__version__ = "1.22.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -257,18 +257,16 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile("tests/conftest.py", required=False, strict=False),
     # The config package (per-user config.toml + secret backends). The core
     # modules are generic and carry a __version__; schema.py holds the
-    # project's own option definitions, so like README.md only its existence
-    # is checked. The backend modules are independently removable, each
-    # behind its own gate.
+    # project's own option definitions, so its drift is expected and reported
+    # for review only (lenient), never as an error. The backend modules are
+    # independently removable, each behind its own gate.
     BaselineFile(f"src/{TEMPLATE_SNAKE}/config/__init__.py", gate="config_system"),
     BaselineFile(f"src/{TEMPLATE_SNAKE}/config/__main__.py", gate="config_system"),
     BaselineFile(f"src/{TEMPLATE_SNAKE}/config/cli.py", versioned=True, gate="config_system"),
     BaselineFile(f"src/{TEMPLATE_SNAKE}/config/file.py", versioned=True, gate="config_system"),
     BaselineFile(f"src/{TEMPLATE_SNAKE}/config/paths.py", versioned=True, gate="config_system"),
     BaselineFile(f"src/{TEMPLATE_SNAKE}/config/resolve.py", versioned=True, gate="config_system"),
-    BaselineFile(
-        f"src/{TEMPLATE_SNAKE}/config/schema.py", compare_content=False, gate="config_system"
-    ),
+    BaselineFile(f"src/{TEMPLATE_SNAKE}/config/schema.py", strict=False, gate="config_system"),
     BaselineFile(f"src/{TEMPLATE_SNAKE}/config/secrets.py", versioned=True, gate="secret_storage"),
     BaselineFile(f"src/{TEMPLATE_SNAKE}/config/keyring_backend.py", versioned=True, gate="keyring"),
     BaselineFile(

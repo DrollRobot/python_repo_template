@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `compare_to_template.py` now diffs `config/schema.py` content (leniently:
+  drift is reported for review, never as an error) instead of only checking
+  that the file exists.
 - `scripts/setup.toml` renamed to `scripts/template_setup.toml` to make its
   purpose (one-time template setup input, also read by
   `compare_to_template.py`) unmistakable and to avoid any confusion with the

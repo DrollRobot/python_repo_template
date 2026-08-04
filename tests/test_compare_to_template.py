@@ -1349,11 +1349,12 @@ def test_manifest_community_docs_are_gated_separately() -> None:
 
 
 @pytest.mark.unit
-def test_manifest_config_package_is_gated_and_schema_existence_only() -> None:
+def test_manifest_config_package_is_gated_and_schema_lenient() -> None:
     # The config package is one config-driven feature; its backends are each
     # behind their own gate so either can be removed alone. schema.py holds
-    # the project's own option definitions, so only its existence is checked;
-    # the generic modules carry a __version__ and join the version pre-flight.
+    # the project's own option definitions, so its content is diffed but only
+    # for review (lenient, never an error); the generic modules carry a
+    # __version__ and join the version pre-flight.
     prefix = f"src/{TEMPLATE_SNAKE}/config/"
     entries = {e.path.removeprefix(prefix): e for e in MANIFEST if e.path.startswith(prefix)}
     assert set(entries) == {
@@ -1374,7 +1375,8 @@ def test_manifest_config_package_is_gated_and_schema_existence_only() -> None:
     for name, entry in entries.items():
         if name not in ("keyring_backend.py", "keyvault_backend.py", "secrets.py"):
             assert entry.gate == "config_system"
-    assert entries["schema.py"].compare_content is False
+    assert entries["schema.py"].compare_content is True
+    assert entries["schema.py"].strict is False
     for name in ("cli.py", "file.py", "paths.py", "resolve.py", "secrets.py"):
         assert entries[name].versioned is True
 
