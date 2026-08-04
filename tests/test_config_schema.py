@@ -25,7 +25,7 @@ from python_repo_template.config.schema import (
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 pytestmark = pytest.mark.unit
 
@@ -47,13 +47,22 @@ def _dummy_settings() -> Settings:
 
 def test_field_names_avoid_reserved_keys() -> None:
     """Option names must not collide with reserved config.toml or env-var names."""
+    secret_names = frozenset(f.name for f in fields(Settings) if is_secret(f))
     reserved = (
         config_file.RESERVED_TOP_LEVEL_KEYS
         | config_file.secret_reserved_keys()  # credential_backend + backend keys
+        | config_file.secret_name_keys(secret_names)  # <secret>_secret_name overrides
         | {"profile", "config_dir"}  # PROFILE_ENV / CONFIG_DIR_ENV suffixes
     )
     collisions = {f.name for f in fields(Settings)} & reserved
     assert not collisions
+
+
+def test_credential_backend_policy_is_valid() -> None:
+    """CREDENTIAL_BACKEND must name a policy or an available backend."""
+    from python_repo_template.config import secrets
+
+    assert secrets.schema_backend_policy() in {"none", "prompt", *secrets.available_backends()}
 
 
 def test_secret_fields_disable_repr() -> None:

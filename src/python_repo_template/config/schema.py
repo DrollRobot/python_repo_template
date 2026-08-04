@@ -44,6 +44,21 @@ ENV_PREFIX = APP_NAME.upper() + "_"
 # Name of the config CLI's console script, used in error messages.
 CLI_NAME = APP_NAME.replace("_", "-") + "-config"
 
+# Credential-backend policy for every secret field in the schema. One of:
+#
+# - "none":    this package stores no secrets. Secret fields resolve from
+#              environment variables only; the config CLI grows no secret
+#              commands and the reserved backend keys become illegal in
+#              config.toml.
+# - a backend name (e.g. "keyring", "keyvault"): the default backend. Used
+#              without prompting; a user may still override it per profile
+#              with 'credential_backend' in config.toml (via the config CLI).
+# - "prompt":  no default. The config CLI's init asks the user to choose.
+#
+# Validated at use time by secrets.schema_backend_policy(); an unknown value
+# fails loudly there. FIXME: pick the policy that fits your project.
+CREDENTIAL_BACKEND = "prompt"
+
 
 class ConfigError(Exception):
     """Raised for any configuration problem: missing, malformed, or mistyped values."""

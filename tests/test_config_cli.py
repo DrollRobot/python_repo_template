@@ -10,9 +10,11 @@ dispatcher imports, so the CLI reaches it through the real lookup in
 ``secrets.py``. Nothing here imports a concrete backend or its third-party
 dependency, so this file keeps working in a project that deleted one.
 
-There is no default backend, so tests that store secrets configure
-``credential_backend`` explicitly (in the config file, or through init's
-backend prompt); the fake registered as ``fake`` stands in for a real store.
+The template schema's CREDENTIAL_BACKEND policy is "prompt" (no default
+backend), so tests that store secrets configure ``credential_backend``
+explicitly (in the config file, or through init's backend prompt); the fake
+registered as ``fake`` stands in for a real store. Policy-specific tests
+monkeypatch the schema constant.
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ from tests._config_test_object import ConfigTestObject, block_secrets_module
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 pytestmark = pytest.mark.unit
 
@@ -108,6 +110,15 @@ def _feed_getpass(monkeypatch: pytest.MonkeyPatch, responses: list[str]) -> None
     monkeypatch.setattr("getpass.getpass", lambda prompt="": next(answers))
 
 
+def _forbid_getpass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail the test if any hidden value prompt is shown."""
+
+    def explode(prompt: str = "") -> str:
+        raise AssertionError(f"unexpected hidden value prompt: {prompt!r}")
+
+    monkeypatch.setattr("getpass.getpass", explode)
+
+
 def _config_text(config_dir: Path) -> str:
     return (config_dir / "config.toml").read_text(encoding="utf-8")
 
@@ -131,8 +142,8 @@ def test_init_writes_config_and_stores_secret(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # name, count, ratio, flag, tags -- empty keeps the default -- then the
-    # backend choice.
-    _feed_input(monkeypatch, ["n", "7", "", "", "", "fake"])
+    # backend choice, then token's storage name (empty keeps the field name).
+    _feed_input(monkeypatch, ["n", "7", "", "", "", "fake", ""])
     _feed_getpass(monkeypatch, ["tok"])
     assert cli.main(["init"]) == 0
 
@@ -142,6 +153,7 @@ def test_init_writes_config_and_stores_secret(
     assert document["credential_backend"] == "fake"  # the user's choice is recorded
     assert "ratio" not in document  # empty input keeps the schema default
     assert "token" not in document  # secrets never reach the file
+    assert "token_secret_name" not in document  # default name writes nothing
     assert fake_backend == {(APP_NAME, "token"): "tok"}
     assert "Stored token" in capsys.readouterr().out
 
@@ -161,7 +173,7 @@ def test_init_profile_scopes_secret_service(
     config_dir: Path,
     fake_backend: dict[tuple[str, str], str],
 ) -> None:
-    _feed_input(monkeypatch, ["n", "", "", "", "", "fake"])
+    _feed_input(monkeypatch, ["n", "", "", "", "", "fake", ""])
     _feed_getpass(monkeypatch, ["tok"])
     assert cli.main(["init", "--profile", "p"]) == 0
     document = tomlkit.parse(_config_text(config_dir))
@@ -177,7 +189,7 @@ def test_init_rejects_unknown_backend_and_reprompts(
     fake_backend: dict[tuple[str, str], str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _feed_input(monkeypatch, ["n", "", "", "", "", "nope", "fake"])
+    _feed_input(monkeypatch, ["n", "", "", "", "", "nope", "fake", ""])
     _feed_getpass(monkeypatch, ["tok"])
     assert cli.main(["init"]) == 0
     assert "Unknown backend 'nope'" in capsys.readouterr().out
@@ -207,8 +219,9 @@ def test_init_skips_backend_prompt_when_already_configured(
     fake_backend: dict[tuple[str, str], str],
 ) -> None:
     (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
-    # Only the schema fields are prompted; no backend answer is queued.
-    _feed_input(monkeypatch, ["n", "", "", "", ""])
+    # Only the schema fields and token's storage name are prompted; no
+    # backend answer is queued.
+    _feed_input(monkeypatch, ["n", "", "", "", "", ""])
     _feed_getpass(monkeypatch, ["tok"])
     assert cli.main(["init"]) == 0
     assert fake_backend == {(APP_NAME, "token"): "tok"}
@@ -381,6 +394,7 @@ def test_set_secret_stores_via_backend(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    _feed_input(monkeypatch, [""])  # empty keeps the default storage name
     _feed_getpass(monkeypatch, ["s3"])
     assert cli.main(["set-secret", "token"]) == 0
     assert fake_backend == {(APP_NAME, "token"): "s3"}
@@ -391,8 +405,8 @@ def test_set_secret_stores_via_backend(
 def test_set_secret_without_backend_is_actionable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """No credential_backend configured: the error names the choice to make."""
-    _feed_getpass(monkeypatch, ["s3"])
+    """No credential_backend configured: fail fast, before any prompt."""
+    _forbid_getpass(monkeypatch)
     assert cli.main(["set-secret", "token"]) == 1
     err = capsys.readouterr().err
     assert "no credential_backend is configured" in err
@@ -407,14 +421,19 @@ def test_set_secret_uses_default_profile_service(
     (config_dir / "config.toml").write_text(
         'credential_backend = "fake"\ndefault_profile = "p"\n[profiles.p]\n', encoding="utf-8"
     )
+    _feed_input(monkeypatch, [""])
     _feed_getpass(monkeypatch, ["s3"])
     assert cli.main(["set-secret", "token"]) == 0
     assert fake_backend == {(f"{APP_NAME}:p", "token"): "s3"}
 
 
 def test_set_secret_rejects_empty_value(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    _feed_input(monkeypatch, [""])
     _feed_getpass(monkeypatch, [""])
     assert cli.main(["set-secret", "token"]) == 1
     assert "Empty value" in capsys.readouterr().err
@@ -449,9 +468,10 @@ def test_set_secret_on_read_only_backend_names_the_manual_route(
     config_dir: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # A backend with no set() is read-only; the CLI must surface its own
-    # READ_ONLY_HINT rather than a bare failure. Which backends are read-only
-    # is the backends' business, tested with them.
+    # A backend with no set() is read-only: set-secret becomes a name-only
+    # operation -- no hidden value prompt, ever -- and surfaces the backend's
+    # own READ_ONLY_HINT. Which backends are read-only is the backends'
+    # business, tested with them.
     _install_backend(
         monkeypatch,
         "vaulted",
@@ -459,11 +479,151 @@ def test_set_secret_on_read_only_backend_names_the_manual_route(
         READ_ONLY_HINT="update the secret in the vault console",
     )
     (config_dir / "config.toml").write_text('credential_backend = "vaulted"\n', encoding="utf-8")
+    _feed_input(monkeypatch, ["vault-token"])
+    _forbid_getpass(monkeypatch)
+    assert cli.main(["set-secret", "token"]) == 0
+    out = capsys.readouterr().out
+    assert "read-only" in out
+    assert "update the secret in the vault console" in out
+    document = tomlkit.parse(_config_text(config_dir))
+    assert document["token_secret_name"] == "vault-token"  # noqa: S105  (a name, not a secret)
+
+
+# --- secret storage names ------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_init_custom_secret_name_persists_and_scopes_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+) -> None:
+    """A custom NAME lands in config.toml and the value is stored under it."""
+    _feed_input(monkeypatch, ["n", "", "", "", "", "fake", "kv-token"])
+    _feed_getpass(monkeypatch, ["tok"])
+    assert cli.main(["init"]) == 0
+    document = tomlkit.parse(_config_text(config_dir))
+    assert document["token_secret_name"] == "kv-token"  # noqa: S105  (a name, not a secret)
+    assert fake_backend == {(APP_NAME, "kv-token"): "tok"}
+
+
+@pytest.mark.integration
+def test_set_secret_custom_name_persists_and_scopes_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    _feed_input(monkeypatch, ["kv-token"])
     _feed_getpass(monkeypatch, ["s3"])
-    assert cli.main(["set-secret", "token"]) == 1
-    err = capsys.readouterr().err
-    assert "read-only" in err
-    assert "update the secret in the vault console" in err
+    assert cli.main(["set-secret", "token"]) == 0
+    document = tomlkit.parse(_config_text(config_dir))
+    assert document["token_secret_name"] == "kv-token"  # noqa: S105  (a name, not a secret)
+    assert fake_backend == {(APP_NAME, "kv-token"): "s3"}
+    assert "token_secret_name" in capsys.readouterr().out
+
+
+def test_delete_secret_uses_custom_name(
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+) -> None:
+    (config_dir / "config.toml").write_text(
+        'credential_backend = "fake"\ntoken_secret_name = "kv-token"\n', encoding="utf-8"
+    )
+    fake_backend[(APP_NAME, "kv-token")] = "s3"
+    assert cli.main(["delete-secret", "token"]) == 0
+    assert fake_backend == {}
+
+
+def test_set_accepts_secret_name_key(config_dir: Path) -> None:
+    """<field>_secret_name is a reserved key the set/unset commands accept."""
+    assert cli.main(["set", "token_secret_name", "kv-token"]) == 0
+    parsed = tomlkit.parse(_config_text(config_dir))
+    assert parsed["token_secret_name"] == "kv-token"  # noqa: S105  (a name, not a secret)
+    assert cli.main(["unset", "token_secret_name"]) == 0
+    assert "token_secret_name" not in tomlkit.parse(_config_text(config_dir))
+
+
+def test_set_rejects_empty_secret_name(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["set", "token_secret_name", ""]) == 1
+    assert "non-empty" in capsys.readouterr().err
+
+
+# --- schema backend policy -----------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_init_schema_default_backend_skips_choice_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A backend-name policy is used without prompting and never written."""
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "fake")
+    # Schema fields, then token's storage name; no backend answer is queued.
+    _feed_input(monkeypatch, ["n", "", "", "", "", ""])
+    _feed_getpass(monkeypatch, ["tok"])
+    assert cli.main(["init"]) == 0
+    out = capsys.readouterr().out
+    assert "Using credential backend 'fake' (schema default)" in out
+    assert "credential_backend" not in tomlkit.parse(_config_text(config_dir))
+    assert fake_backend == {(APP_NAME, "token"): "tok"}
+
+
+@pytest.mark.integration
+def test_init_read_only_backend_prompts_name_only(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Read-only backend: storage-name prompt only, never a value prompt."""
+    _install_backend(
+        monkeypatch,
+        "vaulted",
+        get=lambda key, service, config: None,
+        READ_ONLY_HINT="update the secret in the vault console",
+    )
+    (config_dir / "config.toml").write_text('credential_backend = "vaulted"\n', encoding="utf-8")
+    _feed_input(monkeypatch, ["n", "", "", "", "", "vault-token"])
+    _forbid_getpass(monkeypatch)
+    assert cli.main(["init"]) == 0
+    out = capsys.readouterr().out
+    assert "read-only" in out
+    assert "update the secret in the vault console" in out
+    parsed = tomlkit.parse(_config_text(config_dir))
+    assert parsed["token_secret_name"] == "vault-token"  # noqa: S105  (a name, not a secret)
+
+
+@pytest.mark.integration
+def test_init_none_policy_skips_secret_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The 'none' policy prompts for nothing secret-related and stores nothing."""
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
+    monkeypatch.setattr(cli, "_SECRET_STORAGE_ACTIVE", False)
+    _feed_input(monkeypatch, ["n", "", "", "", ""])
+    _forbid_getpass(monkeypatch)
+    assert cli.main(["init"]) == 0
+    out = capsys.readouterr().out
+    assert "CREDENTIAL_BACKEND is 'none'" in out
+    assert "environment variables" in out
+    assert fake_backend == {}
+    assert "credential_backend" not in tomlkit.parse(_config_text(config_dir))
+
+
+def test_none_policy_unregisters_secret_commands(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
+    monkeypatch.setattr(cli, "_SECRET_STORAGE_ACTIVE", False)
+    with pytest.raises(SystemExit):
+        cli.main(["set-secret", "token"])
+    assert "invalid choice: 'set-secret'" in capsys.readouterr().err
 
 
 # --- optional secret machinery -------------------------------------------------------
@@ -474,6 +634,7 @@ def test_secret_commands_absent_without_secret_fields(
 ) -> None:
     """A schema with no secret fields gets no set-secret/delete-secret commands."""
     monkeypatch.setattr(cli, "_HAS_SECRET_FIELDS", False)
+    monkeypatch.setattr(cli, "_SECRET_STORAGE_ACTIVE", False)
     with pytest.raises(SystemExit):
         cli.main(["set-secret", "token"])
     assert "invalid choice: 'set-secret'" in capsys.readouterr().err

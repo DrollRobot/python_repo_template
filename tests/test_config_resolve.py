@@ -24,7 +24,7 @@ from tests._config_test_object import (
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 pytestmark = pytest.mark.unit
 
@@ -90,6 +90,18 @@ def test_missing_secret_without_backend_names_the_choice(config_path: Path) -> N
     message = str(excinfo.value)
     assert "No credential_backend is configured" in message
     assert f"{CLI_NAME} set credential_backend" in message
+
+
+def test_missing_secret_under_none_policy_points_at_env(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    """Under the 'none' policy the error names env vars, not set-secret."""
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
+    with pytest.raises(ConfigError) as excinfo:
+        _resolve(config_path)
+    message = str(excinfo.value)
+    assert "CREDENTIAL_BACKEND is 'none'" in message
+    assert "set-secret" not in message
 
 
 # --- optional secret machinery -------------------------------------------------------

@@ -18,9 +18,11 @@ conventions, required checks, and how to run tests.
 ## General rules
 - No .env files. Non-secret environment/user values live in the per-user
   config.toml managed by the config CLI (`python-repo-template-config`);
-  secrets live in a user-selected credential backend (OS keyring and Azure
-  Key Vault ship as options), never in the repo. Option names are defined
-  once, in `src/python_repo_template/config/schema.py`.
+  secrets live in a credential backend (OS keyring and Azure Key Vault ship
+  as options; the schema's `CREDENTIAL_BACKEND` policy names a default,
+  makes the user choose, or disables secret storage), never in the repo.
+  Option names are defined once, in
+  `src/python_repo_template/config/schema.py`.
 - Fail early, fail loudly. Avoid default values that could mask errors.
 
 ## Code Formatting and Style
@@ -30,6 +32,18 @@ conventions, required checks, and how to run tests.
 - Use type hints for all function signatures.
 - Do not fight automatic formatting. Always commit autoformatting changes, even if
   they're out of scope for the current task.
+
+## detect-secrets
+- This repo uses detect-secrets. Agents can freely scan for secrets:
+```bash
+uv run detect-secrets scan --baseline .secrets.baseline
+```
+- Agents should NEVER regenerate the baseline
+```bash
+detect-secrets scan > .secrets.baseline
+```
+- Agents should NEVER attempt to audit or modify the `.secrets.baseline` file. That
+  is for users only.
 
 ## Commit Messages
 Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).

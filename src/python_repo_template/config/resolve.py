@@ -5,8 +5,11 @@ Precedence, highest wins:
 1. Explicit overrides passed by calling code (e.g. from CLI flags).
 2. Environment variables: ``<ENV_PREFIX><UPPER_FIELD_NAME>`` — the
    CI/headless path; works with zero files and zero secret storage.
-3. Credential backend — secret fields only, and only when the user has
-   configured a ``credential_backend`` for the profile.
+3. Credential backend — secret fields only, and only when a backend is
+   selected: the profile's ``credential_backend`` key, else the schema's
+   ``CREDENTIAL_BACKEND`` default (never under the ``"none"``/``"prompt"``
+   policies). Secrets are looked up under the field name, or the profile's
+   ``<field>_secret_name`` override.
 4. config.toml: the selected profile table, then bare top-level keys.
 5. Schema field defaults.
 
@@ -49,7 +52,7 @@ from python_repo_template.config.schema import (
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 # Environment variable selecting the active profile.
 PROFILE_ENV = ENV_PREFIX + "PROFILE"
@@ -222,7 +225,12 @@ def _resolve(
     if missing:
         missing_secrets = [name for name in missing if name in secret_names]
         backend_hint = None
-        if missing_secrets and secrets_module.backend_name(backend_config) is None:
+        if missing_secrets and secrets_module.schema_backend_policy() == "none":
+            backend_hint = (
+                "schema.CREDENTIAL_BACKEND is 'none': secrets come from environment variables only."
+            )
+            missing_secrets = []  # there is no set-secret command to point at
+        elif missing_secrets and secrets_module.backend_name(backend_config) is None:
             available = ", ".join(secrets_module.available_backends()) or "none"
             backend_hint = (
                 f"No credential_backend is configured; choose one with "

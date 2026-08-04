@@ -29,9 +29,11 @@ Some of the design choices I've made for this project:
 
 - **No .env** To avoid keeping secrets/environment values within the repo, project
 keeps non-secret environment values and user config options in a config.toml in a
-standard OS-specific location. Secrets are kept in a credential backend the user
-selects (keyring or keyvault ship as options); the whole secret-storage layer is
-removable for projects whose config holds no secrets.
+standard OS-specific location. Secrets are kept in a credential backend (keyring or
+keyvault ship as options): the schema's `CREDENTIAL_BACKEND` policy either names a
+default backend, makes the user choose, or disables secret storage outright, and
+the whole secret-storage layer is removable for projects whose config holds no
+secrets.
 
 ## Making a new repo from this template
 

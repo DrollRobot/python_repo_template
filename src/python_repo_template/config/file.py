@@ -15,10 +15,13 @@ File shape::
     tenant_id = "..."
 
 Beyond the schema's own option names, the secret-backend machinery
-(``secrets.py`` and the ``*_backend.py`` modules) reserves keys of its own
-(``credential_backend`` plus whatever each backend declares); this module
-learns them from ``secrets.py`` at validation time and knows none of them
-itself. When the secret machinery has been deleted, no such keys are legal.
+(``secrets.py`` and the ``*_backend.py`` modules) reserves keys of its own:
+``credential_backend``, whatever each backend declares, and one
+``<field>_secret_name`` per secret field (the backend storage-name override,
+a non-empty string). This module learns them from ``secrets.py`` at
+validation time and knows none of them itself. When the secret machinery has
+been deleted -- or the schema's ``CREDENTIAL_BACKEND`` policy is ``"none"``
+-- no such keys are legal.
 
 Validation is strict and fails loudly (see AGENTS.md): unknown keys, secret
 values stored in the file, or malformed tables all raise
@@ -38,7 +41,7 @@ from python_repo_template.config.schema import ConfigError, is_secret
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 # Keys legal only at the top level of the file.
 RESERVED_TOP_LEVEL_KEYS = frozenset({"default_profile", "profiles"})
@@ -63,6 +66,29 @@ def secret_reserved_keys() -> frozenset[str]:
             raise  # secrets.py exists but something it imports is missing
         return frozenset()
     return cast("frozenset[str]", secrets.reserved_profile_keys())
+
+
+def secret_name_keys(secret_names: frozenset[str]) -> frozenset[str]:
+    """Return the legal ``<field>_secret_name`` keys for *secret_names*.
+
+    Asks ``secrets.py`` (imported lazily, like :func:`secret_reserved_keys`)
+    so this module never hardcodes the suffix. Empty when the machinery is
+    deleted or the schema's ``CREDENTIAL_BACKEND`` policy is ``"none"``.
+
+    Args:
+        secret_names: The schema's secret field names.
+
+    Returns:
+        The reserved storage-name key names, or an empty set.
+    """
+    module_name = f"{__package__}.secrets"
+    try:
+        secrets = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        if exc.name != module_name:
+            raise  # secrets.py exists but something it imports is missing
+        return frozenset()
+    return cast("frozenset[str]", secrets.secret_name_keys(secret_names))
 
 
 def read_config(path: Path) -> dict[str, Any] | None:
@@ -98,6 +124,8 @@ def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> No
     - Every profile-table key is a known non-secret option or a reserved
       profile key.
     - No secret-classified field name appears anywhere in the file.
+    - Every ``<field>_secret_name`` storage-name override is a non-empty
+      string naming one of *schema*'s secret fields.
     - ``default_profile`` is a string; ``profiles`` is a table of tables.
 
     Args:
@@ -109,9 +137,10 @@ def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> No
         ConfigError: On the first violation found, naming the offending key.
     """
     option_names = {f.name for f in fields(schema)}
-    secret_names = {f.name for f in fields(schema) if is_secret(f)}
+    secret_names = frozenset(f.name for f in fields(schema) if is_secret(f))
     plain_names = option_names - secret_names
-    reserved_profile_keys = secret_reserved_keys()
+    name_keys = secret_name_keys(secret_names)
+    reserved_profile_keys = secret_reserved_keys() | name_keys
 
     def check_keys(table: dict[str, Any], allowed: frozenset[str], where: str) -> None:
         for key in table:
@@ -123,6 +152,13 @@ def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> No
             if key not in plain_names and key not in allowed:
                 valid = ", ".join(sorted(plain_names | allowed))
                 raise ConfigError(f"Unknown key {key!r} in {where} of {path}. Valid keys: {valid}.")
+            if key in name_keys:
+                value = table[key]
+                if not isinstance(value, str) or not value:
+                    raise ConfigError(
+                        f"{key!r} in {where} of {path} must be a non-empty string "
+                        f"(a backend storage name), got {value!r}."
+                    )
 
     check_keys(config, RESERVED_TOP_LEVEL_KEYS | reserved_profile_keys, "the top level")
 

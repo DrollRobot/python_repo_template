@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A `CREDENTIAL_BACKEND` policy constant in the settings schema
+  (`config/schema.py`): `"none"` (the package stores no secrets -- env vars
+  only, no secret commands, reserved backend keys become illegal),
+  a backend name such as `"keyring"`/`"keyvault"` (dev-chosen default, used
+  without prompting, still overridable per profile with
+  `credential_backend`), or `"prompt"` (the previous behavior: init makes
+  the user choose). Missing constant reads as `"prompt"`.
+- Per-secret custom storage names: the reserved config.toml key
+  `<field>_secret_name` (settable via `init`, `set-secret`, or
+  `<cli> set <field>_secret_name <name>`) stores the name a secret lives
+  under in the backend, defaulting to the schema field name.
+- The config CLI now separates secret NAME entry (visible input, clearly
+  labeled, default shown) from secret VALUE entry (hidden); only the value
+  is masked. On read-only backends (keyvault) the CLI never prompts for a
+  value: `init` and `set-secret` collect the storage name only and print
+  the backend's pointer at where the actual value lives.
+
 ### Changed
 
 - `scripts/setup.toml` renamed to `scripts/template_setup.toml` to make its

@@ -10,8 +10,10 @@ content-type concerns that belong with the vault's owner. Update secrets via
 the Azure portal or ``az keyvault secret set``; the config CLI repeats that
 hint when asked to write to a keyvault profile.
 
-Key Vault secret names cannot contain underscores, so schema field names are
-mapped ``client_secret`` -> ``client-secret`` for lookup.
+Key Vault secret names cannot contain underscores, so the storage name (the
+schema field name, or the profile's ``<field>_secret_name`` override) is
+mapped ``client_secret`` -> ``client-secret`` for lookup. Custom names are
+used as typed, modulo that same replacement.
 
 The ``azure-*`` packages are optional dependencies (the ``keyvault`` extra)
 and this is the only module in the package that imports them. To remove the
@@ -32,7 +34,7 @@ from python_repo_template.config.schema import ConfigError
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 # Backend-specific config.toml keys this backend consumes, mapped to the help
 # text shown when prompting for them. The dispatcher (secrets.py) unions these
@@ -52,8 +54,8 @@ def get(key: str, service: str, config: Mapping[str, Any]) -> str | None:
     """Read secret *key* from the profile's Key Vault.
 
     Args:
-        key: Schema field name of the secret; underscores map to hyphens in
-            the vault secret name.
+        key: Storage name of the secret; underscores map to hyphens in the
+            vault secret name.
         service: Profile-scoped namespace (unused; the vault itself scopes
             the profile).
         config: Merged reserved-key table; must contain ``keyvault_url``.

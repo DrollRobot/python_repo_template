@@ -28,7 +28,7 @@ from tests._config_test_object import ConfigTestObject
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 pytestmark = pytest.mark.unit
 
@@ -145,6 +145,127 @@ def test_read_only_backend_rejects_writes(monkeypatch: pytest.MonkeyPatch) -> No
         secrets.delete_secret("token", None, config)
 
 
+# --- storage names -------------------------------------------------------------------
+
+
+def test_storage_name_defaults_to_field_name() -> None:
+    assert secrets.storage_name("token", {}) == "token"
+
+
+def test_storage_name_honors_override() -> None:
+    assert secrets.storage_name("token", {"token_secret_name": "kv-token"}) == "kv-token"
+
+
+def test_storage_name_rejects_bad_override() -> None:
+    with pytest.raises(ConfigError, match="non-empty string"):
+        secrets.storage_name("token", {"token_secret_name": ""})
+    with pytest.raises(ConfigError, match="non-empty string"):
+        secrets.storage_name("token", {"token_secret_name": 3})
+
+
+def test_secret_name_key_and_keys_and_help() -> None:
+    assert secrets.secret_name_key("token") == "token_secret_name"
+    assert secrets.secret_name_keys(["token"]) == frozenset({"token_secret_name"})
+    help_map = secrets.secret_name_help(["token"])
+    assert "default: 'token'" in help_map["token_secret_name"]
+
+
+def test_dispatch_uses_storage_name_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The backend only ever sees the storage name, never the field name."""
+    stored: dict[str, str] = {}
+    _install_fake_backend(
+        monkeypatch,
+        get=lambda key, service, config: stored.get(key),
+        set=lambda key, value, service, config: stored.__setitem__(key, value),
+        delete=lambda key, service, config: stored.__delitem__(key),
+    )
+    config = {"credential_backend": "fake", "token_secret_name": "kv-token"}
+    secrets.set_secret("token", "s", None, config)
+    assert stored == {"kv-token": "s"}
+    assert secrets.get_secret("token", None, config) == "s"
+    secrets.delete_secret("token", None, config)
+    assert stored == {}
+
+
+def test_reserved_config_passes_secret_name_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: None)
+    config = {"credential_backend": "fake", "token_secret_name": "top", "name": "n"}
+    profile_values = {"token_secret_name": "prof"}
+    merged = secrets.reserved_config(config, profile_values)
+    assert merged == {"credential_backend": "fake", "token_secret_name": "prof"}
+
+
+# --- schema backend policy -----------------------------------------------------------
+
+
+def test_schema_backend_policy_defaults_to_prompt() -> None:
+    """The template schema ships with the 'prompt' policy."""
+    assert secrets.schema_backend_policy() == "prompt"
+
+
+def test_schema_backend_policy_rejects_unknown_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "bogus")
+    with pytest.raises(ConfigError, match="CREDENTIAL_BACKEND"):
+        secrets.schema_backend_policy()
+
+
+def test_backend_name_falls_back_to_schema_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A backend-name policy is the default; config.toml still overrides it."""
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: None)
+    _install_fake_backend(monkeypatch, name="other", get=lambda key, service, config: None)
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "fake")
+    assert secrets.backend_name({}) == "fake"
+    assert secrets.backend_name({"credential_backend": "other"}) == "other"
+
+
+def test_none_policy_disables_secret_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """'none': no backend, no reserved keys, loud writes naming the policy."""
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: None)
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
+    assert secrets.backend_name({}) is None
+    assert secrets.reserved_key_help() == {}
+    assert secrets.reserved_profile_keys() == frozenset()
+    assert secrets.secret_name_keys(["token"]) == frozenset()
+    assert secrets.reserved_config({"credential_backend": "fake"}, {}) == {}
+    with pytest.raises(ConfigError, match="CREDENTIAL_BACKEND is 'none'"):
+        secrets.set_secret("token", "s", None, {})
+
+
+# --- read-only detection -------------------------------------------------------------
+
+
+def test_is_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_backend(
+        monkeypatch,
+        get=lambda key, service, config: None,
+        set=lambda key, value, service, config: None,
+    )
+    _install_fake_backend(
+        monkeypatch,
+        name="frozen",
+        get=lambda key, service, config: None,
+        READ_ONLY_HINT="see the vault",
+    )
+    assert secrets.is_read_only({}) is False  # no backend selected
+    assert secrets.is_read_only({"credential_backend": "fake"}) is False
+    assert secrets.is_read_only({"credential_backend": "frozen"}) is True
+
+
+def test_read_only_notice_names_backend_and_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_backend(
+        monkeypatch,
+        name="frozen",
+        get=lambda key, service, config: None,
+        READ_ONLY_HINT="see the vault",
+    )
+    notice = secrets.read_only_notice({"credential_backend": "frozen"})
+    assert "'frozen'" in notice
+    assert "read-only" in notice
+    assert "see the vault" in notice
+    with pytest.raises(ConfigError, match="No credential backend is selected"):
+        secrets.read_only_notice({})
+
+
 # --- backend discovery and reserved keys ---------------------------------------------
 
 
@@ -217,6 +338,22 @@ def test_resolver_pulls_secret_from_profile_backend(
     assert settings.token == "from-backend"  # noqa: S105
     # Profile-scoped service; profile's credential_backend overrode the top level.
     assert seen == [("token", f"{APP_NAME}:a", {"credential_backend": "fake"})]
+
+
+@pytest.mark.integration
+def test_resolver_looks_up_secret_under_custom_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A <field>_secret_name override reaches the backend as the lookup key."""
+    store = {"kv-token": "from-backend"}
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: store.get(key))
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        'name = "n"\ncredential_backend = "fake"\ntoken_secret_name = "kv-token"\n',
+        encoding="utf-8",
+    )
+    settings: ConfigTestObject = resolve_settings(ConfigTestObject, config_path=config_path)
+    assert settings.token == "from-backend"  # noqa: S105
 
 
 @pytest.mark.integration

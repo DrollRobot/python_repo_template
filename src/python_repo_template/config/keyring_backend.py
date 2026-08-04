@@ -4,11 +4,15 @@ Stores secrets in the OS-native credential store: Windows Credential Manager,
 macOS Keychain, or Linux Secret Service (GNOME Keyring / KWallet). Selected
 by ``credential_backend = "keyring"`` in a profile. Secrets are namespaced
 per profile via the keyring *service* (``python_repo_template:<profile>``);
-the *username* slot holds the schema field name.
+the *username* slot holds the secret's storage name.
 
 The ``keyring`` package is an optional dependency (the ``keyring`` extra) and
 is imported lazily, so this module is importable — and the rest of the config
 system fully usable — without it installed.
+
+The *username* slot holds the secret's storage name: the schema field name by
+default, or the profile's ``<field>_secret_name`` override (resolved by the
+dispatcher before this module is called).
 
 Headless hosts (Linux without D-Bus/SecretService, containers, CI) have no
 usable keyring; ``keyring`` then selects a fail/null backend. That is
@@ -33,7 +37,7 @@ from python_repo_template.config.schema import CLI_NAME, ConfigError
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 # Backend-specific config.toml keys this backend consumes, mapped to the help
 # text shown when prompting for them. The dispatcher (secrets.py) unions these

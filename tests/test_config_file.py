@@ -22,7 +22,7 @@ from tests._config_test_object import ConfigTestObject, block_secrets_module
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 pytestmark = pytest.mark.unit
 
@@ -99,6 +99,45 @@ def test_secret_reserved_keys_empty_when_machinery_removed(
     assert config_file.secret_reserved_keys() == frozenset()
     document, path = _load(tmp_path, 'name = "top"\ncredential_backend = "keyring"\n')
     with pytest.raises(ConfigError, match="Unknown key 'credential_backend'"):
+        config_file.validate_config(document, ConfigTestObject, path)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'name = "top"\ntoken_secret_name = "kv-token"\n',
+        'name = "top"\n[profiles.a]\ntoken_secret_name = "kv-token"\n',
+    ],
+    ids=["top-level", "profile"],
+)
+def test_validate_accepts_secret_name_keys(tmp_path: Path, text: str) -> None:
+    """<secret>_secret_name is a legal reserved key while the machinery exists."""
+    document, path = _load(tmp_path, text)
+    config_file.validate_config(document, ConfigTestObject, path)
+
+
+def test_validate_rejects_secret_name_key_for_non_secret_field(tmp_path: Path) -> None:
+    """Only secret fields have storage names; 'name' is a plain option."""
+    document, path = _load(tmp_path, 'name_secret_name = "x"\n')
+    with pytest.raises(ConfigError, match="Unknown key 'name_secret_name'"):
+        config_file.validate_config(document, ConfigTestObject, path)
+
+
+@pytest.mark.parametrize("value", ['""', "3"], ids=["empty", "non-string"])
+def test_validate_rejects_bad_secret_name_value(tmp_path: Path, value: str) -> None:
+    document, path = _load(tmp_path, f"token_secret_name = {value}\n")
+    with pytest.raises(ConfigError, match="non-empty string"):
+        config_file.validate_config(document, ConfigTestObject, path)
+
+
+def test_secret_name_keys_empty_when_machinery_removed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With secrets.py gone, storage-name keys are unknown keys."""
+    block_secrets_module(monkeypatch)
+    assert config_file.secret_name_keys(frozenset({"token"})) == frozenset()
+    document, path = _load(tmp_path, 'name = "top"\ntoken_secret_name = "kv-token"\n')
+    with pytest.raises(ConfigError, match="Unknown key 'token_secret_name'"):
         config_file.validate_config(document, ConfigTestObject, path)
 
 

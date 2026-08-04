@@ -8,8 +8,13 @@ Command              Behavior
 ===================  ========================================================
 ``init``             Interactive first-time setup; prompts from the schema;
                      non-secrets go to config.toml; when the schema has
-                     secret fields, prompts the user to pick a credential
-                     backend, then stores secrets in it.
+                     secret fields, selects a credential backend (the
+                     schema's ``CREDENTIAL_BACKEND`` default, or a prompt
+                     under the ``"prompt"`` policy), collects each secret's
+                     backend storage NAME (visible input), then stores
+                     secret VALUES via hidden prompts -- writable backends
+                     only; read-only backends get the storage names plus a
+                     pointer at where the values live.
 ``path``             Print the resolved config file path.
 ``show``             Effective config after full resolution, secrets masked,
                      with each value's provenance.
@@ -20,14 +25,18 @@ Command              Behavior
 ``unset KEY``        Remove a key so the schema default applies again.
 ``list-profiles``    Profile names, marking the default.
 ``use PROFILE``      Set ``default_profile``.
-``set-secret KEY``   Prompt (hidden) and store in the profile's backend.
+``set-secret KEY``   Prompt for the storage NAME (visible; persisted to
+                     config.toml when changed) and the VALUE (hidden), then
+                     store in the profile's backend. On a read-only backend:
+                     name only, never a value prompt.
 ``delete-secret KEY``  Remove a secret from the profile's backend.
 ===================  ========================================================
 
 The two secret commands exist only when the schema marks at least one field
-``secret``. The secret-storage machinery (``secrets.py``) is imported lazily
-and only on paths that need it, so with no secret fields in the schema this
-CLI runs with that machinery deleted from the package.
+``secret`` and its ``CREDENTIAL_BACKEND`` policy is not ``"none"``. The
+secret-storage machinery (``secrets.py``) is imported lazily and only on
+paths that need it, so with no secret fields in the schema this CLI runs
+with that machinery deleted from the package.
 
 Exposed as the ``python-repo-template-config`` console script and as
 ``python -m python_repo_template.config``. Writes go through ``tomlkit`` so
@@ -50,6 +59,7 @@ import tomlkit
 import tomlkit.exceptions
 
 from python_repo_template.config import paths
+from python_repo_template.config import schema as schema_module
 from python_repo_template.config.resolve import (
     coerce_string,
     resolve_with_sources,
@@ -68,7 +78,7 @@ from python_repo_template.config.schema import (
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 _SECRET_MASK = "********"  # noqa: S105  (display placeholder, not a credential)
 
@@ -76,6 +86,14 @@ _SECRET_MASK = "********"  # noqa: S105  (display placeholder, not a credential)
 # path: with no secret fields, secrets.py is never imported and the secret
 # commands are not registered.
 _HAS_SECRET_FIELDS = any(is_secret(f) for f in fields(Settings))
+
+# Whether secret storage is in play at all: secret fields exist AND the
+# schema's CREDENTIAL_BACKEND policy is not "none". The raw constant is read
+# here (missing means "prompt", the pre-policy behavior); full validation
+# happens in secrets.schema_backend_policy() on paths that use it.
+_SECRET_STORAGE_ACTIVE = _HAS_SECRET_FIELDS and (
+    str(getattr(schema_module, "CREDENTIAL_BACKEND", "prompt")) != "none"
+)
 
 
 def _secrets_module() -> Any:
@@ -120,7 +138,9 @@ def _reserved_key_help() -> dict[str, str]:
         if exc.name != module_name:
             raise  # secrets.py exists but something it imports is missing
         return {}
-    return dict(secrets.reserved_key_help())
+    help_map = dict(secrets.reserved_key_help())
+    help_map.update(secrets.secret_name_help(f.name for f in fields(Settings) if is_secret(f)))
+    return help_map
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +296,21 @@ def _prompt_backend_choice(table: Any, secrets: Any) -> None:
             break
         print(f"Unknown backend {raw!r}. Available backends: {names}.")
     table[secrets.BACKEND_KEY] = raw
-    for key, help_text in secrets.backend_reserved_keys(raw).items():
+    _prompt_backend_keys(table, raw, {}, secrets)
+
+
+def _prompt_backend_keys(table: Any, backend: str, already: dict[str, Any], secrets: Any) -> None:
+    """Prompt for backend *backend*'s own config keys (e.g. a vault URL).
+
+    Args:
+        table: The mutable tomlkit table ``init`` is populating.
+        backend: The selected backend's name.
+        already: Reserved-key values already configured (skipped).
+        secrets: The imported secret-machinery module.
+    """
+    for key, help_text in secrets.backend_reserved_keys(backend).items():
+        if key in already:
+            continue
         value = input(f"{key} — {help_text} (empty to skip): ").strip()
         if value:
             table[key] = value
@@ -284,14 +318,44 @@ def _prompt_backend_choice(table: Any, secrets: Any) -> None:
             print(f"Skipped {key}; set it later with '{CLI_NAME} set {key} <value>'.")
 
 
+def _prompt_secret_names(table: Any, backend_config: dict[str, Any], secrets: Any) -> None:
+    """Prompt for each secret field's backend storage NAME (visible input).
+
+    The name is not the secret, so it is echoed. Empty input keeps the
+    current effective name (an existing ``<field>_secret_name`` override, or
+    the field name); a different non-empty name is written into *table* as
+    ``<field>_secret_name``.
+
+    Args:
+        table: The mutable tomlkit table ``init`` is populating.
+        backend_config: Merged reserved-key table for the target profile.
+        secrets: The imported secret-machinery module.
+    """
+    for f in fields(Settings):
+        if not is_secret(f):
+            continue
+        current = secrets.storage_name(f.name, backend_config)
+        print(f"{f.name} — {field_help(f)}")
+        raw = input(
+            f"  secret NAME in backend (visible, not the secret) [default: {current}]: "
+        ).strip()
+        if raw and raw != current:
+            table[secrets.secret_name_key(f.name)] = raw
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
     """Interactively create the config file (and optionally a profile).
 
     Prompts for every schema field: non-secrets are written to config.toml
     (empty input keeps the default, or re-prompts when required). When the
-    schema has secret fields, prompts the user to pick a credential backend
-    (unless one is already configured), then stores secrets in it via hidden
-    prompts (empty input skips, with a reminder). Refuses to touch an
+    schema has secret fields, selects a credential backend -- the schema's
+    ``CREDENTIAL_BACKEND`` default (announced, its own keys prompted for), or
+    the user's pick under the ``"prompt"`` policy -- then collects each
+    secret's backend storage NAME (visible; persisted as
+    ``<field>_secret_name`` when changed) and, on writable backends only,
+    each secret VALUE via hidden prompts (empty input skips, with a
+    reminder). Read-only backends get a pointer at where the values live;
+    the ``"none"`` policy skips secret storage entirely. Refuses to touch an
     already-configured target so a typo cannot silently overwrite a tenant's
     settings.
 
@@ -330,11 +394,23 @@ def _cmd_init(args: argparse.Namespace) -> int:
                 break  # keep the schema default; write nothing
             print(f"{f.name} is required.")
 
-    secrets = _secrets_module() if _HAS_SECRET_FIELDS else None
+    secrets = _secrets_module() if _SECRET_STORAGE_ACTIVE else None
+    if _HAS_SECRET_FIELDS and secrets is None:
+        print(
+            "schema.CREDENTIAL_BACKEND is 'none'; secrets are not stored. "
+            "Provide them via environment variables."
+        )
     if secrets is not None:
         backend_config = _backend_config(document, args.profile, secrets)
-        if secrets.backend_name(backend_config) is None:
+        selected = secrets.backend_name(backend_config)
+        if selected is None:
             _prompt_backend_choice(table, secrets)
+        elif secrets.BACKEND_KEY not in backend_config:
+            print(f"Using credential backend {selected!r} (schema default).")
+            _prompt_backend_keys(table, selected, backend_config, secrets)
+        backend_config = _backend_config(document, args.profile, secrets)
+        if secrets.backend_name(backend_config) is not None:
+            _prompt_secret_names(table, backend_config, secrets)
     _save_document(path, document)
 
     if secrets is not None:
@@ -346,11 +422,13 @@ def _cmd_init(args: argparse.Namespace) -> int:
                 f"'{CLI_NAME} set {secrets.BACKEND_KEY} <name>' and store them with "
                 f"'{CLI_NAME} set-secret <key>'."
             )
+        elif secrets.is_read_only(backend_config):
+            print(secrets.read_only_notice(backend_config))
         else:
             for f in fields(Settings):
                 if not is_secret(f):
                     continue
-                value = getpass.getpass(f"{f.name} — {field_help(f)} (hidden, empty to skip): ")
+                value = getpass.getpass(f"{f.name} — secret VALUE (hidden, empty to skip): ")
                 if value:
                     secrets.set_secret(f.name, value, args.profile, backend_config)
                     print(
@@ -400,8 +478,9 @@ def _cmd_show(args: argparse.Namespace) -> int:
 def _reserved_value(key: str, value: str) -> str:
     """Validate *value* for the reserved backend key *key*.
 
-    ``credential_backend`` must name an available backend; every other
-    reserved key is a free-form string the backend interprets itself.
+    ``credential_backend`` must name an available backend; a
+    ``<field>_secret_name`` key must be non-empty; every other reserved key
+    is a free-form string the backend interprets itself.
 
     Args:
         key: A reserved backend key.
@@ -411,12 +490,15 @@ def _reserved_value(key: str, value: str) -> str:
         The validated value.
 
     Raises:
-        ConfigError: When ``credential_backend`` names no available backend.
+        ConfigError: When ``credential_backend`` names no available backend,
+            or a storage-name key is empty.
     """
     secrets = _secrets_module()
     if key == secrets.BACKEND_KEY and value not in secrets.available_backends():
         available = ", ".join(secrets.available_backends()) or "none"
         raise ConfigError(f"Unknown credential backend {value!r}. Available backends: {available}.")
+    if key.endswith(secrets.SECRET_NAME_SUFFIX) and not value:
+        raise ConfigError(f"{key!r} must be a non-empty backend storage name.")
     return value
 
 
@@ -548,7 +630,12 @@ def _select_secret_profile(document: tomlkit.TOMLDocument, explicit: str | None)
 
 
 def _cmd_set_secret(args: argparse.Namespace) -> int:
-    """Prompt for a secret value (hidden) and store it in the backend.
+    """Prompt for a secret's storage name (visible) and value (hidden).
+
+    The NAME prompt echoes -- it is not the secret -- and a changed name is
+    persisted to config.toml as ``<key>_secret_name``. The VALUE prompt is
+    hidden and only shown for writable backends; on a read-only backend the
+    command stores nothing and instead points at where the value lives.
 
     Args:
         args: Parsed CLI arguments (``key``, ``profile``).
@@ -557,8 +644,8 @@ def _cmd_set_secret(args: argparse.Namespace) -> int:
         Process exit code.
 
     Raises:
-        ConfigError: For unknown or non-secret keys, an empty value, or a
-            read-only backend.
+        ConfigError: For unknown or non-secret keys, no configured backend,
+            or an empty value.
     """
     f = _schema_field(args.key)
     if not is_secret(f):
@@ -566,10 +653,28 @@ def _cmd_set_secret(args: argparse.Namespace) -> int:
             f"{args.key!r} is not a secret. Use '{CLI_NAME} set {args.key} <value>' instead."
         )
     secrets = _secrets_module()
-    document = _load_document(paths.config_path())
+    path = paths.config_path()
+    document = _load_document(path)
     profile = _select_secret_profile(document, args.profile)
     backend_config = _backend_config(document, profile, secrets)
-    value = getpass.getpass(f"Value for {args.key} (hidden): ")
+    secrets.require_backend(backend_config, f"store secret {args.key!r}")
+
+    current = secrets.storage_name(args.key, backend_config)
+    raw = input(
+        f"{args.key} — secret NAME in backend (visible, not the secret) [default: {current}]: "
+    ).strip()
+    if raw and raw != current:
+        table = _profile_table(document, profile)
+        table[secrets.secret_name_key(args.key)] = raw
+        _save_document(path, document)
+        backend_config = _backend_config(document, profile, secrets)
+        print(f"Set {secrets.secret_name_key(args.key)} = {raw!r} in {path}")
+
+    if secrets.is_read_only(backend_config):
+        print(secrets.read_only_notice(backend_config))
+        return 0
+
+    value = getpass.getpass(f"{args.key} — secret VALUE (hidden): ")
     if not value:
         raise ConfigError("Empty value; nothing stored.")
     secrets.set_secret(args.key, value, profile, backend_config)
@@ -652,8 +757,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("profile")
     p.set_defaults(func=_cmd_use)
 
-    if _HAS_SECRET_FIELDS:
-        p = add("set-secret", "Prompt for a secret (hidden) and store it in the backend.")
+    if _SECRET_STORAGE_ACTIVE:
+        p = add("set-secret", "Prompt for a secret's name (visible) and value (hidden); store it.")
         p.add_argument("key")
         p.add_argument("--profile", default=None, help="Target this profile's backend.")
         p.set_defaults(func=_cmd_set_secret)
