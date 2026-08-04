@@ -97,7 +97,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.22.0"
+__version__ = "1.23.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -311,6 +311,10 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # [claude].no_inline_secret_suppressions can decline) and carries a
     # __version__.
     BaselineFile("tests/test_no_inline_suppressions_for_secrets.py", versioned=True),
+    # Same deal for the audited-baseline gate: it ships to every project (it
+    # backs the secrets-baseline-audited pre-commit hook) and carries a
+    # __version__.
+    BaselineFile("tests/test_secrets_baseline_audited.py", versioned=True),
 )
 
 # Tracked template paths deliberately not compared. Prefixes cover the
