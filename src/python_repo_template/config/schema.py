@@ -13,18 +13,20 @@ defined. Everything else derives from it by iterating
 To add, rename, or remove an option: edit :class:`Settings`; nothing else
 needs changing.
 
-Field conventions:
+Field conventions -- declare every field with :func:`option` or
+:func:`secret`, never with a bare ``field(default=...)``:
 
-- Fields without a default are required; resolution fails loudly when one is
-  missing from every layer.
-- ``metadata={"help": ...}`` provides the human description used in prompts
-  and generated comments.
-- ``metadata={"secret": True}`` marks a secret: its value lives in the
-  user-selected credential backend (see ``secrets.py``), never in
-  config.toml, and it must also set ``repr=False`` so the value cannot leak
-  through ``repr()``/tracebacks (enforced by a unit test). A schema with no
-  secret fields never touches the secret machinery, which can then be
-  removed from the package entirely.
+- ``option(...)``: a non-secret. ``default_value`` is the value used when
+  no layer provides one; omit it to make the option required.
+- ``secret(...)``: a secret. Secret values never appear in source, so
+  secret fields cannot have defaults and are always required.
+  ``default_secret_name`` is the backend storage NAME the config CLI
+  offers at init and writes to config.toml as ``<field>_secret_name``;
+  runtime reads the name from config.toml only.
+- Both take ``help``: the description used in prompts and comments.
+- All fields are keyword-only, so declaration order is free.
+- A schema with no secret fields never touches the secret machinery, which
+  can then be removed from the package entirely.
 """
 
 from __future__ import annotations
@@ -64,6 +66,71 @@ class ConfigError(Exception):
     """Raised for any configuration problem: missing, malformed, or mistyped values."""
 
 
+def option(
+    *,
+    help: str,
+    default_value: Any = MISSING,
+    default_factory: Any = MISSING,
+) -> Any:
+    """Declare a non-secret settings field.
+
+    Args:
+        help: Description used in prompts and generated comments.
+        default_value: Value used when no layer provides one. Omit to make
+            the option required.
+        default_factory: Zero-argument callable producing the default, for
+            mutable defaults. Mutually exclusive with ``default_value``.
+
+    Returns:
+        A dataclass field for the settings schema.
+
+    Raises:
+        ValueError: If both defaults are given.
+    """
+    if default_value is not MISSING and default_factory is not MISSING:
+        raise ValueError("Pass default_value or default_factory, not both.")
+    kwargs: dict[str, Any] = {"kw_only": True, "metadata": {"help": help}}
+    if default_value is not MISSING:
+        kwargs["default"] = default_value
+    if default_factory is not MISSING:
+        kwargs["default_factory"] = default_factory
+    return field(**kwargs)
+
+
+def secret(
+    *,
+    help: str,
+    default_secret_name: str | None = None,
+) -> Any:
+    """Declare a secret settings field.
+
+    Secret values never appear in source: the field cannot take a default
+    and is always required. Values come from the credential backend, or an
+    environment variable at runtime.
+
+    Args:
+        help: Description used in prompts and generated comments.
+        default_secret_name: Backend storage NAME (a name, not a value) the
+            config CLI offers at init and writes to config.toml as
+            ``<field>_secret_name``. Omit to offer the field name.
+
+    Returns:
+        A dataclass field for the settings schema (``repr=False`` so the
+        value cannot leak through ``repr()``/tracebacks).
+
+    Raises:
+        ValueError: If ``default_secret_name`` is empty.
+    """
+    metadata: dict[str, Any] = {"secret": True, "help": help}
+    if default_secret_name is not None:
+        if not isinstance(default_secret_name, str) or not default_secret_name:
+            raise ValueError(
+                f"default_secret_name must be a non-empty string, got {default_secret_name!r}."
+            )
+        metadata["default_secret_name"] = default_secret_name
+    return field(repr=False, kw_only=True, metadata=metadata)
+
+
 @dataclass(frozen=True)
 class Settings:
     """Resolved configuration for one profile.
@@ -75,14 +142,16 @@ class Settings:
     """
 
     # FIXME: replace these example fields with your project's options.
-    tenant_id: str = field(metadata={"help": "Entra tenant ID"})
-    client_id: str = field(metadata={"help": "App registration client ID"})
-    client_secret: str = field(
-        repr=False, metadata={"secret": True, "help": "App registration client secret"}
+    tenant_id: str = option(help="Entra tenant ID")  # required
+    client_id: str = option(help="App registration client ID")
+    api_url: str = option(  # optional: default_value used when unset
+        default_value="https://example.invalid",
+        help="Base URL of the API this tool calls",
     )
-    api_url: str = field(
-        default="https://example.invalid",
-        metadata={"help": "Base URL of the API this tool calls"},
+    client_secret: str = secret(help="App registration client secret")
+    api_key: str = secret(
+        help="API key for the example service",
+        default_secret_name="example-api-key",  # noqa: S106  (a name, not a secret)
     )
 
 
@@ -121,6 +190,20 @@ def is_required(f: Field[Any]) -> bool:
         True when the field has neither a default value nor a default factory.
     """
     return f.default is MISSING and f.default_factory is MISSING
+
+
+def default_secret_name(f: Field[Any]) -> str | None:
+    """Return *f*'s schema-declared backend storage name, if any.
+
+    Args:
+        f: A dataclass field of the settings schema.
+
+    Returns:
+        The ``default_secret_name`` metadata string, or None (the config
+        CLI then offers the field name).
+    """
+    name = f.metadata.get("default_secret_name")
+    return str(name) if name is not None else None
 
 
 def field_default(f: Field[Any]) -> Any:

@@ -7,7 +7,7 @@ repo replaces the FIXME example fields with its own.
 
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import dataclass, fields
 from typing import get_type_hints
 
 import pytest
@@ -16,16 +16,19 @@ from python_repo_template.config import file as config_file
 from python_repo_template.config import paths, resolve
 from python_repo_template.config.schema import (
     Settings,
+    default_secret_name,
     field_default,
     field_help,
     is_required,
     is_secret,
+    option,
+    secret,
 )
 
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 pytestmark = pytest.mark.unit
 
@@ -69,6 +72,58 @@ def test_secret_fields_disable_repr() -> None:
     for f in fields(Settings):
         if is_secret(f):
             assert f.repr is False, f"secret field {f.name!r} must set repr=False"
+
+
+def test_secret_fields_never_have_default_values() -> None:
+    """A default on a secret field is a secret value in source; never allowed."""
+    for f in fields(Settings):
+        if is_secret(f):
+            assert is_required(f), f"secret field {f.name!r} has a value in source"
+
+
+def test_secret_constructor_cannot_express_a_default_value() -> None:
+    with pytest.raises(TypeError):
+        secret(help="h", default_value="oops")  # type: ignore[call-arg]
+
+
+def test_secret_constructor_rejects_empty_default_secret_name() -> None:
+    with pytest.raises(ValueError, match="non-empty"):
+        secret(help="h", default_secret_name="")
+
+
+def test_option_rejects_both_default_forms() -> None:
+    with pytest.raises(ValueError, match="not both"):
+        option(help="h", default_value=1, default_factory=list)
+
+
+def test_constructors_set_field_conventions() -> None:
+    @dataclass(frozen=True)
+    class Local:
+        token: str = secret(
+            help="a secret",
+            default_secret_name="kv-token",  # noqa: S106  (a name, not a secret)
+        )
+        plain: str = option(help="an option", default_value="v")
+
+    token_field, plain_field = fields(Local)
+    assert is_secret(token_field)
+    assert token_field.repr is False
+    assert is_required(token_field)
+    assert default_secret_name(token_field) == "kv-token"
+    assert not is_secret(plain_field)
+    assert default_secret_name(plain_field) is None
+    assert field_default(plain_field) == "v"
+    assert field_help(token_field) == "a secret"
+
+
+def test_secret_without_name_defaults_to_field_name_lookup() -> None:
+    @dataclass(frozen=True)
+    class Local:
+        token: str = secret(help="a secret")
+
+    (token_field,) = fields(Local)
+    assert default_secret_name(token_field) is None
+    assert is_required(token_field)
 
 
 def test_repr_does_not_leak_secret_values() -> None:

@@ -8,6 +8,7 @@ user config directory or depends on the repo's FIXME example fields.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ from tests._config_test_object import (
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 pytestmark = pytest.mark.unit
 
@@ -102,6 +103,38 @@ def test_missing_secret_under_none_policy_points_at_env(
     message = str(excinfo.value)
     assert "CREDENTIAL_BACKEND is 'none'" in message
     assert "set-secret" not in message
+
+
+# --- schema validation ---------------------------------------------------------------
+
+
+def test_secret_field_with_default_value_is_rejected(config_path: Path) -> None:
+    """A secret default is a secret value in source; the schema is rejected outright."""
+
+    @dataclass(frozen=True)
+    class BadSchema:
+        token: str = field(default="oops", repr=False, metadata={"secret": True, "help": "h"})
+
+    with pytest.raises(ConfigError, match="secret value in source"):
+        resolve_settings(BadSchema, config_path=config_path)
+
+
+def test_secret_field_with_repr_enabled_is_rejected(config_path: Path) -> None:
+    @dataclass(frozen=True)
+    class BadSchema:
+        token: str = field(metadata={"secret": True, "help": "h"})
+
+    with pytest.raises(ConfigError, match="repr=False"):
+        resolve_settings(BadSchema, config_path=config_path)
+
+
+def test_non_secret_with_default_secret_name_is_rejected(config_path: Path) -> None:
+    @dataclass(frozen=True)
+    class BadSchema:
+        name: str = field(metadata={"help": "h", "default_secret_name": "kv-name"})
+
+    with pytest.raises(ConfigError, match="is not secret"):
+        resolve_settings(BadSchema, config_path=config_path)
 
 
 # --- optional secret machinery -------------------------------------------------------

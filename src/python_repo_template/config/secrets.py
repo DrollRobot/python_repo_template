@@ -21,10 +21,10 @@ Whether a *default* backend exists is the schema author's choice, declared as
   reads simply skip the backend layer; secret writes fail loudly naming the
   available backends.
 
-Secrets are stored under the schema field name by default; a profile may
-override the storage name per field with the reserved key
-``<field>_secret_name`` (e.g. ``client_secret_secret_name = "app-secret"``).
-The storage names are not secrets, so config.toml is a legal home for them.
+Secrets are stored under a storage NAME: the profile's
+``<field>_secret_name`` key in config.toml, written by ``init`` and
+``set-secret``. A missing name is a config error, never a fallback.
+Storage names are not secrets, so config.toml is a legal home for them.
 
 This module is itself optional. Nothing else in the config system imports it
 at module scope, so when the settings schema marks no field ``secret`` the
@@ -64,7 +64,7 @@ from python_repo_template.config.schema import APP_NAME, CLI_NAME, ConfigError
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.1.0"
+__version__ = "2.2.1"
 
 # The reserved profile key selecting the backend. Whether a default exists is
 # the schema's CREDENTIAL_BACKEND policy; the user can always pick (or, under
@@ -82,6 +82,10 @@ _POLICY_PROMPT = "prompt"
 
 # Module-name suffix that marks a file in this package as a backend.
 _BACKEND_SUFFIX = "_backend"
+
+# This package's qualified name. Unlike ``__package__`` it is always a str,
+# which keeps type checkers happy at the import_module call.
+_PACKAGE = __name__.rpartition(".")[0]
 
 
 class _CredentialBackend(Protocol):
@@ -158,11 +162,12 @@ def secret_name_keys(secret_fields: Iterable[str]) -> frozenset[str]:
     return frozenset(secret_name_key(name) for name in secret_fields)
 
 
-def secret_name_help(secret_fields: Iterable[str]) -> dict[str, str]:
+def secret_name_help(secret_fields: Mapping[str, str | None]) -> dict[str, str]:
     """Return each ``<field>_secret_name`` key mapped to its help text.
 
     Args:
-        secret_fields: Schema field names marked secret.
+        secret_fields: Secret field names mapped to their
+            ``default_secret_name`` (None: the field name is the default).
 
     Returns:
         ``{key: help text}``; empty under the ``"none"`` policy.
@@ -170,8 +175,10 @@ def secret_name_help(secret_fields: Iterable[str]) -> dict[str, str]:
     if schema_backend_policy() == _POLICY_NONE:
         return {}
     return {
-        secret_name_key(name): f"Backend storage name for secret {name!r} (default: {name!r})"
-        for name in secret_fields
+        secret_name_key(name): (
+            f"Backend storage name for secret {name!r} (default: {(default or name)!r})"
+        )
+        for name, default in secret_fields.items()
     }
 
 
@@ -183,12 +190,17 @@ def storage_name(key: str, config: Mapping[str, Any]) -> str:
         config: Merged reserved-key table for the active profile.
 
     Returns:
-        The profile's ``<key>_secret_name`` override, or *key* itself.
+        The profile's ``<key>_secret_name`` value from config.toml.
 
     Raises:
-        ConfigError: If the override is present but not a non-empty string.
+        ConfigError: If the name is missing or not a non-empty string.
     """
-    name = config.get(secret_name_key(key), key)
+    name = config.get(secret_name_key(key))
+    if name is None:
+        raise ConfigError(
+            f"{secret_name_key(key)!r} is not set in config.toml. "
+            f"Run '{CLI_NAME} init', or '{CLI_NAME} set {secret_name_key(key)} <name>'."
+        )
     if not isinstance(name, str) or not name:
         raise ConfigError(f"{secret_name_key(key)!r} must be a non-empty string, got {name!r}.")
     return name
@@ -206,13 +218,13 @@ def available_backends() -> list[str]:
     Returns:
         Sorted backend names (e.g. ``["keyring", "keyvault"]``).
     """
-    package = importlib.import_module(__package__)
+    package = importlib.import_module(_PACKAGE)
     names = {
         module.name
         for module in pkgutil.iter_modules(package.__path__)
         if module.name.endswith(_BACKEND_SUFFIX)
     }
-    prefix = f"{__package__}."
+    prefix = f"{_PACKAGE}."
     names.update(
         tail
         for qualified, module in sys.modules.items()
@@ -349,7 +361,7 @@ def _load_backend(name: str) -> Any:
         ConfigError: If the module does not exist -- the backend was removed,
             or the name is misspelled.
     """
-    module_name = f"{__package__}.{name}{_BACKEND_SUFFIX}"
+    module_name = f"{_PACKAGE}.{name}{_BACKEND_SUFFIX}"
     try:
         return importlib.import_module(module_name)
     except ModuleNotFoundError as exc:
@@ -405,7 +417,8 @@ def get_secret(key: str, profile: str | None, config: Mapping[str, Any]) -> str 
         environment variables instead).
 
     Raises:
-        ConfigError: If a configured backend is missing or unusable.
+        ConfigError: If a configured backend is missing or unusable, or the
+            secret's storage name is not set in config.toml.
     """
     name = backend_name(config)
     if name is None:
@@ -424,8 +437,8 @@ def set_secret(key: str, value: str, profile: str | None, config: Mapping[str, A
         config: Merged reserved-key table for the active profile.
 
     Raises:
-        ConfigError: If no backend is configured, or the backend is missing,
-            unusable, or read-only.
+        ConfigError: If no backend is configured, the backend is missing,
+            unusable, or read-only, or the storage name is not set.
     """
     name, backend = require_backend(config, f"store secret {key!r}")
     setter = getattr(backend, "set", None)
@@ -443,8 +456,8 @@ def delete_secret(key: str, profile: str | None, config: Mapping[str, Any]) -> N
         config: Merged reserved-key table for the active profile.
 
     Raises:
-        ConfigError: If no backend is configured, or the backend is missing,
-            unusable, or read-only.
+        ConfigError: If no backend is configured, the backend is missing,
+            unusable, or read-only, or the storage name is not set.
     """
     name, backend = require_backend(config, f"delete secret {key!r}")
     deleter = getattr(backend, "delete", None)

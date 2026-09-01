@@ -36,7 +36,7 @@ from tests._config_test_object import ConfigTestObject, block_secrets_module
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 pytestmark = pytest.mark.unit
 
@@ -153,7 +153,8 @@ def test_init_writes_config_and_stores_secret(
     assert document["credential_backend"] == "fake"  # the user's choice is recorded
     assert "ratio" not in document  # empty input keeps the schema default
     assert "token" not in document  # secrets never reach the file
-    assert "token_secret_name" not in document  # default name writes nothing
+    # The storage name is always written; runtime reads it from config.toml only.
+    assert document["token_secret_name"] == "token"  # noqa: S105  (a name, not a secret)
     assert fake_backend == {(APP_NAME, "token"): "tok"}
     assert "Stored token" in capsys.readouterr().out
 
@@ -365,7 +366,7 @@ def test_show_masks_secrets_and_reports_sources(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     (config_dir / "config.toml").write_text(
-        'name = "n"\ncredential_backend = "fake"\n', encoding="utf-8"
+        'name = "n"\ncredential_backend = "fake"\ntoken_secret_name = "token"\n', encoding="utf-8"
     )
     fake_backend[(APP_NAME, "token")] = "sekrit-value-xyz"
     monkeypatch.setenv(ENV_PREFIX + "COUNT", "9")
@@ -448,7 +449,9 @@ def test_delete_secret_removes_stored_value(
     config_dir: Path,
     fake_backend: dict[tuple[str, str], str],
 ) -> None:
-    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    (config_dir / "config.toml").write_text(
+        'credential_backend = "fake"\ntoken_secret_name = "token"\n', encoding="utf-8"
+    )
     fake_backend[(APP_NAME, "token")] = "s3"
     assert cli.main(["delete-secret", "token"]) == 0
     assert fake_backend == {}
@@ -457,9 +460,19 @@ def test_delete_secret_removes_stored_value(
 def test_delete_secret_missing_fails_loudly(
     config_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    (config_dir / "config.toml").write_text(
+        'credential_backend = "fake"\ntoken_secret_name = "token"\n', encoding="utf-8"
+    )
     assert cli.main(["delete-secret", "token"]) == 1
     assert "nothing deleted" in capsys.readouterr().err
+
+
+def test_delete_secret_without_storage_name_is_actionable(
+    config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    assert cli.main(["delete-secret", "token"]) == 1
+    assert "'token_secret_name' is not set" in capsys.readouterr().err
 
 
 @pytest.mark.integration
@@ -548,6 +561,36 @@ def test_set_accepts_secret_name_key(config_dir: Path) -> None:
 def test_set_rejects_empty_secret_name(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["set", "token_secret_name", ""]) == 1
     assert "non-empty" in capsys.readouterr().err
+
+
+@pytest.mark.integration
+def test_set_secret_honors_schema_default_secret_name(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+) -> None:
+    """A schema default_secret_name scopes storage without any config.toml override."""
+    from dataclasses import dataclass, field
+
+    from python_repo_template.config.schema import secret
+
+    @dataclass(frozen=True)
+    class NamedSecretObject:
+        name: str = field(metadata={"help": "Required plain string"})
+        token: str = secret(
+            help="Named secret",
+            default_secret_name="kv-token",  # noqa: S106  (a name, not a secret)
+        )
+
+    monkeypatch.setattr("python_repo_template.config.cli.Settings", NamedSecretObject)
+    (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
+    _feed_input(monkeypatch, [""])  # empty accepts the schema's offered name
+    _feed_getpass(monkeypatch, ["s3"])
+    assert cli.main(["set-secret", "token"]) == 0
+    assert fake_backend == {(APP_NAME, "kv-token"): "s3"}
+    # The chosen name is persisted; runtime reads config.toml only.
+    parsed = tomlkit.parse(_config_text(config_dir))
+    assert parsed["token_secret_name"] == "kv-token"  # noqa: S105  (a name, not a secret)
 
 
 # --- schema backend policy -----------------------------------------------------------

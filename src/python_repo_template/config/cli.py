@@ -26,9 +26,9 @@ Command              Behavior
 ``list-profiles``    Profile names, marking the default.
 ``use PROFILE``      Set ``default_profile``.
 ``set-secret KEY``   Prompt for the storage NAME (visible; persisted to
-                     config.toml when changed) and the VALUE (hidden), then
-                     store in the profile's backend. On a read-only backend:
-                     name only, never a value prompt.
+                     config.toml) and the VALUE (hidden), then store in the
+                     profile's backend. On a read-only backend: name only,
+                     never a value prompt.
 ``delete-secret KEY``  Remove a secret from the profile's backend.
 ===================  ========================================================
 
@@ -69,6 +69,7 @@ from python_repo_template.config.schema import (
     CLI_NAME,
     ConfigError,
     Settings,
+    default_secret_name,
     field_default,
     field_help,
     is_required,
@@ -78,7 +79,7 @@ from python_repo_template.config.schema import (
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 _SECRET_MASK = "********"  # noqa: S105  (display placeholder, not a credential)
 
@@ -139,7 +140,11 @@ def _reserved_key_help() -> dict[str, str]:
             raise  # secrets.py exists but something it imports is missing
         return {}
     help_map = dict(secrets.reserved_key_help())
-    help_map.update(secrets.secret_name_help(f.name for f in fields(Settings) if is_secret(f)))
+    help_map.update(
+        secrets.secret_name_help(
+            {f.name: default_secret_name(f) for f in fields(Settings) if is_secret(f)}
+        )
+    )
     return help_map
 
 
@@ -322,9 +327,10 @@ def _prompt_secret_names(table: Any, backend_config: dict[str, Any], secrets: An
     """Prompt for each secret field's backend storage NAME (visible input).
 
     The name is not the secret, so it is echoed. Empty input keeps the
-    current effective name (an existing ``<field>_secret_name`` override, or
-    the field name); a different non-empty name is written into *table* as
-    ``<field>_secret_name``.
+    offered default (an existing ``<field>_secret_name``, else the schema's
+    ``default_secret_name``, else the field name). The result is always
+    written to *table*: runtime resolution reads names from config.toml
+    only, never from a fallback.
 
     Args:
         table: The mutable tomlkit table ``init`` is populating.
@@ -334,13 +340,13 @@ def _prompt_secret_names(table: Any, backend_config: dict[str, Any], secrets: An
     for f in fields(Settings):
         if not is_secret(f):
             continue
-        current = secrets.storage_name(f.name, backend_config)
+        name_key = secrets.secret_name_key(f.name)
+        offered = backend_config.get(name_key) or default_secret_name(f) or f.name
         print(f"{f.name} — {field_help(f)}")
         raw = input(
-            f"  secret NAME in backend (visible, not the secret) [default: {current}]: "
+            f"  secret NAME in backend (visible, not the secret) [default: {offered}]: "
         ).strip()
-        if raw and raw != current:
-            table[secrets.secret_name_key(f.name)] = raw
+        table[name_key] = raw or offered
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
@@ -351,8 +357,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
     schema has secret fields, selects a credential backend -- the schema's
     ``CREDENTIAL_BACKEND`` default (announced, its own keys prompted for), or
     the user's pick under the ``"prompt"`` policy -- then collects each
-    secret's backend storage NAME (visible; persisted as
-    ``<field>_secret_name`` when changed) and, on writable backends only,
+    secret's backend storage NAME (visible; always persisted as
+    ``<field>_secret_name``) and, on writable backends only,
     each secret VALUE via hidden prompts (empty input skips, with a
     reminder). Read-only backends get a pointer at where the values live;
     the ``"none"`` policy skips secret storage entirely. Refuses to touch an
@@ -632,7 +638,7 @@ def _select_secret_profile(document: tomlkit.TOMLDocument, explicit: str | None)
 def _cmd_set_secret(args: argparse.Namespace) -> int:
     """Prompt for a secret's storage name (visible) and value (hidden).
 
-    The NAME prompt echoes -- it is not the secret -- and a changed name is
+    The NAME prompt echoes -- it is not the secret -- and the chosen name is
     persisted to config.toml as ``<key>_secret_name``. The VALUE prompt is
     hidden and only shown for writable backends; on a read-only backend the
     command stores nothing and instead points at where the value lives.
@@ -659,16 +665,18 @@ def _cmd_set_secret(args: argparse.Namespace) -> int:
     backend_config = _backend_config(document, profile, secrets)
     secrets.require_backend(backend_config, f"store secret {args.key!r}")
 
-    current = secrets.storage_name(args.key, backend_config)
+    name_key = secrets.secret_name_key(args.key)
+    offered = backend_config.get(name_key) or default_secret_name(f) or args.key
     raw = input(
-        f"{args.key} — secret NAME in backend (visible, not the secret) [default: {current}]: "
+        f"{args.key} — secret NAME in backend (visible, not the secret) [default: {offered}]: "
     ).strip()
-    if raw and raw != current:
+    chosen = raw or offered
+    if backend_config.get(name_key) != chosen:
         table = _profile_table(document, profile)
-        table[secrets.secret_name_key(args.key)] = raw
+        table[name_key] = chosen
         _save_document(path, document)
         backend_config = _backend_config(document, profile, secrets)
-        print(f"Set {secrets.secret_name_key(args.key)} = {raw!r} in {path}")
+        print(f"Set {name_key} = {chosen!r} in {path}")
 
     if secrets.is_read_only(backend_config):
         print(secrets.read_only_notice(backend_config))

@@ -8,10 +8,13 @@ Precedence, highest wins:
 3. Credential backend — secret fields only, and only when a backend is
    selected: the profile's ``credential_backend`` key, else the schema's
    ``CREDENTIAL_BACKEND`` default (never under the ``"none"``/``"prompt"``
-   policies). Secrets are looked up under the field name, or the profile's
-   ``<field>_secret_name`` override.
+   policies). Secrets are looked up under the profile's
+   ``<field>_secret_name`` from config.toml, written by the config CLI; a
+   missing name fails loudly.
 4. config.toml: the selected profile table, then bare top-level keys.
-5. Schema field defaults.
+5. Schema field defaults — non-secret fields only. Secret values never
+   live in source; a schema giving a secret field a default is rejected
+   before resolution starts.
 
 The secret layer is optional: ``secrets.py`` is imported lazily and only
 when the schema marks at least one field ``secret``, so a schema without
@@ -45,6 +48,7 @@ from python_repo_template.config.schema import (
     ENV_PREFIX,
     ConfigError,
     Settings,
+    default_secret_name,
     is_required,
     is_secret,
 )
@@ -52,7 +56,7 @@ from python_repo_template.config.schema import (
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 # Environment variable selecting the active profile.
 PROFILE_ENV = ENV_PREFIX + "PROFILE"
@@ -170,6 +174,7 @@ def _resolve(
         ConfigError: When a required value is missing from every layer, the
             config file is malformed, or a value has the wrong type.
     """
+    _validate_schema_secrets(schema)
     path = config_path if config_path is not None else paths.config_path()
     overrides = overrides or {}
 
@@ -242,6 +247,44 @@ def _resolve(
             )
         )
     return schema(**values), sources, profile_name
+
+
+def _validate_schema_secrets(schema: type[Any]) -> None:
+    """Reject schemas that mishandle secret fields, before any resolution.
+
+    A default on a secret field is a secret value in source, silently used
+    whenever the backend lookup misses. ``schema.secret(...)`` cannot
+    express one; this guard catches hand-written ``field(...)``
+    declarations that can.
+
+    Args:
+        schema: Frozen dataclass defining the options.
+
+    Raises:
+        ConfigError: When a secret field has a default value or leaves
+            ``repr`` enabled, or a non-secret field declares a
+            ``default_secret_name``.
+    """
+    for f in fields(schema):
+        if not is_secret(f):
+            if default_secret_name(f) is not None:
+                raise ConfigError(
+                    f"Field {f.name!r} declares default_secret_name but is not secret. "
+                    "Storage names apply only to secret fields."
+                )
+            continue
+        if not is_required(f):
+            raise ConfigError(
+                f"Secret field {f.name!r} has a default value: a secret value in source. "
+                "Secrets never live in source. Remove the default; declare the field with "
+                f"schema.secret(...) and store the value with '{CLI_NAME} set-secret "
+                f"{f.name}'."
+            )
+        if f.repr:
+            raise ConfigError(
+                f"Secret field {f.name!r} must set repr=False so its value cannot leak "
+                "through repr()/tracebacks. Declare it with schema.secret(...)."
+            )
 
 
 def _secrets_module(secret_fields: Iterable[str]) -> Any:
