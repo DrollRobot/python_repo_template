@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-09-01
+
 ### Added
 
 - A `CREDENTIAL_BACKEND` policy constant in the settings schema
@@ -19,28 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-secret custom storage names: the reserved config.toml key
   `<field>_secret_name` (settable via `init`, `set-secret`, or
   `<cli> set <field>_secret_name <name>`) stores the name a secret lives
-  under in the backend, defaulting to the schema field name.
+  under in the backend. `init` and `set-secret` always write it; the schema's
+  `default_secret_name` only seeds the prompt. A secret field with no stored
+  name fails at resolution instead of falling back to anything.
+- Explicit field factories in the settings schema: `option()` for regular
+  settings (`default_value` / `default_factory`) and `secret()` for secret
+  settings, which takes no value at all -- only `help` and an optional
+  `default_secret_name` -- and sets `repr=False` so a resolved secret cannot
+  leak through `repr()` or a traceback.
+- `compare_to_template.py` tracks `tests/test_secrets_baseline_audited.py` in
+  the versioned manifest, so a project's copy of the audited-baseline gate is
+  compared against the template like the other shipped gates (mypy stub guard,
+  inline-suppression gate). The blanket `tests/test_*.py` exclusion had hidden
+  it.
 - The config CLI now separates secret NAME entry (visible input, clearly
   labeled, default shown) from secret VALUE entry (hidden); only the value
   is masked. On read-only backends (keyvault) the CLI never prompts for a
   value: `init` and `set-secret` collect the storage name only and print
   the backend's pointer at where the actual value lives.
-
-### Changed
-
-- `compare_to_template.py` now diffs `config/schema.py` content (leniently:
-  drift is reported for review, never as an error) instead of only checking
-  that the file exists.
-- `scripts/setup.toml` renamed to `scripts/template_setup.toml` to make its
-  purpose (one-time template setup input, also read by
-  `compare_to_template.py`) unmistakable and to avoid any confusion with the
-  per-user runtime `config.toml`. `setup_new_project.py`,
-  `compare_to_template.py`, and every doc reference now use the new name.
-  Downstream projects: rename your existing `scripts/setup.toml` to
-  `scripts/template_setup.toml` when adopting the updated scripts.
-
-### Added
-
 - A `[features].secret_storage` setup flag and
   `scripts/template_setup/remove_secret_storage.py`, so a project whose
   configuration holds no secrets can drop the entire secret-storage machinery
@@ -58,7 +56,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually present), `<cli> set keyvault_url ...`. `init` prompts for the
   backend choice (and the chosen backend's own keys) when the schema has
   secret fields and none is configured yet.
-
 - `README.md.FIXME`, a skeleton README for the new project, and
   `scripts/template_setup/reset_readme.py`, the setup step that writes it over
   `README.md` and deletes the `.FIXME` file -- the same swap
@@ -105,7 +102,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `detect-secrets audit --report`, because that command always exits 0; the
   `--fail-on-unaudited` flag belongs to IBM's detect-secrets fork, not the Yelp
   one this template pins.
-
 - New Claude Code hook, `.claude/hooks/no-inline-secret-suppressions.py`: blocks
   a write whose content adds a detect-secrets allowlist pragma and points the
   agent at `.secrets.baseline` instead. Opt in with
@@ -134,6 +130,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `compare_to_template.py` now diffs `config/schema.py` content (leniently:
+  drift is reported for review, never as an error) instead of only checking
+  that the file exists.
+- `scripts/setup.toml` renamed to `scripts/template_setup.toml` to make its
+  purpose (one-time template setup input, also read by
+  `compare_to_template.py`) unmistakable and to avoid any confusion with the
+  per-user runtime `config.toml`. `setup_new_project.py`,
+  `compare_to_template.py`, and every doc reference now use the new name.
+  Downstream projects: rename your existing `scripts/setup.toml` to
+  `scripts/template_setup.toml` when adopting the updated scripts.
 - Which credential backend stores secrets is now entirely the user's choice.
   The developer-hardcoded `DEFAULT_BACKEND = "keyring"` is gone: with no
   `credential_backend` configured, secret reads skip the backend layer
@@ -193,6 +199,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   along with the rest of the repo. `cleanup.py` drops both `scripts` and
   `.claude/hooks` from `files` when it runs, so a new project's type check
   covers `src/` and `tests/` -- its own code -- and not the template's.
+
+### Security
+
+- Secret values can no longer originate in source. Secret fields in the
+  settings schema accepted a default, and the resolver used it whenever the
+  credential backend had no value, so a placeholder left in `schema.py` could
+  quietly become the running credential. `secret()` cannot express a value,
+  and the resolver rejects any schema whose secret field carries a default or
+  leaves `repr` enabled.
+- `.claude/settings.json` denies `detect-secrets scan > .secrets.baseline`
+  (bare and under `uv run`, Bash and PowerShell), so an agent cannot
+  regenerate the baseline and discard its audit history.
 
 ## [1.12.0] - 2026-07-20
 
@@ -676,7 +694,9 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.12.0...v1.13.0
+[1.12.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.8.1...v1.9.0
