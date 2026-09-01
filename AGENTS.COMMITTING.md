@@ -39,4 +39,10 @@
 - After the user's approval, reread the file and commit the user's versions.
    Clear the contents of the file when done.
 
+- Use the following bash command for your commits: (errors quickly if no
+   ssh key passphrase)
+```bash
+SSH_ASKPASS=/bin/false SSH_ASKPASS_REQUIRE=force DISPLAY= git commit
+```
+
 - After committing, if we're in a non-main branch, push to origin.
