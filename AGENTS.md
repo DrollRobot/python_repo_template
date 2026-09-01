@@ -16,14 +16,10 @@ conventions, required checks, and how to run tests.
      constraints (e.g. "credentials are always supplied by the caller"). -->
 
 ## General rules
-- No .env files. Non-secret environment/user values live in the per-user
-  config.toml managed by the config CLI (`python-repo-template-config`);
-  secrets live in a credential backend (OS keyring and Azure Key Vault ship
-  as options; the schema's `CREDENTIAL_BACKEND` policy names a default,
-  makes the user choose, or disables secret storage), never in the repo.
-  Option names are defined once, in
-  `src/python_repo_template/config/schema.py`.
-- Fail early, fail loudly. Avoid default values that could mask errors.
+- Environment values are are stored in the config system. Package config schema
+  is defined in src/name/config/schema.py.
+- Secrets are stored only in keyvault or keyring. Never in source, never in
+  plain-text on disk.
 
 ## Code Formatting and Style
 - Follow pep8 style guidelines.
@@ -34,7 +30,9 @@ conventions, required checks, and how to run tests.
   they're out of scope for the current task.
 
 ## detect-secrets
-- This repo uses detect-secrets. Agents can freely scan for secrets:
+This repo uses detect-secrets.
+- Baseline updates during pre-commit checks are expected. Do not attempt to revert.
+- Agents can/should freely scan for secrets:
 ```bash
 uv run detect-secrets scan --baseline .secrets.baseline
 ```
@@ -42,8 +40,8 @@ uv run detect-secrets scan --baseline .secrets.baseline
 ```bash
 detect-secrets scan > .secrets.baseline
 ```
-- Agents should NEVER attempt to audit or modify the `.secrets.baseline` file. That
-  is for users only.
+- Agents should NEVER attempt to audit (users only) or modify the `.secrets.baseline`
+  file directly.
 
 ## Commit Messages
 Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
