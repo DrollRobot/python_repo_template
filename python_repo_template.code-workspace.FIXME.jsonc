@@ -15,8 +15,11 @@
         "settings": {
         // -- GENERAL ----------------------------------------------
         "explorer.confirmDelete": false,
-        "terminal.integrated.scrollback": 100000,
+        "terminal.integrated.scrollback": 50000,
         "workbench.colorTheme": "Dark Modern",
+        // fixes bug where terminals open in the wrong workspace, or multiple
+        // windows connect to the same process
+        "terminal.integrated.enablePersistentSessions": false,
 
         // -- FILES ------------------------------------------------
         "files.exclude": {
