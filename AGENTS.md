@@ -40,8 +40,8 @@ uv run detect-secrets scan --baseline .secrets.baseline
 ```bash
 detect-secrets scan > .secrets.baseline
 ```
-- Agents should NEVER attempt to audit (users only) or modify the `.secrets.baseline`
-  file directly.
+- Agents should NEVER attempt to audit (that's user only), modify the `.secrets.baseline`
+  file directly, or suppress findings with an inline allowlist pragma.
 
 ## Commit Messages
 Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
