@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.14.0] - 2026-09-07
 
 ### Removed
 
@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Eight hook test modules, and `test_patterns_match_the_steering_hook` in
     `tests/test_no_inline_suppressions_for_secrets.py`, which imported one of
     the deleted hooks. That gate's repo-wide scan is unchanged.
+
+### Fixed
+
+- `.secrets.baseline` is now tracked in the repository. It existed only on
+  disk, so a fresh clone (and CI) had no baseline for the detect-secrets
+  pre-commit hook or `tests/test_secrets_baseline_audited.py` to read. All 14
+  entries are audited false positives.
+- `compare_to_template.py` no longer compares a project's `.secrets.baseline`
+  against the template's. Each repository scans and audits its own, so the
+  newly tracked template baseline would otherwise have been reported as a
+  difference in every project.
+
+### Security
+
+- Raised the `mkdocs-material` floor to `>=9.7.7` (GHSA-xvg9-69gf-fjrf: DOM
+  XSS in search suggestions via a query parameter).
 
 ## [1.13.0] - 2026-09-01
 
@@ -710,7 +726,8 @@ Initial release: a Python project template scaffold.
   keyring-backed credentials in tests.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.13.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.10.0...v1.11.0
