@@ -1,64 +1,40 @@
-"""Fail the suite when a secret-scanner suppression is committed to the repo.
+"""Fail the test suite when a detect-secrets allowlist pragma is committed.
 
-The ``.claude/hooks/no-inline-secret-suppressions.py`` PreToolUse hook is
-steering: it nudges one agent, on one machine, only for direct write tools, and
-it fails open on anything it cannot parse. This test is the enforcement half.
-It scans every file in the repo for the same patterns, so a suppression that
-arrived by any route -- a shell heredoc, a hand edit, a merge, a contributor
-without the hook installed -- fails ``pytest`` and therefore CI.
+Scans every file in the repo for suppression comments -- ``pragma: allowlist
+secret`` and its variants -- and fails with the path and line of each one. The
+file list comes from ``git ls-files``, so what gets scanned is what
+``git add .`` would commit: tracked files plus untracked ones that are not
+ignored.
 
-The two halves are kept in sync by ``test_patterns_match_the_steering_hook``,
-which compares this module's patterns to the hook's whenever the hook is
-present. The patterns are duplicated rather than imported because a project may
-decline the hook at setup time (``[claude].no_inline_secret_suppressions`` in
-``scripts/template_setup.toml`` deletes the file): the CI gate must not disappear with
-it.
+Inline suppressions are prohibited here because they silence a line
+permanently, survive edits that change the value underneath them, and leave no
+audit trail. Findings belong in ``.secrets.baseline``, where auditing them is
+recorded and reviewable.
 
-File list: ``git ls-files``, so what gets scanned is what ``git add .`` would
-commit -- tracked files plus untracked ones that are not ignored. That keeps
-this test's view identical to a CI checkout's, and makes ``.gitignore`` the one
-place exclusions live: a dependency's vendored pragma under ``.venv/`` is out of
-scope for free, and no second exclusion list has to be maintained here and kept
-in step with the first. There is deliberately no walk-the-tree fallback -- git
-is present in every environment this gate runs in (workstation, the pre-push
-hook, CI), and a fallback would silently scan a different set of files whenever
-git merely errored (a broken index, a dubious-ownership refusal in a container).
-When git cannot answer, this test fails and says so.
-
-Escape hatch: :data:`EXEMPT_PATHS`, deliberately a whole-file list in this
-source rather than an inline marker, so granting one shows up in a diff and
-gets reviewed. Prose that must quote a suppression verbatim is the expected
-use.
-
-Every suppression literal in this file is assembled from fragments at runtime.
-An intact one in this source would make the file unwritable by any agent with
-the hook wired -- the hook would block edits to its own enforcement test.
+Escape hatch: :data:`EXEMPT_PATHS`, a whole-file list kept in this source
+rather than an inline marker, so granting one shows up in a diff and gets
+reviewed. Prose that must quote a pragma verbatim is the expected use.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-# Version of this guard test. It ships to projects generated from this template
-# (cleanup.py keeps it: no script or hook shares its name), so bump on every
-# change to let scripts/compare_to_template.py flag stale copies: patch =
-# bugfix, minor = new/loosened check, major = removed or renamed check.
-__version__ = "1.0.1"
+# Version of this test
+__version__ = "2.0.0"
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Kept identical to _PATTERNS in .claude/hooks/no-inline-secret-suppressions.py
-# (see test_patterns_match_the_steering_hook). Each entry is (compiled pattern,
+# Keep identical to _PATTERNS in the no-inline-secret-suppressions steering
+# hook, if one is installed. Each entry is (compiled pattern,
 # human label used in the failure message).
 _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
@@ -75,17 +51,11 @@ EXEMPT_PATHS: frozenset[str] = frozenset()
 _GUIDANCE = (
     "Inline suppressions are prohibited in this repo -- they silence the line\n"
     "permanently, survive edits that change the value, and leave no audit trail.\n"
-    "Record the finding in the baseline and audit it instead:\n"
-    "  uvx detect-secrets scan --baseline .secrets.baseline\n"
-    "  uvx detect-secrets audit .secrets.baseline\n"
-    "For a whole class of false positives, add a path filter to the baseline.\n"
-    "If a file must quote one of these strings verbatim, add its path to\n"
-    "EXEMPT_PATHS in tests/test_no_inline_suppressions_for_secrets.py -- an\n"
-    "exemption that shows up in the diff, unlike an inline comment."
+    "Record the finding in the baseline and have the user audit it:\n"
+    "  uv run detect-secrets scan --baseline .secrets.baseline\n"
 )
 
 _THIS_FILE = Path(__file__).resolve()
-_HOOK_PATH = _THIS_FILE.parent.parent / ".claude" / "hooks" / "no-inline-secret-suppressions.py"
 
 
 # ---------------------------------------------------------------------------
@@ -189,16 +159,6 @@ def _scan_paths(root: Path, paths: list[Path], exempt: frozenset[str]) -> list[H
     return hits
 
 
-def _load_hook() -> Any:
-    """Import the steering hook from its path (its filename is not a module name)."""
-    spec = importlib.util.spec_from_file_location("no_inline_secret_suppressions_hook", _HOOK_PATH)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 # Split so this source file never contains an intact suppression comment.
 PRAGMA = "# pragma: allow" + "list secret"
 PRAGMA_NEXTLINE = "# pragma: allow" + "list nextline secret"
@@ -283,23 +243,6 @@ def test_this_file_contains_no_intact_suppression() -> None:
     # Guards this file itself: with the steering hook wired, an intact literal
     # in this source would make the file unwritable by any agent.
     assert _scan_text(_THIS_FILE.read_text(encoding="utf-8")) == []
-
-
-@pytest.mark.unit
-def test_patterns_match_the_steering_hook() -> None:
-    # The hook is optional (a project can decline it at setup time); this gate
-    # is not. When both exist they must agree, or one of them stops catching
-    # what the other does.
-    if not _HOOK_PATH.exists():
-        pytest.skip("steering hook not installed in this project")
-    hook = _load_hook()
-    hook_patterns = [(p.pattern, p.flags, label) for p, label in hook._PATTERNS]
-    own_patterns = [(p.pattern, p.flags, label) for p, label in _PATTERNS]
-    assert own_patterns == hook_patterns, (
-        "the patterns in this test and in "
-        ".claude/hooks/no-inline-secret-suppressions.py have drifted apart; "
-        "update both together"
-    )
 
 
 # ---------------------------------------------------------------------------

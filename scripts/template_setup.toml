@@ -50,21 +50,6 @@ branch = "main"
 # the life of the project
 # ==========================================================================
 
-[claude]
-# Command hooks (see choose_shell.py). shell picks powershell/bash; no-op if
-# both hooks below are false.
-shell = "powershell"
-# One shell command per tool call, so a permission allowlist keeps matching.
-no_chained_commands = false
-# Keeps shell invocation consistent, so you don't need to allow multiple
-# equivalent commands.
-canonical_commands = false
-# Off by default (matches the committed .claude/settings.json).
-auto_memory_guard = false
-# Blocks writes that add a detect-secrets allowlist pragma; points agents at
-# .secrets.baseline instead. Steering only -- CI stays the real gate.
-no_inline_secret_suppressions = false
-
 [features]
 # Each false removes that feature. All default true (no-op if unedited).
 mkdocs = true

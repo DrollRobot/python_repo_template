@@ -26,7 +26,7 @@ wholesale. Files the project adds on top of the template are ignored.
 
 Files belonging to a config-driven optional feature (mkdocs, the config
 system and its credential backends, the remote-disposability scripts,
-SECURITY.md, CONTRIBUTING.md, the Claude Code command hooks) are gated on
+SECURITY.md, CONTRIBUTING.md) are gated on
 that project's own choices, read from ``scripts/template_setup.toml``. When that file
 is missing the script offers to copy the template's own over verbatim and
 exits so it can be filled in; an unparsable file, or one whose ``[project]``
@@ -154,8 +154,8 @@ class BaselineFile:
             ``scripts/*.py`` helpers (see :func:`carries_version`); set it
             explicitly for any other versioned file.
         gate: Name of the matching :class:`FeatureFlags` field, for a file
-            that belongs to one config-driven optional feature (mkdocs, a
-            Claude command hook). ``None`` for files
+            that belongs to one config-driven optional feature (mkdocs,
+            SECURITY.md). ``None`` for files
             that are always part of the baseline. See :func:`is_applicable`
             and :func:`effective_required`.
     """
@@ -181,25 +181,8 @@ MANIFEST: tuple[BaselineFile, ...] = (
     BaselineFile(".github/workflows/audit.yml"),
     BaselineFile(".github/workflows/ci.yml"),
     BaselineFile(".github/workflows/docs.yml", gate="mkdocs"),
-    # Claude Code configuration. choose_shell.py deletes the unchosen hook
-    # pair (or all hooks) and wire_hook.py deletes a declined standalone
-    # guard's hook, so each hook file's presence tracks exactly one [claude]
-    # config flag. settings.json accumulates per-project permissions on top
-    # of whichever hooks are wired in, so it stays optional and lenient
-    # instead of gated.
-    BaselineFile(".claude/hooks/canonical-commands-bash.py", gate="hook_canonical_bash"),
-    BaselineFile(".claude/hooks/canonical-commands-pwsh.py", gate="hook_canonical_pwsh"),
-    BaselineFile(".claude/hooks/no-chained-commands-bash.py", gate="hook_no_chained_bash"),
-    BaselineFile(".claude/hooks/no-chained-commands-pwsh.py", gate="hook_no_chained_pwsh"),
-    BaselineFile(".claude/hooks/protect-auto-memory.py", gate="hook_auto_memory"),
-    # The only hook that carries a __version__, so it joins the version
-    # pre-flight and can be copied forward into a project (the others are
-    # compared by content only).
-    BaselineFile(
-        ".claude/hooks/no-inline-secret-suppressions.py",
-        versioned=True,
-        gate="hook_no_inline_secrets",
-    ),
+    # Claude Code configuration. settings.json accumulates per-project
+    # permissions, so it stays optional and lenient instead of gated.
     BaselineFile(".claude/settings.json", required=False, strict=False),
     # Editor / lint / format / hygiene config.
     BaselineFile(".editorconfig"),
@@ -307,9 +290,7 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # despite the blanket tests/test_*.py exclusion, and carries a __version__.
     BaselineFile("tests/test_mypy_stub_guard.py", versioned=True),
     # Same deal for the inline-suppression gate: it ships to every project
-    # (ungated -- unlike the steering hook it backs up, which
-    # [claude].no_inline_secret_suppressions can decline) and carries a
-    # __version__.
+    # and carries a __version__.
     BaselineFile("tests/test_no_inline_suppressions_for_secrets.py", versioned=True),
     # Same deal for the audited-baseline gate: it ships to every project (it
     # backs the secrets-baseline-audited pre-commit hook) and carries a
@@ -419,14 +400,6 @@ class FeatureFlags:
         security_policy: ``SECURITY.md`` kept (``[features].security_policy``).
         contributing_guide: ``CONTRIBUTING.md`` kept
             (``[features].contributing_guide``).
-        hook_no_chained_pwsh: ``no-chained-commands`` hook, PowerShell flavor.
-        hook_no_chained_bash: ``no-chained-commands`` hook, bash flavor.
-        hook_canonical_pwsh: ``canonical-commands`` hook, PowerShell flavor.
-        hook_canonical_bash: ``canonical-commands`` hook, bash flavor.
-        hook_auto_memory: Auto-memory write-guard hook
-            (``[claude].auto_memory_guard``).
-        hook_no_inline_secrets: Inline-secret-suppression guard hook
-            (``[claude].no_inline_secret_suppressions``).
         source: Where these flags came from -- always :data:`SETUP_CONFIG_REL`,
             the only supported source -- shown in the report for provenance.
     """
@@ -440,12 +413,6 @@ class FeatureFlags:
     remote_disposable_scripts: bool
     security_policy: bool
     contributing_guide: bool
-    hook_no_chained_pwsh: bool
-    hook_no_chained_bash: bool
-    hook_canonical_pwsh: bool
-    hook_canonical_bash: bool
-    hook_auto_memory: bool
-    hook_no_inline_secrets: bool
     source: str
 
     def wanted(self, gate: str) -> bool:
@@ -729,9 +696,7 @@ def replay_cleanup_pyproject(text: str) -> str:
     text = text.replace(
         'mypy_path = ["scripts", "scripts/template_setup"]', 'mypy_path = ["scripts"]'
     )
-    return text.replace(
-        'files = ["src", "tests", "scripts", ".claude/hooks"]', 'files = ["src", "tests"]'
-    )
+    return text.replace('files = ["src", "tests", "scripts"]', 'files = ["src", "tests"]')
 
 
 def replay_private_repo_deps(rel: str, text: str) -> str:
@@ -1038,7 +1003,7 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
 
     Tolerant of missing or malformed tables/keys -- a hand-trimmed config
     still yields a usable result -- by falling back to the template's own
-    "keep everything, no hooks" defaults for anything unreadable, mirroring
+    "keep everything" defaults for anything unreadable, mirroring
     what an unedited ``template_setup.toml`` means for each of these fields.
 
     Args:
@@ -1049,13 +1014,6 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
     """
     features_raw = raw.get("features")
     features = features_raw if isinstance(features_raw, dict) else {}
-    claude_raw = raw.get("claude")
-    claude = claude_raw if isinstance(claude_raw, dict) else {}
-
-    shell = claude.get("shell")
-    no_chained_commands = bool(claude.get("no_chained_commands", False))
-    canonical_commands = bool(claude.get("canonical_commands", False))
-
     # The secret machinery lives inside the config package and the backends
     # live inside the secret machinery, so declining a container drops its
     # contents too, whatever their own flags say.
@@ -1072,12 +1030,6 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
         remote_disposable_scripts=bool(features.get("remote_disposable_scripts", True)),
         security_policy=bool(features.get("security_policy", True)),
         contributing_guide=bool(features.get("contributing_guide", True)),
-        hook_no_chained_pwsh=(shell == "powershell" and no_chained_commands),
-        hook_no_chained_bash=(shell == "bash" and no_chained_commands),
-        hook_canonical_pwsh=(shell == "powershell" and canonical_commands),
-        hook_canonical_bash=(shell == "bash" and canonical_commands),
-        hook_auto_memory=bool(claude.get("auto_memory_guard", False)),
-        hook_no_inline_secrets=bool(claude.get("no_inline_secret_suppressions", False)),
         source=SETUP_CONFIG_REL,
     )
 
@@ -1957,12 +1909,6 @@ _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("remote_disposable_scripts", "remote-disposability scripts"),
     ("security_policy", "SECURITY.md"),
     ("contributing_guide", "CONTRIBUTING.md"),
-    ("hook_no_chained_pwsh", "no-chained-commands hook (powershell)"),
-    ("hook_no_chained_bash", "no-chained-commands hook (bash)"),
-    ("hook_canonical_pwsh", "canonical-commands hook (powershell)"),
-    ("hook_canonical_bash", "canonical-commands hook (bash)"),
-    ("hook_auto_memory", "auto-memory guard hook"),
-    ("hook_no_inline_secrets", "inline-suppression guard hook"),
 )
 
 

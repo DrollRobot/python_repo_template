@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- The Claude Code hooks and everything that wired them:
+  - `.claude/hooks/` and all six hook scripts.
+  - `scripts/template_setup/wire_hook.py` and `choose_shell.py`.
+  - The `[claude]` table in `scripts/template_setup.toml`, and the `Config`
+    fields, validation and three setup steps that read it. A config that
+    still carries the table keeps working; its keys no longer do anything.
+  - The six `hook_*` gates in `compare_to_template.py`, with their manifest
+    entries and `FeatureFlags` fields.
+  - Hook filename matching in `cleanup.py`'s `dev_script_tests()`.
+  - `.claude/hooks` from mypy's `files`, and the `hook-debug.log` ignore rule.
+  - Eight hook test modules, and `test_patterns_match_the_steering_hook` in
+    `tests/test_no_inline_suppressions_for_secrets.py`, which imported one of
+    the deleted hooks. That gate's repo-wide scan is unchanged.
+
 ## [1.13.0] - 2026-09-01
 
 ### Added

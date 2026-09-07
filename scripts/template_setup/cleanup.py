@@ -3,9 +3,8 @@
 After you have renamed the project, stripped the headers, chosen a license, and
 worked through the FIXMEs, these setup scripts have served their purpose. This
 script deletes them (the whole ``scripts/template_setup/`` folder, including
-itself), the unit tests for the dev scripts and Claude Code hooks (the
-scripts and hooks themselves stay -- their tests only matter while developing
-the template), and any leftover
+itself), the unit tests for the dev scripts (the scripts themselves stay --
+their tests only matter while developing the template), and any leftover
 ``LICENSE.*.FIXME`` candidates -- but only once a real ``LICENSE`` file
 exists, so you are never left with no license.
 
@@ -13,10 +12,10 @@ It also trims the pyproject.toml lines that only matter while developing the
 template itself: the ``--cov=scripts`` coverage flag (the dev-script tests are
 deleted here, so scripts coverage would read as untested), the
 ``scripts/template_setup`` entry in mypy's search path (that folder is gone),
-and ``scripts``/``.claude/hooks`` from mypy's ``files``. The scripts and hooks
-themselves stay -- but they are the template's code, not the project's, so a
-downstream project should not have its type check fail on them. Run mypy on
-them by path (``uv run mypy scripts``) if you do edit them.
+and ``scripts`` from mypy's ``files``. The scripts themselves stay -- but they
+are the template's code, not the project's, so a downstream project should not
+have its type check fail on them. Run mypy on them by path
+(``uv run mypy scripts``) if you do edit them.
 
 It does NOT edit prose for you; it prints reminders for the manual bits (such as
 working through the FIXMEs left in the project's own files).
@@ -51,10 +50,10 @@ PYPROJECT_EDITS = [
     # scripts/template_setup/ is deleted below; scripts/ stays in mypy's search
     # path so an import from a remaining dev script still resolves.
     ('mypy_path = ["scripts", "scripts/template_setup"]', 'mypy_path = ["scripts"]'),
-    # The dev scripts and Claude hooks are the template's code and are not
-    # type-checked as part of the project: drop them from mypy's files so a
-    # downstream `uv run mypy` covers src/ and tests/ only.
-    ('files = ["src", "tests", "scripts", ".claude/hooks"]', 'files = ["src", "tests"]'),
+    # The dev scripts are the template's code and are not type-checked as part
+    # of the project: drop them from mypy's files so a downstream
+    # `uv run mypy` covers src/ and tests/ only.
+    ('files = ["src", "tests", "scripts"]', 'files = ["src", "tests"]'),
 ]
 
 
@@ -79,35 +78,25 @@ def strip_template_config(text: str) -> str:
 
 
 def dev_script_tests(root: Path) -> list[Path]:
-    """Find the unit tests that cover the dev scripts, setup scripts, and hooks.
+    """Find the unit tests that cover the dev scripts and setup scripts.
 
-    The dev scripts in ``scripts/`` and the Claude Code hooks in
-    ``.claude/hooks/`` stay useful in the new project, but their unit tests
-    only matter while developing the template itself. A test file is matched
-    to its script by name: ``tests/test_<name>.py`` covers ``scripts/<name>.py``
-    or ``scripts/template_setup/<name>.py``. Hook filenames use hyphens, not a
-    valid module name, so ``tests/test_<name>.py`` is matched to
-    ``.claude/hooks/<name-with-hyphens>.py`` too; a ``_hook`` suffix on the test
-    name is dropped first so it can be stripped before conversion (the hook
-    tests carry it to mark that they cover the hook's runtime, not its wiring,
-    e.g. ``test_protect_auto_memory_hook.py``). Tests with no matching script or
-    hook (the project's own tests) are kept.
+    The dev scripts in ``scripts/`` stay useful in the new project, but their
+    unit tests only matter while developing the template itself. A test file is
+    matched to its script by name: ``tests/test_<name>.py`` covers
+    ``scripts/<name>.py`` or ``scripts/template_setup/<name>.py``. Tests with no
+    matching script (the project's own tests) are kept.
 
     Args:
         root: Project root directory.
 
     Returns:
-        Test files that cover an existing script or hook, in sorted order.
+        Test files that cover an existing script, in sorted order.
     """
     script_dirs = (root / "scripts", root / "scripts" / "template_setup")
-    hooks_dir = root / ".claude" / "hooks"
     tests: list[Path] = []
     for test_file in sorted((root / "tests").glob("test_*.py")):
         script_name = test_file.name.removeprefix("test_")
-        hook_name = script_name.removesuffix(".py").removesuffix("_hook").replace("_", "-") + ".py"
-        matches_script = any((folder / script_name).exists() for folder in script_dirs)
-        matches_hook = (hooks_dir / hook_name).exists()
-        if matches_script or matches_hook:
+        if any((folder / script_name).exists() for folder in script_dirs):
             tests.append(test_file)
     return tests
 
@@ -169,7 +158,7 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
 
     print("\n  Will edit:")
     print("    pyproject.toml (drop --cov=scripts; drop scripts/template_setup from mypy_path;")
-    print("                    drop scripts + .claude/hooks from mypy files)")
+    print("                    drop scripts from mypy files)")
 
     print("\n  Reminders (not done automatically):")
     for reminder in REMINDERS:

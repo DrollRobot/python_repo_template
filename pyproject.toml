@@ -116,7 +116,7 @@ convention = "google"
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["src", "tests", "scripts", ".claude/hooks"]
+files = ["src", "tests", "scripts"]
 mypy_path = ["scripts", "scripts/template_setup"]
 
 # AGENTS: ONLY ADD OVERRIDES IF, AFTER RESEARCHING, THERE IS NO TYPES STUB AVAILABLE.

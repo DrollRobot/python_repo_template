@@ -19,8 +19,7 @@ reading it afterward to know which optional features this project kept.
 
 Steps always execute in this order, regardless of the config file's own
 table order: strip template headers -> reset README -> rename -> set GitHub
-user -> set Python version -> set project version -> reset changelog -> Claude command
-hooks -> Claude auto-memory guard -> Claude inline-suppression guard -> choose
+user -> set Python version -> set project version -> reset changelog -> choose
 license -> remove mkdocs (if declined) -> remove keyring backend (if
 declined) -> remove Key Vault backend (if declined) -> remove the whole
 secret-storage machinery (if declined; replaces the two backend steps) ->
@@ -55,7 +54,6 @@ from typing import Any
 
 import _common
 import choose_license
-import choose_shell
 import find_fixmes
 import reinit_git
 import remove_config_system
@@ -74,7 +72,6 @@ import set_github_user
 import set_python_version
 import set_version
 import strip_template_headers
-import wire_hook
 
 CONFIG_FILENAME = "template_setup.toml"
 
@@ -91,11 +88,6 @@ class Config:
     license_year: str
     license_name: str
     license_company: str
-    shell: str
-    no_chained_commands: bool
-    canonical_commands: bool
-    auto_memory_guard: bool
-    no_inline_secret_suppressions: bool
     mkdocs: bool
     config_system: bool
     secret_storage: bool
@@ -114,8 +106,7 @@ class PlannedStep:
     """One orchestrated setup step, already bound to config values.
 
     Attributes:
-        key: The step's module name, e.g. ``rename_project`` -- or, for the
-            hook toggles, the ``wire_hook`` key, e.g. ``auto_memory_guard``.
+        key: The step's module name, e.g. ``rename_project``.
         label: One-line description shown in the preview/summary.
         call: Runs the step; ``call(root, dry_run)`` forwards to the
             underlying script's own ``run(..., assume_yes=True, dry_run=...)``.
@@ -230,7 +221,6 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
 
     project = _table(raw, "project", problems)
     license_table = _table(raw, "license", problems)
-    claude = _table(raw, "claude", problems)
     features = _table(raw, "features", problems)
     git = _table(raw, "git", problems)
 
@@ -243,12 +233,6 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
     license_year = _require_str(license_table, "year", "license", problems)
     license_name = _require_str(license_table, "name", "license", problems)
     license_company = _require_str(license_table, "company", "license", problems)
-
-    shell = _require_str(claude, "shell", "claude", problems)
-    no_chained_commands = _require_bool(claude, "no_chained_commands", "claude", problems)
-    canonical_commands = _require_bool(claude, "canonical_commands", "claude", problems)
-    auto_memory_guard = _require_bool(claude, "auto_memory_guard", "claude", problems)
-    no_inline_secrets = _require_bool(claude, "no_inline_secret_suppressions", "claude", problems)
 
     mkdocs = _require_bool(features, "mkdocs", "features", problems)
     config_system = _require_bool(features, "config_system", "features", problems)
@@ -300,12 +284,6 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
         if license_key in choose_license._NEEDS_COMPANY and not license_company.strip():
             problems.append("[license].company is required for the proprietary license.")
 
-    if shell and shell not in choose_shell._SHELL_META:
-        problems.append(
-            f"[claude].shell {shell!r} is not one of: "
-            f"{', '.join(sorted(choose_shell._SHELL_META))}."
-        )
-
     if branch and not branch.strip():
         problems.append("[git].branch is empty.")
 
@@ -348,11 +326,6 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
             license_year=license_year,
             license_name=license_name,
             license_company=license_company,
-            shell=shell,
-            no_chained_commands=no_chained_commands,
-            canonical_commands=canonical_commands,
-            auto_memory_guard=auto_memory_guard,
-            no_inline_secret_suppressions=no_inline_secrets,
             mkdocs=mkdocs,
             config_system=config_system,
             secret_storage=secret_storage,
@@ -430,64 +403,6 @@ def _step_reset_changelog() -> PlannedStep:
         return reset_changelog.run(root, assume_yes=True, dry_run=dry_run)
 
     return PlannedStep("reset_changelog", "Reset the changelog", call)
-
-
-def _shell_label(config: Config) -> str:
-    """Build the one-line label for the Claude command hooks step.
-
-    Args:
-        config: The validated configuration.
-
-    Returns:
-        A summary naming which hook kinds (if any) are wanted and, if so,
-        which shell they're wired to.
-    """
-    kinds = [
-        name
-        for name, wanted in (
-            ("no-chained-commands", config.no_chained_commands),
-            ("canonical-commands", config.canonical_commands),
-        )
-        if wanted
-    ]
-    if not kinds:
-        return "Claude command hooks: none"
-    return f"Claude command hooks ({config.shell}): {', '.join(kinds)}"
-
-
-def _step_choose_shell(config: Config) -> PlannedStep:
-    """Build the Claude command hooks step, bound to the ``claude`` config fields."""
-
-    def call(root: Path, dry_run: bool) -> int:
-        return choose_shell.run(
-            root,
-            config.shell,
-            no_chained_commands=config.no_chained_commands,
-            canonical_commands=config.canonical_commands,
-            assume_yes=True,
-            dry_run=dry_run,
-        )
-
-    return PlannedStep("choose_shell", _shell_label(config), call)
-
-
-def _step_hook_toggle(key: str, wanted: bool) -> PlannedStep:
-    """Build a step that wires one standalone hook in, or removes it.
-
-    Args:
-        key: The :data:`wire_hook.HOOKS` key identifying the hook.
-        wanted: Whether the config asked for it.
-
-    Returns:
-        The planned step, keyed by the hook's own key.
-    """
-    spec = wire_hook.by_key(key)
-
-    def call(root: Path, dry_run: bool) -> int:
-        return wire_hook.toggle(root, spec, install=wanted, assume_yes=True, dry_run=dry_run)
-
-    state = "on" if wanted else "off"
-    return PlannedStep(key, f"Claude {spec.title}: {state}", call)
 
 
 def _step_license(config: Config) -> PlannedStep:
@@ -625,9 +540,6 @@ def build_steps(config: Config) -> tuple[PlannedStep, ...]:
         _step_python_version(config),
         _step_version(config),
         _step_reset_changelog(),
-        _step_choose_shell(config),
-        _step_hook_toggle("auto_memory_guard", config.auto_memory_guard),
-        _step_hook_toggle("no_inline_secrets", config.no_inline_secret_suppressions),
         _step_license(config),
     ]
     if not config.mkdocs:

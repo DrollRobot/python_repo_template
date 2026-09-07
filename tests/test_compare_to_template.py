@@ -102,15 +102,9 @@ def make_flags(
     remote_disposable_scripts: bool = True,
     security_policy: bool = True,
     contributing_guide: bool = True,
-    hook_no_chained_pwsh: bool = True,
-    hook_no_chained_bash: bool = True,
-    hook_canonical_pwsh: bool = True,
-    hook_canonical_bash: bool = True,
-    hook_auto_memory: bool = True,
-    hook_no_inline_secrets: bool = True,
     source: str = "test",
 ) -> FeatureFlags:
-    """Build a FeatureFlags with every feature/hook on, unless overridden."""
+    """Build a FeatureFlags with every feature on, unless overridden."""
     return FeatureFlags(
         mkdocs=mkdocs,
         config_system=config_system,
@@ -121,12 +115,6 @@ def make_flags(
         remote_disposable_scripts=remote_disposable_scripts,
         security_policy=security_policy,
         contributing_guide=contributing_guide,
-        hook_no_chained_pwsh=hook_no_chained_pwsh,
-        hook_no_chained_bash=hook_no_chained_bash,
-        hook_canonical_pwsh=hook_canonical_pwsh,
-        hook_canonical_bash=hook_canonical_bash,
-        hook_auto_memory=hook_auto_memory,
-        hook_no_inline_secrets=hook_no_inline_secrets,
         source=source,
     )
 
@@ -992,7 +980,7 @@ def test_compare_one_missing_is_drift_when_feature_kept(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
+def test_feature_flags_from_config_reads_features_table() -> None:
     raw = {
         "features": {
             "mkdocs": False,
@@ -1005,12 +993,6 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
             "security_policy": False,
             "contributing_guide": False,
         },
-        "claude": {
-            "shell": "bash",
-            "no_chained_commands": True,
-            "canonical_commands": False,
-            "auto_memory_guard": True,
-        },
     }
     flags = feature_flags_from_config(raw)
     assert flags.mkdocs is False
@@ -1022,17 +1004,13 @@ def test_feature_flags_from_config_reads_features_and_claude_tables() -> None:
     assert flags.remote_disposable_scripts is False
     assert flags.security_policy is False
     assert flags.contributing_guide is False
-    assert flags.hook_no_chained_bash is True
-    assert flags.hook_no_chained_pwsh is False
-    assert flags.hook_canonical_bash is False
-    assert flags.hook_auto_memory is True
     assert flags.source == SETUP_CONFIG_REL
 
 
 @pytest.mark.unit
 def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
-    # An unedited config's [features] table is all-true and [claude] hooks
-    # are off; a config missing those tables entirely reads the same way.
+    # An unedited config's [features] table is all-true; a config missing that
+    # table entirely reads the same way.
     flags = feature_flags_from_config({})
     assert flags.mkdocs is True
     assert flags.config_system is True
@@ -1043,8 +1021,6 @@ def test_feature_flags_from_config_defaults_to_keep_everything() -> None:
     assert flags.remote_disposable_scripts is True
     assert flags.security_policy is True
     assert flags.contributing_guide is True
-    assert flags.hook_no_chained_pwsh is False
-    assert flags.hook_auto_memory is False
 
 
 @pytest.mark.unit
@@ -1087,9 +1063,8 @@ def test_feature_flags_from_config_backends_independent_when_package_kept() -> N
 
 @pytest.mark.unit
 def test_feature_flags_from_config_tolerates_malformed_tables() -> None:
-    flags = feature_flags_from_config({"features": "not a table", "claude": None})
+    flags = feature_flags_from_config({"features": "not a table"})
     assert flags.mkdocs is True
-    assert flags.hook_auto_memory is False
 
 
 @pytest.mark.unit
@@ -1417,12 +1392,6 @@ def test_manifest_gates_match_feature_flags_fields() -> None:
         "remote_disposable_scripts",
         "security_policy",
         "contributing_guide",
-        "hook_no_chained_pwsh",
-        "hook_no_chained_bash",
-        "hook_canonical_pwsh",
-        "hook_canonical_bash",
-        "hook_auto_memory",
-        "hook_no_inline_secrets",
     }
     gates = {entry.gate for entry in MANIFEST if entry.gate is not None}
     assert gates == valid_gates

@@ -22,7 +22,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "tem
 
 import _common
 import choose_license
-import choose_shell
 import find_fixmes
 import reinit_git
 import remove_config_system
@@ -42,7 +41,6 @@ import set_python_version
 import set_version
 import setup_new_project
 import strip_template_headers
-import wire_hook
 
 VALID_TOML = """
 [project]
@@ -56,13 +54,6 @@ key = "mit"
 year = "2026"
 name = "Ada Lovelace"
 company = ""
-
-[claude]
-shell = "powershell"
-no_chained_commands = true
-canonical_commands = true
-auto_memory_guard = false
-no_inline_secret_suppressions = false
 
 [features]
 mkdocs = true
@@ -91,13 +82,6 @@ def _valid_raw() -> dict[str, Any]:
             "version": "0.1.0",
         },
         "license": {"key": "mit", "year": "2026", "name": "Ada Lovelace", "company": ""},
-        "claude": {
-            "shell": "powershell",
-            "no_chained_commands": True,
-            "canonical_commands": True,
-            "auto_memory_guard": False,
-            "no_inline_secret_suppressions": False,
-        },
         "features": {
             "mkdocs": True,
             "config_system": True,
@@ -124,11 +108,6 @@ def _make_config(**overrides: Any) -> setup_new_project.Config:
         "license_year": "2026",
         "license_name": "Ada Lovelace",
         "license_company": "",
-        "shell": "powershell",
-        "no_chained_commands": True,
-        "canonical_commands": True,
-        "auto_memory_guard": False,
-        "no_inline_secret_suppressions": False,
         "mkdocs": True,
         "config_system": True,
         "secret_storage": True,
@@ -298,16 +277,6 @@ def test_validate_config_proprietary_requires_company(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_validate_config_invalid_shell_reports_problem(tmp_path: Path) -> None:
-    """A shell outside powershell/bash is reported."""
-    raw = _valid_raw()
-    raw["claude"]["shell"] = "fish"
-    config, problems = setup_new_project.validate_config(tmp_path, raw)
-    assert config is None
-    assert any("[claude].shell" in problem for problem in problems)
-
-
-@pytest.mark.unit
 def test_validate_config_empty_branch_reports_problem(tmp_path: Path) -> None:
     """A blank branch name is reported."""
     raw = _valid_raw()
@@ -420,9 +389,6 @@ _ALWAYS_ON_KEYS = [
     "set_python_version",
     "set_version",
     "reset_changelog",
-    "choose_shell",
-    "auto_memory_guard",
-    "no_inline_secrets",
     "choose_license",
 ]
 
@@ -640,52 +606,6 @@ def test_step_reset_changelog_forwards_assume_yes(
 
 
 @pytest.mark.unit
-def test_step_choose_shell_forwards_hook_kinds_and_shell(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(choose_shell, "run", _recording_run(calls))
-    config = _make_config(  # noqa: S604  (shell= here is the hook-shell field, not subprocess)
-        shell="bash", no_chained_commands=True, canonical_commands=False
-    )
-    step = setup_new_project.build_steps(config)[_ALWAYS_ON_KEYS.index("choose_shell")]
-    step.call(tmp_path, False)
-    assert calls[0]["args"] == (tmp_path, "bash")
-    assert calls[0]["kwargs"]["no_chained_commands"] is True
-    assert calls[0]["kwargs"]["canonical_commands"] is False
-    assert calls[0]["kwargs"]["assume_yes"] is True
-
-
-@pytest.mark.unit
-def test_step_memory_guard_forwards_install(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(wire_hook, "toggle", _recording_run(calls))
-    step = setup_new_project.build_steps(_make_config(auto_memory_guard=True))[
-        _ALWAYS_ON_KEYS.index("auto_memory_guard")
-    ]
-    step.call(tmp_path, False)
-    assert calls[0]["args"][1] is wire_hook.by_key("auto_memory_guard")
-    assert calls[0]["kwargs"]["install"] is True
-    assert calls[0]["kwargs"]["assume_yes"] is True
-
-
-@pytest.mark.unit
-def test_step_no_inline_secrets_forwards_install(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(wire_hook, "toggle", _recording_run(calls))
-    config = _make_config(no_inline_secret_suppressions=True)
-    step = setup_new_project.build_steps(config)[_ALWAYS_ON_KEYS.index("no_inline_secrets")]
-    step.call(tmp_path, False)
-    assert calls[0]["args"][1] is wire_hook.by_key("no_inline_secrets")
-    assert calls[0]["kwargs"]["install"] is True
-    assert calls[0]["kwargs"]["assume_yes"] is True
-
-
-@pytest.mark.unit
 def test_step_license_forwards_all_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(choose_license, "run", _recording_run(calls))
@@ -888,7 +808,6 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
         set_python_version,
         set_version,
         reset_changelog,
-        choose_shell,
         choose_license,
         remove_mkdocs,
         remove_keyring,
@@ -911,10 +830,6 @@ def _patch_all_steps(monkeypatch: pytest.MonkeyPatch, calls: list[str], exit_cod
             return run
 
         monkeypatch.setattr(module, "run", make_run(module.__name__))
-
-    # The two standalone hook guards go through wire_hook.toggle(), not a
-    # module-level run() of their own.
-    monkeypatch.setattr(wire_hook, "toggle", make_run(wire_hook.__name__))
 
     def fake_find_fixmes_run(root: Path) -> int:
         calls.append("find_fixmes")

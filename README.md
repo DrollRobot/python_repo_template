@@ -22,7 +22,7 @@ Based on some personal preference, and what I understand are the most widely use
 - **detect-secrets** for real-time secret scanning. Helps prevent accidental leaks.
 - **GitHub Actions** for CI and docs deployment. Free for public repos, and widely used.
 - **VSCode** for development. Most popular IDE. Lots of documentation. Many extensions.
-- **Claude Code** as the coding agent. Includes some helpful hooks and baseline settings.
+- **Claude Code** as the coding agent. Includes baseline settings.
 
 # Design choices
 Some of the design choices I've made for this project:
