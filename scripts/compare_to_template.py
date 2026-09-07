@@ -97,7 +97,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.23.0"
+__version__ = "1.23.1"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -311,6 +311,7 @@ EXCLUDED_GLOBS = (
     "README.md.FIXME",
     "LICENSE.*.FIXME",
     "uv.lock",
+    ".secrets.baseline",  # per-project: each repo scans and audits its own
     ".python-version",  # compared indirectly: replayed onto the template side
     "*.code-workspace.FIXME.jsonc",
     "tests/test_*.py",
