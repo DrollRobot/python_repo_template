@@ -99,14 +99,14 @@ uv run detect-secrets scan > .secrets.baseline
    2. Mint a private key — on the App's page, "Generate a private key", download the .pem. Note the numeric App ID shown at the top.
    3. Install the App onto the repos it needs to touch.
        - Org Settings → the App → Install → select repositories.
-   4. Store the credentials in connectwise-tools (the repo whose CI runs):
+   4. Save the credentials in the repo using the private dependencies:
 ```bash
-       gh secret set GRAPH_AUTH_APP_PRIVATE_KEY < path/to/app.private-key.pem
-       gh variable set GRAPH_AUTH_CLIENT_ID --body "123456"
+      gh secret set GRAPH_AUTH_APP_PRIVATE_KEY < path/to/app.private-key.pem
+      gh variable set GRAPH_AUTH_CLIENT_ID --body "123456"
 ```
 ```powershell
-       Get-Content -Raw path\to\app.private-key.pem | gh secret set GRAPH_AUTH_APP_PRIVATE_KEY
-       gh variable set GRAPH_AUTH_CLIENT_ID --body "123456"
+      Get-Content -Raw path\to\app.private-key.pem | gh secret set GRAPH_AUTH_APP_PRIVATE_KEY
+      gh variable set GRAPH_AUTH_CLIENT_ID --body "123456"
 ```
    6. Uncomment section in .github/workflows/ audit.yml, ci.yml, and docs.yml.
    7. Update actions/create-github-app-token to latest trusted commit.
