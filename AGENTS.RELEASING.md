@@ -111,7 +111,7 @@ current format rules. Do not rely on training data -- request a fresh copy every
 
 3. **Prepend** the new release section to `CHANGELOG.md` immediately after the
    `# Changelog` heading. Use today's date and the version about to be tagged.
-   Do not rewrite or delete any existing sections.
+   Do not rewrite or delete any previous releases.
 
 ## Commit any remaining files.
 

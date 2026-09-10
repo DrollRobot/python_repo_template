@@ -36,12 +36,12 @@ This repo uses detect-secrets.
 ```bash
 uv run detect-secrets scan --baseline .secrets.baseline
 ```
-- Agents should NEVER regenerate the baseline
+- Agents should NEVER regenerate the baseline from scratch.
 ```bash
 detect-secrets scan > .secrets.baseline
 ```
 - Agents should NEVER attempt to audit (that's user only), modify the `.secrets.baseline`
-  file directly, or suppress findings with an inline allowlist pragma.
+   file directly, or suppress findings with `# pragma: allowlist secret`.
 
 ## Commit Messages
 Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
