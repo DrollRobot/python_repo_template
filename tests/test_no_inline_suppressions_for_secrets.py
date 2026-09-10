@@ -46,7 +46,7 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 # Repo-relative POSIX paths allowed to contain a suppression string. Add a path
 # here only for a file that must quote one verbatim (documentation of this
 # rule, a test fixture); never to silence a real finding.
-EXEMPT_PATHS: frozenset[str] = frozenset()
+EXEMPT_PATHS: frozenset[str] = frozenset({"AGENTS.md"})
 
 _GUIDANCE = (
     "Inline suppressions are prohibited in this repo -- they silence the line\n"
