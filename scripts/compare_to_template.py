@@ -97,7 +97,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.23.1"
+__version__ = "1.23.2"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -1436,11 +1436,11 @@ def check_versioned_file(
         # drift; leave it out. The main comparison still reports it as absent.
         if not required:
             return False
-        cli.warn(
-            f"  The project is missing {project_rel} "
-            f"(template {template_version or 'unversioned'})."
-        )
-        if allow_update and cli.confirm(f"  Copy {rel} from the template into the project?"):
+        status = f"  {project_rel}: missing (template {template_version or 'unversioned'})."
+        if not allow_update:
+            cli.warn(status)
+            return False
+        if cli.confirm(f"{cli.YELLOW}{status}{cli.RESET} Copy it from the template?"):
             install_from_template(entry, ctx)
             return True
         return False
@@ -1467,33 +1467,25 @@ def check_versioned_file(
     if action == "ok":
         return False
 
-    # Two lines per file, matching the missing-file branch above: one status
-    # line carrying the path and both versions, then the confirmation prompt.
+    # One line per file, matching the missing-file branch above: the path, its
+    # status and both versions, with the confirmation prompt on the same line.
     display = rel if project_rel == rel else f"{rel} -> {project_rel}"
     template_label = template_version or "unversioned"
     project_label = project_version or "unversioned"
     if action == "ahead":
         cli.warn(
-            f"  The project's copy of {display} is NEWER than the template's "
-            f"(project {project_label}, template {template_label})."
+            f"  {display}: NEWER than the template (project {project_label}, "
+            f"template {template_label}); not overwriting, consider upstreaming."
         )
-        cli.warn("  Consider upstreaming the change to the template; not overwriting it.")
         return False
     if action == "update":
-        cli.warn(
-            f"  The project's copy of {display} is outdated "
-            f"(project {project_label}, template {template_label})."
-        )
+        status = f"  {display}: outdated (project {project_label}, template {template_label})"
     else:  # "refresh": same version, different content
-        cli.warn(
-            f"  The copies of {display} share version {template_label} but their "
-            "contents differ (missing bump?)."
-        )
+        status = f"  {display}: contents differ at version {template_label} (missing bump?)"
     if not allow_update:
-        cli.warn("  Skipping the update offer (--no-update).")
+        cli.warn(f"{status}; not updating (--no-update).")
         return False
-    if not cli.confirm(f"  Update the project's copy of {project_rel} from the template?"):
-        cli.warn("  Continuing with the current copy; it will be flagged in the comparison.")
+    if not cli.confirm(f"{cli.YELLOW}{status}.{cli.RESET} Update it from the template?"):
         return False
     install_from_template(entry, ctx)
     return True
@@ -1521,9 +1513,7 @@ def exit_if_running_copy_replaced(entry: BaselineFile, ctx: CompareContext) -> N
     project_path = normcase(normpath(str((ctx.project_root / project_rel).resolve())))
     if project_path not in running_files:
         return
-    print()
-    cli.warn(f"  Updated {entry.path}, which this program is running from.")
-    print("  Stopping now; re-run the script to use the new version.")
+    cli.warn(f"  Stopping; re-run the script to use the updated {entry.path}.")
     sys.exit(0)
 
 
@@ -1630,9 +1620,8 @@ def offer_missing_installs(
     cli.section("Missing files")
     replacements: dict[str, Comparison] = {}
     for result in candidates:
-        cli.warn(f"  The project is missing {result.project_rel}.")
-        if not cli.confirm(f"  Copy {result.entry.path} from the template into the project?"):
-            cli.warn("  Leaving it missing; it will be flagged in the comparison.")
+        status = f"  {result.project_rel}: missing."
+        if not cli.confirm(f"{cli.YELLOW}{status}{cli.RESET} Copy it from the template?"):
             continue
         install_from_template(result.entry, ctx)
         replacements[result.entry.path] = compare_one(result.entry, ctx)

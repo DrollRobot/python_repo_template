@@ -12,6 +12,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import fields
 from pathlib import Path
 
@@ -89,6 +90,17 @@ def write(root: Path, rel: str, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8", newline="")
     return path
+
+
+def recording_confirm(prompts: list[str], *, answer: bool) -> Callable[[str], bool]:
+    """Build a ``cli.confirm`` stand-in that records each prompt and returns ``answer``."""
+
+    def confirm(prompt: str) -> bool:
+        """Record the prompt and give the canned answer."""
+        prompts.append(prompt)
+        return answer
+
+    return confirm
 
 
 def make_flags(
@@ -758,6 +770,22 @@ def test_offer_missing_installs_keeps_missing_when_declined(
 
 
 @pytest.mark.unit
+def test_offer_missing_installs_asks_on_one_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, "notes.md", "content\n")
+    results = [compare_one(BaselineFile("notes.md"), ctx)]
+    prompts: list[str] = []
+    monkeypatch.setattr(cli, "confirm", recording_confirm(prompts, answer=False))
+    offer_missing_installs(results, ctx, allow_update=True)
+    assert len(prompts) == 1
+    assert "notes.md: missing" in prompts[0]
+    # Only the section header is printed; the file gets no line of its own.
+    assert "notes.md" not in capsys.readouterr().out
+
+
+@pytest.mark.unit
 def test_offer_missing_installs_skips_versioned_entries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -845,13 +873,15 @@ def test_check_versioned_file_reports_the_missing_project_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A genuinely missing file is named by its project-side path, so the user
-    # can go look for it.
+    # can go look for it -- on the prompt line itself, with nothing printed around it.
     ctx = make_ctx(tmp_path)
     write(ctx.template_root, _RENAMED_VERSIONED_REL, '__version__ = "1.0.0"\n')
-    monkeypatch.setattr(cli, "confirm", lambda _msg: False)
+    prompts: list[str] = []
+    monkeypatch.setattr(cli, "confirm", recording_confirm(prompts, answer=False))
     assert not check_versioned_file(_renamed_entry(), ctx, required=True, allow_update=True)
-    out = capsys.readouterr().out
-    assert f"missing {_RENAMED_PROJECT_REL}" in out
+    assert len(prompts) == 1
+    assert f"{_RENAMED_PROJECT_REL}: missing" in prompts[0]
+    assert capsys.readouterr().out == ""
 
 
 @pytest.mark.unit
@@ -866,6 +896,61 @@ def test_check_versioned_file_leaves_optional_missing_file_alone(
 
     monkeypatch.setattr(cli, "confirm", unexpected)
     assert not check_versioned_file(_renamed_entry(), ctx, required=False, allow_update=True)
+
+
+# A versioned file at an unrenamed path, for the one-line output tests below.
+_HELPER_REL = "scripts/helper.py"
+
+
+@pytest.mark.unit
+def test_check_versioned_file_asks_about_an_outdated_copy_on_one_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, _HELPER_REL, '__version__ = "1.2.0"\nnew = True\n')
+    write(ctx.project_root, _HELPER_REL, '__version__ = "1.1.0"\n')
+    prompts: list[str] = []
+    monkeypatch.setattr(cli, "confirm", recording_confirm(prompts, answer=False))
+    entry = BaselineFile(_HELPER_REL, versioned=True)
+    assert not check_versioned_file(entry, ctx, required=True, allow_update=True)
+    assert len(prompts) == 1
+    for part in (_HELPER_REL, "outdated", "project 1.1.0", "template 1.2.0", "Update"):
+        assert part in prompts[0]
+    # Declining leaves the copy alone and prints no follow-up line.
+    assert capsys.readouterr().out == ""
+    assert (ctx.project_root / _HELPER_REL).read_bytes() == b'__version__ = "1.1.0"\n'
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("project_body", "allow_update", "expected"),
+    [
+        ('__version__ = "1.3.0"\n', True, "NEWER"),
+        ('__version__ = "1.1.0"\n', False, "--no-update"),
+    ],
+)
+def test_check_versioned_file_reports_without_prompting_on_one_line(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    project_body: str,
+    allow_update: bool,
+    expected: str,
+) -> None:
+    ctx = make_ctx(tmp_path)
+    write(ctx.template_root, _HELPER_REL, '__version__ = "1.2.0"\n')
+    write(ctx.project_root, _HELPER_REL, project_body)
+
+    def unexpected(_msg: str) -> bool:
+        raise AssertionError("confirm() should not be called when no update is on offer")
+
+    monkeypatch.setattr(cli, "confirm", unexpected)
+    entry = BaselineFile(_HELPER_REL, versioned=True)
+    assert not check_versioned_file(entry, ctx, required=True, allow_update=allow_update)
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 1
+    assert _HELPER_REL in lines[0]
+    assert expected in lines[0]
 
 
 # --- self check ----------------------------------------------------------------------
