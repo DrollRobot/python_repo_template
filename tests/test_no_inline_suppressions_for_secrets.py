@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 # Version of this test
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 # ---------------------------------------------------------------------------
 # Configuration

@@ -41,7 +41,7 @@ import _cli as cli
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # Header comments written into each file created with --create. Unlike JSON,
 # gitignore files allow comments, so a freshly-created file names itself instead

@@ -30,7 +30,7 @@ from mypy.stubinfo import stub_distribution_name
 # (cleanup.py keeps it, as it has no matching script), so bump on every change
 # to let scripts/compare_to_template.py flag stale copies: patch = bugfix, minor
 # = new/loosened check, major = removed or renamed check.
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 _PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
