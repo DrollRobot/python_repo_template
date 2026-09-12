@@ -71,6 +71,7 @@ from compare_to_template import (
     strip_package_purpose,
     strip_template_header,
     version_tuple,
+    versioned_entries,
 )
 
 NAMES = ProjectNames(snake="my_proj", kebab="my-proj", github_user="octocat")
@@ -1579,3 +1580,85 @@ def test_resolve_code_ignores_a_blank_override() -> None:
     # is present or not depending on the environment.
     expected = ["code"] if shutil.which("code") else None
     assert resolve_code("   ") == expected
+
+
+# --- version bumps since the last release --------------------------------------------
+
+
+def _git_stdout(root: Path, *args: str) -> bytes | None:
+    """Run git in a directory and return its standard output.
+
+    Args:
+        root: Directory to run git in.
+        *args: Arguments passed to git.
+
+    Returns:
+        The raw standard output, or ``None`` when git is not on PATH or exits
+        non-zero.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return None
+    result = subprocess.run(  # noqa: S603  (git path resolved via shutil.which)
+        [git, *args], cwd=root, capture_output=True, check=False
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def _missing_bump(old_text: str | None, new_text: str | None) -> bool:
+    """Whether a versioned file changed while its ``__version__`` stayed the same.
+
+    Args:
+        old_text: The file's contents at the last release, or ``None`` when it
+            did not exist there.
+        new_text: The file's current contents, or ``None`` when it no longer
+            exists.
+
+    Returns:
+        ``True`` only when both copies exist, differ with line endings
+        normalized, and declare the same version.
+    """
+    if old_text is None or new_text is None:
+        return False
+    if normalize_eol(old_text) == normalize_eol(new_text):
+        return False
+    return script_version(old_text) == script_version(new_text)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("old_text", "new_text", "expected"),
+    [
+        ('__version__ = "1.0.0"\nx = 1\n', '__version__ = "1.0.0"\nx = 2\n', True),
+        ('__version__ = "1.0.0"\nx = 1\n', '__version__ = "1.0.1"\nx = 2\n', False),
+        ('__version__ = "1.0.0"\nx = 1\n', '__version__ = "1.0.0"\r\nx = 1\r\n', False),
+        (None, '__version__ = "1.0.0"\n', False),
+        ('__version__ = "1.0.0"\n', None, False),
+    ],
+    ids=["changed-unbumped", "changed-bumped", "line-endings-only", "added", "removed"],
+)
+def test_missing_bump(old_text: str | None, new_text: str | None, expected: bool) -> None:
+    assert _missing_bump(old_text, new_text) is expected
+
+
+@pytest.mark.integration
+@pytest.mark.regression
+def test_versioned_files_changed_since_last_release_are_bumped() -> None:
+    # Projects generated from the last release hold that release's copies. A
+    # change shipped at the same __version__ reaches them as "missing bump?"
+    # instead of an update.
+    root = Path(__file__).resolve().parent.parent
+    tag = _git_stdout(root, "describe", "--tags", "--abbrev=0")
+    if tag is None:
+        pytest.skip("no git, or no release tag reachable from HEAD (shallow clone?)")
+    ref = tag.decode("utf-8").strip()
+
+    stale: list[str] = []
+    for entry in versioned_entries():
+        old = _git_stdout(root, "show", f"{ref}:{entry.path}")
+        old_text = old.decode("utf-8") if old is not None else None
+        path = root / entry.path
+        new_text = path.read_text(encoding="utf-8") if path.is_file() else None
+        if new_text is not None and _missing_bump(old_text, new_text):
+            stale.append(f"  {entry.path} (still {script_version(new_text)})")
+    assert not stale, f"Changed since {ref} without a __version__ bump:\n" + "\n".join(stale)
