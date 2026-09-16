@@ -2,6 +2,9 @@
 
 Keyring is exercised against monkeypatched keyring functions -- never the
 host's real credential store; the real-store roundtrip is a live-marked test.
+The fake store also stubs ``keyring.get_keyring`` so the backend's usable-
+backend check passes on headless hosts (CI, containers), where the real
+``get_keyring`` returns a fail backend.
 
 This module imports the keyring backend and the ``keyring`` package at module
 scope, so it is deleted along with the backend when a project drops it.
@@ -22,14 +25,26 @@ from python_repo_template.config.schema import APP_NAME, ConfigError
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 pytestmark = pytest.mark.unit
 
 
+class _UsableBackend:
+    """Stand-in for a working OS keyring, so the usable-backend check passes.
+
+    The check only rejects fail and empty-chainer backends, and nothing calls
+    this object's methods -- the fixture patches the module-level functions.
+    """
+
+
 @pytest.fixture
 def fake_keyring(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
-    """Replace the keyring module functions with an in-memory store."""
+    """Replace the keyring module functions with an in-memory store.
+
+    Also stubs ``keyring.get_keyring`` with a usable backend, so the tests
+    pass on headless hosts where the real one resolves to a fail backend.
+    """
     store: dict[tuple[str, str], str] = {}
 
     def delete(service: str, key: str) -> None:
@@ -37,6 +52,8 @@ def fake_keyring(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
             raise keyring.errors.PasswordDeleteError(key)
         del store[(service, key)]
 
+    usable = _UsableBackend()
+    monkeypatch.setattr(keyring, "get_keyring", lambda: usable)
     monkeypatch.setattr(keyring, "get_password", lambda service, key: store.get((service, key)))
 
     def set_password(service: str, key: str, value: str) -> None:
