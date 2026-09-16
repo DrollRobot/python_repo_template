@@ -21,13 +21,11 @@ stale copies.
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
-__version__ = "1.0.0"
+__version__ = "1.0.2"
 
 BASELINE_NAME = ".secrets.baseline"
 
@@ -38,24 +36,25 @@ _GUIDANCE = (
 
 
 def _find_root() -> Path:
-    """Locate the repository root via git, failing loudly if git cannot.
+    """Locate the repository root by walking up to the ``pyproject.toml`` marker.
 
-    Runs ``git rev-parse --show-toplevel`` from this file's directory so the
-    answer does not depend on the process working directory.
+    Starts from this file's directory, so the answer does not depend on the
+    process working directory.
+
+    Deliberately does not ask git, as ``test_no_inline_suppressions_for_secrets``
+    does not either. git exports its own environment to the hooks it runs, and
+    an inherited ``GIT_DIR`` makes ``rev-parse --show-toplevel`` report the
+    current directory as the top of the work tree instead of discovering the
+    real root -- which pointed this gate at ``tests/`` whenever it ran from a
+    worktree's commit hook, and failed the commit. Walking to a marker file has
+    no environment to inherit and does not need git installed.
     """
-    git = shutil.which("git")
-    if git is None:
-        raise RuntimeError("git is not on PATH; cannot locate the repository root")
-    result = subprocess.run(  # noqa: S603  (git path resolved via shutil.which)
-        [git, "rev-parse", "--show-toplevel"],
-        cwd=Path(__file__).resolve().parent,
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        detail = result.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"git rev-parse --show-toplevel failed: {detail}")
-    return Path(result.stdout.decode("utf-8", errors="replace").strip())
+    root = Path(__file__).resolve().parent
+    while root != root.parent:
+        if (root / "pyproject.toml").exists():
+            return root
+        root = root.parent
+    raise RuntimeError("Could not find project root (no pyproject.toml found)")
 
 
 _ROOT = _find_root()

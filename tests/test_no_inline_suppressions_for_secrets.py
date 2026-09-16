@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 # Version of this test
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -280,11 +280,19 @@ def test_binary_and_missing_files_are_skipped(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_git_files_raises_outside_a_repo(tmp_path: Path) -> None:
+def test_git_files_raises_outside_a_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Fail loudly rather than scanning some other file list: a gate that
     # quietly changes what it covers is worse than one that stops.
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
+    # git exports its environment to hooks, and in a worktree GIT_DIR is an
+    # absolute path, so an inherited one would lead the subprocess back to the
+    # repo and this test would never see the failure it is about. Drop only
+    # the variables that point git at a repository: clearing the whole GIT_
+    # prefix would also drop the discovery bounds and the config paths a
+    # container may rely on to declare this checkout safe.
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        monkeypatch.delenv(name, raising=False)
     with pytest.raises(GitUnavailableError, match="ls-files exited"):
         _git_files(tmp_path)
 
