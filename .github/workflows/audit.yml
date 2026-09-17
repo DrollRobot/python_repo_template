@@ -3,7 +3,8 @@
 # =============================================================================
 # This audit.yml is part of a starter repo scaffold.
 #
-# Purpose: Runs the security gates on every push and pull request to main.
+# Purpose: Runs the security gates on every push to any branch and on every
+# pull request to main.
 #
 #   audit       -- `uv audit` checks all locked dependencies against the OSV
 #                  vulnerability database.
@@ -28,7 +29,7 @@ run-name: Audit on ${{ github.ref_name }} ${{ github.event_name }} by @${{ githu
 
 on:
   push:
-    branches: [main]
+    branches: ['**']  # '**' also matches names with a slash (feature/foo); tags excluded
   pull_request:
     branches: [main]
 

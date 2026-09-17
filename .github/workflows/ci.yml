@@ -3,18 +3,19 @@
 # =============================================================================
 # This ci.yml is part of a starter repo scaffold.
 #
-# Purpose: Runs on every push and pull request to main. Blocks merges if
-# lint, formatting, type checking, or unit tests fail. Integration tests
-# (marked @pytest.mark.integration) are excluded here because they require
-# credentials; run them separately in a secrets-aware workflow if needed.
+# Purpose: Runs on every push to any branch and on every pull request to main,
+# on Ubuntu and Windows. Blocks merges if lint, formatting, type checking, or
+# unit tests fail. Integration tests (marked @pytest.mark.integration) are
+# excluded here because they require credentials; run them separately in a
+# secrets-aware workflow if needed.
 #
 # GitHub setup (one-time, to make CI actually block merges):
 #   1. Push this file to your repo so the workflow runs at least once.
 #   2. Go to Settings -> Branches -> Add branch protection rule.
 #   3. Set the pattern to: main
 #   4. Enable "Require status checks to pass before merging".
-#   5. Search for and add each matrix "check" status (one per OS, e.g.
-#      "check (ubuntu-latest)", "check (macos-latest)", "check (windows-latest)").
+#   5. Search for and add each matrix "check" status (one per OS:
+#      "check (ubuntu-latest)", "check (windows-latest)").
 #   6. Optionally enable "Require branches to be up to date before merging".
 #   7. Save the rule.
 #
@@ -32,7 +33,7 @@ run-name: CI on ${{ github.ref_name }} ${{ github.event_name }} by @${{ github.a
 
 on:
   push:
-    branches: [main]
+    branches: ['**']  # '**' also matches names with a slash (feature/foo); tags excluded
   pull_request:
     branches: [main]
 
@@ -48,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
