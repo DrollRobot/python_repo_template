@@ -4,7 +4,8 @@
 
 - All new code should have unit and integration tests, and e2e/live tests
     wherever possible.
-- All tests should use the tag system described below. Tests MUST have at least one Scope tag (`unit`, `integration`, or `e2e`).
+- All tests should use the tag system described below. Tests MUST have at least
+    one Scope tag (`unit`, `integration`, or `e2e`).
 
 ### Test Tags
 

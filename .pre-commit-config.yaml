@@ -155,7 +155,9 @@ repos:
       # run non-slow, non-live pytest
       - id: pytest-prepush
         name: pytest (prepush)
-        entry: uv run pytest -m "not live and not slow and not destructive_local and not destructive_remote"
+        entry: >-
+          uv run pytest -m
+          "not live and not slow and not destructive_local and not destructive_remote"
         language: system
         stages: [pre-push]
         pass_filenames: false
