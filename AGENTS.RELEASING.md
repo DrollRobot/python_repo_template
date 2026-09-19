@@ -87,6 +87,13 @@ uv run mkdocs build --strict          # build docs, fail on warnings
 Before proceeding, fetch and review <https://keepachangelog.com> to get the
 current format rules. Do not rely on training data -- request a fresh copy every time.
 
+**Deviation from Keep a Changelog:** version headings end with a title after the
+date. Use this format in place of Keep a Changelog's `## [1.2.3] - 2026-01-31`:
+```markdown
+## [1.2.3] - 2026-01-31 - <title>
+```
+- `<title>` is a few words naming the release's main changes.
+
 **How to update the changelog before tagging a new release**
 
 1. **Find the previous tag** and collect every commit since then:
