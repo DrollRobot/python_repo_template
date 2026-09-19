@@ -29,8 +29,17 @@ conventions, required checks, and how to run tests.
 - Do not fight automatic formatting. Always commit autoformatting changes, even if
   they're out of scope for the current task.
 
+## pre-commit
+- Formatting changes and detect-secrets updates to the .secrets.baseline are routine
+  and expected. If all that's required is re-staging and re-committing, this is not
+  something worth reporting to the user. Just move on.
+
 ## detect-secrets
 This repo uses detect-secrets.
+- Do not try to work around secret detection by renaming, splitting
+  strings, `# pragma: allowlist secret`, or any other means. Let detect-secrets do
+  its job. A new entry in the baseline for a user to audit is not a problem to be
+  avoided. Simply tell the user an audit is required.
 - Baseline updates during pre-commit checks are expected. Do not attempt to revert.
 - Agents can/should freely scan for secrets:
 ```bash
@@ -40,8 +49,8 @@ uv run detect-secrets scan --baseline .secrets.baseline
 ```bash
 detect-secrets scan > .secrets.baseline
 ```
-- Agents should NEVER attempt to audit (that's user only), modify the `.secrets.baseline`
-   file directly, or suppress findings with `# pragma: allowlist secret`.
+- Agents should NEVER attempt to audit (users only), or modify the `.secrets.baseline`
+  file directly.
 
 ## Commit Messages
 Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
