@@ -93,10 +93,6 @@ tenant custom field, ...). Two scripts:
 - `tests/verify_remote_disposable.py` — Checked with every
   `pytest --run-destructive-remote` call. If it fails, tests won't run.
 
-Both ship as stubs (the marker mechanism is project-specific) — see the FIXME
-in each docstring. Until `verify_remote_disposable.py` is implemented,
-`destructive_remote` tests fail closed.
-
 **Agents must NEVER run `mark_remote_disposable.py` or attempt to mark a remote**
 **resource as disposable**
 

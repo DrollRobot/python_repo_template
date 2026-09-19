@@ -20,7 +20,7 @@ so that only real drift is reported:
 Each baseline file is strict (drift is an error) or lenient (expected to
 diverge; reported for review only), and required or optional (optional
 features such as mkdocs may be deleted from a
-project). A few files (e.g. the README and the remote-disposability stub
+project). A few files (e.g. the README and the remote-disposability script
 pair) are checked for existence only, as the project rewrites their contents
 wholesale. Files the project adds on top of the template are ignored.
 
@@ -97,7 +97,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.24.0"
+__version__ = "1.24.1"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -397,7 +397,7 @@ class FeatureFlags:
             :func:`normalize_template_text` strips the block from the
             template side before comparing, via
             :func:`replay_private_repo_deps`.
-        remote_disposable_scripts: The mark/verify remote-disposability stub
+        remote_disposable_scripts: The mark/verify remote-disposability script
             pair kept (``[features].remote_disposable_scripts``). Gates both
             ``scripts/mark_remote_disposable.py`` and
             ``tests/verify_remote_disposable.py``.

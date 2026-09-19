@@ -1,12 +1,11 @@
 """Remove the remote-disposability script pair.
 
 ``scripts/mark_remote_disposable.py`` (write half) and
-``tests/verify_remote_disposable.py`` (read half) ship as stubs whose only
-job is gating ``@pytest.mark.destructive_remote`` tests -- see
-AGENTS.TESTING.md. A project with no remote-destructive tests never fills in
-their FIXMEs, so this deletes both, plus
-``tests/test_verify_remote_disposable.py``, whose module-level import of the
-read half would fail at collection once that file is gone (``cleanup.py``
+``tests/verify_remote_disposable.py`` (read half) exist only to gate
+``@pytest.mark.destructive_remote`` tests -- see AGENTS.TESTING.md. A project
+with no remote-destructive tests has no use for them, so this deletes both,
+plus ``tests/test_verify_remote_disposable.py``, whose module-level import of
+the read half would fail at collection once that file is gone (``cleanup.py``
 does not match it: its rule only pairs ``tests/test_<name>.py`` with a
 ``scripts/`` or ``scripts/template_setup/`` script, and the read half lives
 in ``tests/``).
