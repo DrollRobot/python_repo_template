@@ -33,7 +33,7 @@ run-name: CI on ${{ github.ref_name }} ${{ github.event_name }} by @${{ github.a
 
 on:
   push:
-    branches: ['**']  # '**' also matches names with a slash (feature/foo); tags excluded
+    branches: ['**']
   pull_request:
     branches: [main]
 
