@@ -1,7 +1,8 @@
 # Agent releasing instructions
 
 - If the user asked you to read this file, treat that as them asking you to
-  perform the prodedure described below.
+  perform the prodedure described below. When replying to the user, do not describe
+  every step taken, only decisions and further action required.
 
 ## Update precommit
 ```
@@ -122,7 +123,6 @@ date. Use this format in place of Keep a Changelog's `## [1.2.3] - 2026-01-31`:
 
 ## Commit any remaining files.
 
-## Prompt user to push new tag
-- The user will update pyproject.toml with the new version and regenerate uv.lock.
-- The user will manage worktrees, branches, merging, tagging and pushing. At this point,
-   the agent's job is complete.
+## Prompt user to finish the process.
+- The user will run push_new_tag_to_main.py to update package version, merge to main,
+   create tag, and push.
