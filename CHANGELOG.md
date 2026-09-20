@@ -5,728 +5,392 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.14.0] - 2026-09-07
+## [1.15.0] - 2026-09-20 - Live schema gating
+
+### Changed
+
+- **Breaking:** the shared config test object split in two. `ConfigTestObject`
+  is now secret-free and `SecretTestObject` carries the secret;
+  `NoSecretsTestObject` is gone. Tests in a synced project that name either
+  must move to one of the two.
+- `remove_secret_storage.py` checks the schema before deleting anything and
+  refuses while `Settings` still declares a secret field, naming the fields to
+  fix. `--force` deletes anyway.
+- `remove_secret_storage.py` also rewrites the config package docstring,
+  which described the machinery it had just deleted and pointed at
+  `credential_backend` — a key config.toml rejects once the dispatcher is
+  gone. It prints two more follow-ups: set `CREDENTIAL_BACKEND = "none"`, and
+  expect `config/cli.py` coverage to drop because its secret commands can
+  never run.
+- `compare_to_template.py` prints its update offers one line per file, and
+  compares `config/__init__.py` leniently once secret storage is removed.
+
+### Fixed
+
+- The config CLI gates on the live schema instead of an import-time snapshot,
+  so the secret commands, `init`'s backend prompt, and the `"none"`-policy
+  notice follow the project's own `Settings`.
+- The shipped config tests no longer read the project's own
+  `CREDENTIAL_BACKEND` where they mean the schema they installed themselves,
+  so a project that sets it to `"none"` gets a green suite instead of three
+  failures.
+- The two shipped secrets guards no longer inherit git's hook environment,
+  which made both fail when committing from a worktree.
+
+## [1.14.0] - 2026-09-07 - Claude Code hooks removed
 
 ### Removed
 
-- The Claude Code hooks and everything that wired them:
-  - `.claude/hooks/` and all six hook scripts.
-  - `scripts/template_setup/wire_hook.py` and `choose_shell.py`.
-  - The `[claude]` table in `scripts/template_setup.toml`, and the `Config`
-    fields, validation and three setup steps that read it. A config that
-    still carries the table keeps working; its keys no longer do anything.
-  - The six `hook_*` gates in `compare_to_template.py`, with their manifest
-    entries and `FeatureFlags` fields.
-  - Hook filename matching in `cleanup.py`'s `dev_script_tests()`.
-  - `.claude/hooks` from mypy's `files`, and the `hook-debug.log` ignore rule.
-  - Eight hook test modules, and `test_patterns_match_the_steering_hook` in
-    `tests/test_no_inline_suppressions_for_secrets.py`, which imported one of
-    the deleted hooks. That gate's repo-wide scan is unchanged.
+- The Claude Code hooks and everything that wired them: the hook scripts,
+  `wire_hook.py` and `choose_shell.py`, the `[claude]` setup table, the
+  `compare_to_template.py` gates, and the hook tests. A setup config that still
+  carries the `[claude]` table keeps working; its keys no longer do anything.
 
 ### Fixed
 
-- `.secrets.baseline` is now tracked in the repository. It existed only on
-  disk, so a fresh clone (and CI) had no baseline for the detect-secrets
-  pre-commit hook or `tests/test_secrets_baseline_audited.py` to read. All 14
-  entries are audited false positives.
-- `compare_to_template.py` no longer compares a project's `.secrets.baseline`
-  against the template's. Each repository scans and audits its own, so the
-  newly tracked template baseline would otherwise have been reported as a
-  difference in every project.
+- `.secrets.baseline` is tracked in the repository, so a fresh clone and CI have
+  the baseline the detect-secrets hook and the audit gate need.
+- `compare_to_template.py` no longer compares `.secrets.baseline`, which every
+  project scans and audits for itself.
 
 ### Security
 
-- Raised the `mkdocs-material` floor to `>=9.7.7` (GHSA-xvg9-69gf-fjrf: DOM
-  XSS in search suggestions via a query parameter).
+- Raised the `mkdocs-material` floor to `>=9.7.7` (GHSA-xvg9-69gf-fjrf: DOM XSS
+  in search suggestions).
 
-## [1.13.0] - 2026-09-01
-
-### Added
-
-- A `CREDENTIAL_BACKEND` policy constant in the settings schema
-  (`config/schema.py`): `"none"` (the package stores no secrets -- env vars
-  only, no secret commands, reserved backend keys become illegal),
-  a backend name such as `"keyring"`/`"keyvault"` (dev-chosen default, used
-  without prompting, still overridable per profile with
-  `credential_backend`), or `"prompt"` (the previous behavior: init makes
-  the user choose). Missing constant reads as `"prompt"`.
-- Per-secret custom storage names: the reserved config.toml key
-  `<field>_secret_name` (settable via `init`, `set-secret`, or
-  `<cli> set <field>_secret_name <name>`) stores the name a secret lives
-  under in the backend. `init` and `set-secret` always write it; the schema's
-  `default_secret_name` only seeds the prompt. A secret field with no stored
-  name fails at resolution instead of falling back to anything.
-- Explicit field factories in the settings schema: `option()` for regular
-  settings (`default_value` / `default_factory`) and `secret()` for secret
-  settings, which takes no value at all -- only `help` and an optional
-  `default_secret_name` -- and sets `repr=False` so a resolved secret cannot
-  leak through `repr()` or a traceback.
-- `compare_to_template.py` tracks `tests/test_secrets_baseline_audited.py` in
-  the versioned manifest, so a project's copy of the audited-baseline gate is
-  compared against the template like the other shipped gates (mypy stub guard,
-  inline-suppression gate). The blanket `tests/test_*.py` exclusion had hidden
-  it.
-- The config CLI now separates secret NAME entry (visible input, clearly
-  labeled, default shown) from secret VALUE entry (hidden); only the value
-  is masked. On read-only backends (keyvault) the CLI never prompts for a
-  value: `init` and `set-secret` collect the storage name only and print
-  the backend's pointer at where the actual value lives.
-- A `[features].secret_storage` setup flag and
-  `scripts/template_setup/remove_secret_storage.py`, so a project whose
-  configuration holds no secrets can drop the entire secret-storage machinery
-  -- the backend dispatcher (`config/secrets.py`), every credential backend,
-  and their tests -- while keeping the rest of the config system. The config
-  package no longer hard-imports any of it: `resolve.py` and `cli.py` load
-  `secrets.py` lazily and only when the settings schema marks a field
-  `secret`, `file.py` learns the reserved profile keys from `secrets.py` at
-  validation time (empty set when it is gone), and the CLI registers
-  `set-secret`/`delete-secret` only when secret fields exist.
-  `compare_to_template.py` gates the machinery's files behind the new flag.
-- The config CLI's `set`/`unset` now accept the reserved backend keys, so
-  picking where secrets live is a user action, not a hand-edit:
-  `<cli> set credential_backend keyvault` (validated against the backends
-  actually present), `<cli> set keyvault_url ...`. `init` prompts for the
-  backend choice (and the chosen backend's own keys) when the schema has
-  secret fields and none is configured yet.
-- `README.md.FIXME`, a skeleton README for the new project, and
-  `scripts/template_setup/reset_readme.py`, the setup step that writes it over
-  `README.md` and deletes the `.FIXME` file -- the same swap
-  `reset_changelog.py` does for the changelog. Until now the template's own
-  README (its tool choices and how-to-start-a-project instructions) was left in
-  place for the user to rewrite by hand, and `cleanup.py` could only print a
-  reminder to do it. The step runs before the rename, GitHub-user and
-  Python-version steps so those rewrite the skeleton's placeholders and version
-  badge (`set_python_version.py` edits `README.md` by name, so a skeleton still
-  sitting at `README.md.FIXME` would keep the template's badge). Its
-  idempotency guard is the missing skeleton: a second run finds no
-  `README.md.FIXME`, reports "already reset", and leaves the project's own
-  README untouched.
-- A `--no-remote` option to `scripts/push_new_tag_to_main.py`, for repositories
-  with no origin (or releases meant to stay on one machine). It skips the
-  fetch/fast-forward sync with origin and all three pushes (`main`, tags, and
-  the source branch); the merge, version bump, release commit, and annotated
-  tag still happen locally.
-- A `--no-remote` option to the three worktree scripts, so the whole worktree
-  lifecycle works in a repository with no origin. `new_worktree.py` skips the
-  fetch and the base-branch push and forks from the local base instead of
-  `origin/<base>`; `complete_worktree.py` merges the branch into its base in
-  the main worktree instead of pushing and opening a PR (no PR body file, no
-  gh, and incompatible with the cross-device `--*-notes` modes);
-  `remove_worktree.py` skips the pull and the prune, and swaps its "commits
-  never pushed to origin" guard for "commits not in the local base", so
-  force-deleting the branch still cannot silently discard work.
-- A `secret-scan` job in `.github/workflows/audit.yml`, so detect-secrets is
-  finally a CI gate and not only a local one. Until now the pre-commit hook was
-  the entire enforcement story, and it sees only staged files on a developer
-  machine and is skippable with `git commit --no-verify`. The job runs
-  `detect-secrets-hook` over every tracked file, and pins the same version as
-  the `rev:` in `.pre-commit-config.yaml` so local and CI results agree. It
-  lives in `audit.yml` rather than `ci.yml` because `ci.yml` is a three-OS
-  matrix that would run the scan three times for one answer, and it is its own
-  job, driven by `uvx`, so it still runs when dependency resolution or
-  `uv audit` fails. Add the `secret-scan` status to branch protection or it
-  reports without blocking.
-- A second gate in that job, on `.secrets.baseline` itself: every entry must be
-  audited and marked a false positive. Without it the baseline is a bypass --
-  add a real secret, run `scan`, and the file scan above goes green. This
-  catches both `UNVERIFIED` entries nobody reviewed and `VERIFIED_TRUE` entries
-  a human confirmed are real. It is enforced by parsing
-  `detect-secrets audit --report`, because that command always exits 0; the
-  `--fail-on-unaudited` flag belongs to IBM's detect-secrets fork, not the Yelp
-  one this template pins.
-- New Claude Code hook, `.claude/hooks/no-inline-secret-suppressions.py`: blocks
-  a write whose content adds a detect-secrets allowlist pragma and points the
-  agent at `.secrets.baseline` instead. Opt in with
-  `[claude].no_inline_secret_suppressions` in `scripts/setup.toml`; declining
-  deletes the hook, as with the auto-memory guard. It only reads what the direct
-  write tools are about to write -- never `old_string`, never shell commands --
-  and fails open on anything it cannot parse: it is steering for agents, while
-  the detect-secrets pre-commit hook and CI stay the actual gate.
-- The new hook carries a `__version__`, so `compare_to_template.py` tracks it in
-  the version pre-flight and offers to copy a newer template copy into a
-  project, the same way it does for the `scripts/` helpers.
-- `tests/test_no_inline_suppressions_for_secrets.py`, the enforcement half of
-  that hook: it scans every file `git add .` would commit -- tracked plus
-  untracked and not ignored, so `.gitignore` is the only place exclusions live
-  and the scan matches a CI checkout -- for the same suppression patterns, and
-  fails the suite. A pragma that arrived by a shell heredoc, a hand edit, a
-  merge, or a contributor without the hook installed still fails CI. There is no
-  fallback file list when git cannot answer: the test fails and says why, rather
-  than silently scanning a different set of files. Unlike the hook it is
-  ungated -- it ships to every project -- and
-  `test_patterns_match_the_steering_hook` fails if the two pattern lists drift
-  apart while both are present. The only escape hatch is `EXEMPT_PATHS`, a
-  whole-file allowlist in the test source, so granting one shows up in the diff.
-  Like the mypy stub guard it carries a `__version__` and is tracked by
-  `compare_to_template.py`.
-
-### Changed
-
-- `compare_to_template.py` now diffs `config/schema.py` content (leniently:
-  drift is reported for review, never as an error) instead of only checking
-  that the file exists.
-- `scripts/setup.toml` renamed to `scripts/template_setup.toml` to make its
-  purpose (one-time template setup input, also read by
-  `compare_to_template.py`) unmistakable and to avoid any confusion with the
-  per-user runtime `config.toml`. `setup_new_project.py`,
-  `compare_to_template.py`, and every doc reference now use the new name.
-  Downstream projects: rename your existing `scripts/setup.toml` to
-  `scripts/template_setup.toml` when adopting the updated scripts.
-- Which credential backend stores secrets is now entirely the user's choice.
-  The developer-hardcoded `DEFAULT_BACKEND = "keyring"` is gone: with no
-  `credential_backend` configured, secret reads skip the backend layer
-  (env-var-only CI keeps working with zero config) and secret writes fail
-  loudly naming the available backends. Backends now describe themselves: each
-  `*_backend.py` module declares the config keys it consumes in a
-  `RESERVED_KEYS` mapping, `secrets.py` discovers backends by scanning the
-  package for `*_backend.py` files, and `file.py`'s hardcoded
-  `RESERVED_PROFILE_KEYS` (which baked the keyvault-specific `keyvault_url`
-  into core validation) is gone -- deleting a backend file now removes its
-  keys from the legal config.toml set too.
-- The `keyring` and `keyvault` dependency groups are now
-  `[project.optional-dependencies]` extras. PEP 735 groups are dev-only and
-  never ship in the wheel, so an end user of an installed package had no way
-  to opt into a backend; extras restore that (`pip install <package>[keyring]`,
-  `uv sync --extra keyvault`). Contributors and CI use
-  `--all-extras`; `update_floors.py` now raises floors in extras too.
-  `keyring_backend.py` imports the `keyring` package lazily with an actionable
-  error naming the extra, matching the keyvault backend's existing pattern.
-- `cleanup.py` no longer reminds the user to remove the "Making a new repo from
-  this template" section from `README.md`: `reset_readme.py` replaces that
-  README wholesale during setup, so the section is already gone. Only the
-  FIXME-sweep reminder remains.
-- Hook wiring is now one script. `scripts/template_setup/wire_hook.py` holds a
-  registry describing every hook the template ships (file, matcher,
-  interpreter) and owns `.claude/settings.json`; a hook is either kept and
-  wired or deleted and unwired. `protect_auto_memory.py` and
-  `no_inline_secret_suppressions.py` are gone, replaced by
-  `wire_hook.toggle()`, and `choose_shell.py` now only owns the choice --
-  which kinds, which shell -- and hands the keep/delete lists over. Three
-  copies of the settings read/merge/write logic became one.
-- Declining the shell hooks now also strips any wiring left by an earlier run,
-  instead of deleting the hook files and leaving entries pointing at them.
-
-### Fixed
-
-- `azure-identity` and `azure-keyvault-secrets` were still listed in
-  `[project] dependencies` (a leftover from moving them into the `keyvault`
-  dependency group), forcing the azure SDK onto every downstream install even
-  with the Key Vault backend unused or deleted. They now live only in the
-  `keyvault` extra.
-- Hook wiring is now portable across a team's machines. `.claude/settings.json`
-  is committed, but it used to hardcode an interpreter (`python` for the
-  powershell flavor, `python3` for bash) and rely on a shell to expand
-  `$CLAUDE_PROJECT_DIR`. Neither travels: `python3` is an App Execution Alias
-  stub on Windows that exits with "Python was not found", `python` is often
-  absent on macOS/Linux, and the command is passed to PowerShell on Windows
-  when Git Bash is not installed -- where `$CLAUDE_PROJECT_DIR` expands to
-  nothing. Because a failed hook exits non-zero without blocking, this failed
-  silently. Hooks are now wired in **exec form** (`command` + `args`), so no
-  shell is involved and Claude Code substitutes `${CLAUDE_PROJECT_DIR}`
-  itself, and they are launched with `uv run --no-project`, `uv` being the one
-  command name this project can rely on everywhere. Costs roughly 45ms per
-  hook invocation. Existing shell-form entries are recognized and replaced on
-  the next wiring run rather than duplicated.
-- mypy's `files` now includes `.claude/hooks`, so the hooks are type-checked
-  along with the rest of the repo. `cleanup.py` drops both `scripts` and
-  `.claude/hooks` from `files` when it runs, so a new project's type check
-  covers `src/` and `tests/` -- its own code -- and not the template's.
-
-### Security
-
-- Secret values can no longer originate in source. Secret fields in the
-  settings schema accepted a default, and the resolver used it whenever the
-  credential backend had no value, so a placeholder left in `schema.py` could
-  quietly become the running credential. `secret()` cannot express a value,
-  and the resolver rejects any schema whose secret field carries a default or
-  leaves `repr` enabled.
-- `.claude/settings.json` denies `detect-secrets scan > .secrets.baseline`
-  (bare and under `uv run`, Bash and PowerShell), so an agent cannot
-  regenerate the baseline and discard its audit history.
-
-## [1.12.0] - 2026-07-20
+## [1.13.0] - 2026-09-01 - Configurable secret storage
 
 ### Added
 
-- `scripts/setup.toml` now drives the entire template setup process: every
-  choice (project name, license, feature flags, Claude hook selection, git
-  reinit) lives in one file that `setup_new_project.py` validates all at
-  once, previews, and applies with a single confirmation.
-- Pre-commit gained a pre-push stage that runs `uv lock --locked`, `uv audit`,
-  and the test suite excluding live, slow, and destructive tests; the
-  existing commit-time hooks now run only at commit time instead of
-  re-running on push.
-- Destructive tests are now split into `destructive_local` and
-  `destructive_remote` markers, each gated independently
-  (`--run-destructive-local` / `--run-destructive-remote` plus its own
-  proof-of-disposability check), so opting into one can never silently arm
-  the other.
-
-### Changed
-
-- `compare_to_template.py` now reads feature choices from `scripts/setup.toml`
-  (or infers them from which feature files exist) and only compares, offers
-  to copy, or diffs files tied to a feature the project actually kept;
-  declining a feature now fully excludes its files instead of just marking
-  them optional.
-- `scripts/setup.toml` moved from `scripts/template_setup/setup.toml` to
-  `scripts/setup.toml` so it survives `cleanup.py` and stays available after
-  template setup is done.
-- The committed VS Code workspace file
-  (`python_repo_template.code-workspace.FIXME.jsonc`) no longer hides
-  `.env`, coverage files, `.hypothesis`, or `secrets/` from the file
-  explorer, and drops the commented-out tool-autoapprove FIXME stubs, so it
-  starts less opinionated about what a project wants hidden or auto-approved.
-
-### Fixed
-
-- The offline test filter in pre-commit and CI referenced the retired
-  "not integration" marker instead of "not live", letting live tests slip
-  into offline runs.
-- Removing a feature via setup no longer leaves behind tests for deleted
-  Claude Code hooks in `.claude/hooks/`.
-- Credential setup prompts no longer hide non-secret fields (username,
-  tenant/client ID, cert thumbprint) behind silent input; only the password
-  and client secret stay hidden.
-
-## [1.11.0] - 2026-07-13
-
-### Added
-
-- The bash canonical-commands hook (`.claude/hooks/canonical-commands-bash.py`)
-  gained two checks it was missing relative to its PowerShell counterpart: it
-  now flags a redundant `git -C <cwd>` for the directory the shell is already
-  in, and it blocks running a `.ps1` from the Bash tool (via `pwsh`/`powershell`
-  or `./script.ps1`), steering to the PowerShell tool instead.
-- Opt-in debug logging for both canonical-commands hooks, enabled by setting the
-  `CLAUDE_HOOK_DEBUG_LOG` environment variable. When on, each invocation is
-  appended to a self-rotating `.claude/hooks/hook-debug.log` (gitignored); when
-  off (the default) the logger short-circuits before any filesystem access, so
-  there is no overhead in normal operation.
-
-### Changed
-
-- Both canonical-commands hooks now block a leading `cd` on either tool -- the
-  working directory is already the project root -- instead of the PowerShell
-  hook rerouting a bare `cd` to the other tool, which contradicted the no-`cd`
-  rule.
-- The bash canonical-commands hook now enforces `bash script.sh` as the single
-  allowed script-invocation form, blocking `sh script.sh` and `./script.sh`.
-  `bash <script>` is the one form that always works: it needs no execute bit on
-  the file and always uses bash rather than whatever `sh` points at.
-
-## [1.10.0] - 2026-07-12
-
-### Added
-
-- `scripts/update_floors.py` (1.0.0), an interactive helper that raises each
-  direct dependency's `>=` floor to the newest version its existing upper bound
-  permits, read from `uv.lock` after `uv lock --upgrade`. It rewrites
-  `pyproject.toml` in place, preserving upper bounds, extras, markers, and
-  comments; skips deps with no floor, deps absent from the lockfile
-  (marker-gated backports, git/path sources), and
-  `[tool.uv] constraint-dependencies`; and reports majors held back by a cap via
-  `uv tree --outdated` rather than crossing the bound. Supports `--dry-run`,
-  `--no-lock`, and `-y`, is registered in the compare_to_template manifest, and
-  is covered by unit tests over the pure logic.
-- `scripts/remove_worktree.py`: a preflight guard that aborts when a config
-  file copied into the worktree (rather than symlinked, as happens on Windows
-  without Developer Mode) differs from the main repo. It covers the same files
-  new_worktree.py links - `.env` / `.env.*` and `.vscode/launch.json` /
-  `settings.json` - restricted to paths git does not track, since those are the
-  ones invisible to the uncommitted-changes check and thus silently discarded on
-  force-removal. The guard lists the diverging file names (never their secret
-  contents) and stops so the changes can be copied back first (bumped to 1.3.0).
-- Optional GitHub App token authentication is now also wired into the docs
-  (Pages) workflow (`.github/workflows/docs.yml`), matching the existing
-  `ci.yml` and `audit.yml` blocks, so a docs build can install private
-  dependencies when the commented `create-github-app-token` step is enabled.
-
-### Changed
-
-- `scripts/complete_worktree.py`: the PR title now comes from fenced `title:`
-  front-matter at the top of `PR.md` instead of the last commit subject. The
-  same fenced format (`---` / `key: value` / `---` / body) is used for the
-  cross-device pr-body note, so a single parser handles both, and the fence is
-  stripped before the body is sent to GitHub. There is no commit-message
-  fallback: a `PR.md` with no `title:` aborts the script. It also now uses the
-  same interactive y/n confirmation workflow as the other helper scripts
-  (bumped to 1.3.0).
-- `scripts/compare_to_template.py`: the pre-comparison self-check now
-  version-checks every dev helper script (`scripts/*.py`) against the template,
-  offering to copy over any that are out of date or missing, instead of only
-  checking itself. It also tracks the versioned
-  `tests/test_mypy_stub_guard.py`, and `--diff` now diffs against the live
-  project file rather than a temp copy (bumped to 1.4.0).
-- The commented private-dependency git-auth example in the `ci.yml`, `audit.yml`,
-  and `docs.yml` workflows now runs under `shell: bash`, so its heredoc executes
-  correctly on Windows runners when uncommented.
-
-### Fixed
-
-- `scripts/new_worktree.py`: a worktree opened from a main repo with an active
-  venv no longer inherits the parent `.venv`. `VIRTUAL_ENV` is cleared in the
-  generated workspace's `terminal.integrated.env` and dropped before spawning
-  `uv sync`/`code`, so uv no longer warns and ignores the mismatched value
-  (bumped to 1.3.0).
-- The commented `create-github-app-token` example was missing a closing quote on
-  the `gh` command that finds the action's latest commit; fixed so the block
-  works as written when uncommented.
-- Restored Python 3.10 compatibility: the mypy stub-guard test and dev scripts
-  fall back to the `tomli` backport when the standard-library `tomllib` is
-  unavailable.
-
-### Security
-
-- Raised the `pytest` floor to `>=9.0.3` (GHSA-6w46-j5rx-g56g / CVE-2025-71176,
-  tmpdir handling) and the `python-dotenv` floor to `>=1.2.2`
-  (GHSA-mf9w-mj56-hr94 / CVE-2026-28684, symlink following in `set_key`), so a
-  lowest-direct resolve no longer installs a known-vulnerable version.
-
-## [1.9.0] - 2026-07-06
-
-### Added
-
-- `scripts/compare_to_template.py`: a `--diff-tool` option to choose which
-  editor opens the diffs (defaults to `code`; e.g. `codium` or `cursor`).
-
-### Changed
-
-- `scripts/compare_to_template.py`: `--diff` now opens each differing baseline
-  file as a side-by-side diff in VS Code (`code --diff`) instead of printing
-  unified diffs to the terminal. The normalized template and project texts are
-  written to a temp directory so only real drift shows, and it falls back to
-  the terminal unified diffs when the `code` CLI is not on `PATH` (script
-  bumped to 1.1.0).
-- `scripts/compare_to_template.py`: `README.md` is now compared for existence
-  only -- the drift check still alerts when it is missing but no longer flags
-  its contents, which each project rewrites (via a new `compare_content` flag
-  on `BaselineFile`).
-
-## [1.8.1] - 2026-07-06
-
-### Fixed
-
-- `open_claude_settings.py` and `open_gitignore.py` now guard the Windows-only
-  `os.startfile` call on `sys.platform`, so their `open_with_os_default` helper
-  type-checks cleanly under `uv run mypy` on Linux and macOS instead of failing
-  the cross-platform check off Windows.
-
-## [1.8.0] - 2026-07-06
-
-### Added
-
-- `scripts/open_claude_settings.py` (1.0.0), a dev helper that walks up to the
-  nearest `.claude/` folder and opens its `settings.json` / `settings.local.json`
-  alongside the global `~/.claude/settings.json`. Resolves an editor via
-  `--editor` -> `$VISUAL` -> `$EDITOR` -> `code` -> the OS default opener
-  (routing Windows `.cmd`/`.bat` editors through `cmd /c`), and supports
-  `--create`, `--path`, and `--dry-run`. Stdlib-only and cross-platform.
-- `scripts/open_gitignore.py` (1.0.0), a companion helper that opens the
-  committed `.gitignore`, the local `.git/info/exclude`, and the global excludes
-  file (`core.excludesfile` or `~/.config/git/ignore`). Resolves repo-level paths
-  via `git rev-parse` so worktrees and custom `GIT_DIR` layouts work, and mirrors
-  `open_claude_settings.py`'s `--path`, `--create`, `--editor`, and `--dry-run`
-  flags.
-
-### Changed
-
-- The CI `check` job now runs as a `[ubuntu-latest, macos-latest, windows-latest]`
-  matrix (`fail-fast: false`), so the cross-platform helper scripts are exercised
-  on Linux, macOS, and Windows on every push and pull request instead of Linux
-  only. Branch protection now expects the per-OS status checks
-  (`check (ubuntu-latest)`, `check (macos-latest)`, `check (windows-latest)`).
-
-### Fixed
-
-- `_cli.py`'s Windows ANSI console setup (`_enable_windows_ansi`) now guards on
-  `sys.platform`, so `ctypes.windll` type-checks cleanly under `uv run mypy` on
-  Linux and macOS instead of raising an `attr-defined` error off Windows.
-
-## [1.7.0] - 2026-07-04
-
-### Added
-
-- `tests/test_mypy_stub_guard.py`, a guard test that fails when [tool.mypy]
-  config silences an import (`ignore_missing_imports`,
-  `follow_untyped_imports`, or disabled import error codes) for a module whose
-  type stubs are published on PyPI, using mypy's own stub registry
-  (`mypy.stubinfo`) as the source of truth. A canary test detects if a mypy
-  upgrade changes that internal API. Also wired into pre-commit as
-  `mypy-stub-guard`, which runs whenever pyproject.toml is staged; CI picks it
-  up automatically via the normal pytest run.
-- `scripts/compare_to_template.py` (1.0.0), a dev helper that compares a
-  generated project's baseline files (GitHub config, dev scripts, AGENTS docs,
-  lint/format config, ...) against a template checkout and reports drift. It
-  replays the template-setup transformations (project/username rename, header
-  strip, Python-version pins, cleanup.py's pyproject trims) before diffing, so
-  only real drift is reported; files are classified strict/lenient and
-  required/optional, with `--diff` for unified diffs, `--all` for the full
-  list, and exit code 1 on drift for CI use. Before comparing it checks its
-  own `__version__` on both sides and offers to update the project's copy from
-  the template. Its unit tests also enforce that every tracked template file
-  is either in the comparison manifest or explicitly excluded, so new template
-  files force a comparison decision.
-- Committed `.claude/settings.json` with permission deny rules
-  (`Edit(uv.lock)`, `Edit(**/uv.lock)`) so Claude Code agents cannot hand-edit
-  the lockfile with the Edit/Write tools. Dependency pins belong in
-  `pyproject.toml` (e.g. `[tool.uv] constraint-dependencies`), followed by
-  `uv lock`; `uv lock`/`uv sync` themselves are unaffected.
-
-### Changed
-
-- `scripts/` is now type-checked and coverage-measured. Mypy targets moved into
-  `pyproject.toml` (`files = ["src", "tests", "scripts"]` plus `mypy_path`), so
-  AGENTS.TESTING.md, CI, and the pre-commit hook all run a bare `uv run mypy`
-  and can no longer drift apart. The nine `# type: ignore[import-not-found]`
-  workarounds in the dev-script tests are gone, and pytest coverage now
-  includes `scripts/` (`--cov=scripts`).
-- `template_setup/cleanup.py` also trims the template-only pyproject.toml lines
-  when the scaffolding is removed: it drops `--cov=scripts` (the dev-script
-  tests are deleted alongside it) and narrows `mypy_path` to `["scripts"]`,
-  aborting loudly before deleting anything if pyproject.toml has drifted from
-  the template.
-- `template_setup/choose_shell.py` and `template_setup/protect_auto_memory.py`
-  now refuse to run when an existing `.claude/settings.json` is unreadable,
-  invalid JSON, or not a JSON object, exiting with an error instead of
-  "starting fresh" and silently discarding its contents (such as the new
-  permission deny rules).
-
-### Fixed
-
-- Strict-mode typing gaps the mypy blind spot was hiding: bare `dict`
-  annotations in `template_setup/choose_shell.py` and
-  `template_setup/protect_auto_memory.py` are now `dict[str, Any]`, and
-  `remove_worktree.py`'s `open_worktree_slugs` accepts any sequence instead of
-  requiring an exact `list` element type (patch bump to 1.2.3).
-- Restored parenthesized `except (A, B):` handlers in the `scripts/` helpers.
-  Ruff's py314 formatter had rewritten them to the PEP 758 unparenthesized
-  form, a syntax error on Python 3.13 that broke the ruff pre-commit hook in
-  projects that copied these helpers. Each site is now guarded with
-  `# fmt: skip`, and the four versioned scripts got a patch bump.
-- The same Python 3.13 syntax fix for the tracked `.claude/hooks/` scripts,
-  which run under the system `python` and would silently fail to parse (and so
-  never enforce their checks) on a 3.13 interpreter.
-
-## [1.6.0] - 2026-06-29
-
-### Added
-
-- Optional GitHub App token authentication in the CI and audit workflows, letting
-  them install private dependencies. A commented `create-github-app-token` block
-  in `.github/workflows/ci.yml` and `audit.yml` (with a matching git-auth step)
-  can be uncommented and pointed at one or more private repos; README.md documents
-  creating the App and storing the `GRAPH_AUTH_CLIENT_ID` variable and
-  `GRAPH_AUTH_APP_PRIVATE_KEY` secret.
-- Opt-in auto-memory write guard: a `PreToolUse` hook
-  (`.claude/hooks/protect-auto-memory.py`) that asks for approval before Claude
-  writes to its auto-memory directory. Off by default; the new
-  `template_setup/protect_auto_memory.py` step (and the guided
-  `setup_new_project.py`) prompts whether to enable it, wiring it project-scoped
-  via `$CLAUDE_PROJECT_DIR`. Declining deletes the hook file; the hook header
-  documents how to run it globally instead.
-
-## [1.5.1] - 2026-06-25
-
-### Added
-
-- Cross-device PR handoff in `complete_worktree.py`, for when the device holding
-  the worktree has no authenticated `gh`. `--push-pr-to-notes` pushes the branch
-  and attaches `PR.md` (with the base and title) as a per-slug git note; on
-  another device, `--gh-from-notes` creates the PR with `gh`, or
-  `--web-from-notes` opens a prefilled PR form in the browser with no `gh` auth.
-  Either side fetches the note, creates the PR, and then removes the note from
+- A `CREDENTIAL_BACKEND` policy in the settings schema: `"none"` (no secrets at
+  all), a backend name (used without prompting), or `"prompt"`.
+- Per-secret storage names, held in reserved `<field>_secret_name` config keys
+  that `init` and `set-secret` write.
+- `option()` and `secret()` field factories in the schema. `secret()` takes no
+  value and keeps the resolved secret out of `repr()`.
+- Removable secret storage: the `[features].secret_storage` flag and
+  `remove_secret_storage.py` drop the dispatcher, every backend, and their
+  tests, while the rest of the config system keeps working.
+- `README.md.FIXME` and `reset_readme.py`, so setup replaces the template's
+  README as it already replaced the changelog.
+- `--no-remote` on the release and worktree scripts, for repositories with no
   origin.
+- detect-secrets as a CI gate: an `audit.yml` job scans every tracked file and
+  fails on any baseline entry that is unaudited or confirmed real.
+- A ban on inline allowlist pragmas, enforced by a Claude Code hook and by
+  `tests/test_no_inline_suppressions_for_secrets.py`, which scans the whole
+  repository.
 
 ### Changed
 
-- `new_worktree.py` now syncs the base branch with origin before creating the
-  worktree: it offers to push a local base that is ahead of origin (so the new
-  worktree includes those commits), warns if the base has diverged, and warns
-  about uncommitted changes that can never transfer into a worktree.
-- `remove_worktree.py` now warns before work is lost -- before
-  `git worktree remove --force` discards uncommitted changes, and before
-  `git branch -D` deletes a branch with commits that were never pushed to origin.
-- The worktree scripts reject malformed slugs (leading, trailing, or doubled
-  slashes) instead of building an invalid branch name.
-
-### Removed
-
-- The `WT_HOME`, `WT_BASE`, and `WT_PREFIX` environment overrides from the
-  worktree scripts. The sibling `<repo>-wt` worktree directory and the `wt/`
-  branch prefix are now fixed; the base branch stays a positional argument
-  (default `develop`).
-
-## [1.5.0] - 2026-06-17
-
-### Added
-
-- `remove_mkdocs.py` template-setup step that drops the documentation site for
-  projects that don't want one: it deletes `docs/`, `mkdocs.yml`, and the Pages
-  deploy workflow, and strips the `docs` dependency group and every mkdocs
-  reference from `pyproject.toml`, `.gitignore`, `README.md`, `CONTRIBUTING.md`,
-  and `AGENTS.RELEASING.md`. Offered as an optional step in the
-  `setup_new_project.py` orchestrator.
-- `set_version.py` template-setup step that resets the project's release version
-  in `pyproject.toml` (default `0.1.0`), and `reset_changelog.py`, which drops the
-  template's own `CHANGELOG.md` history in favour of a blank `CHANGELOG.md.FIXME`
-  skeleton. Both are wired into the `setup_new_project.py` orchestrator.
-- Proprietary (internal-use) license option: a fourth `LICENSE.proprietary.FIXME`
-  candidate for confidential or internal-only projects. The license chooser offers
-  it and prompts for an owning company name in addition to the copyright holder;
-  all candidate placeholders now use a labelled `FIXME{...}` brace form.
-
-### Changed
-
-- `choose_shell.py` now asks whether to install the Claude Code command hooks at
-  all before asking for a primary shell. Declining (or passing `--no-hooks`)
-  removes all four hook files instead of wiring any, so projects that don't want
-  the hooks ship none. The `setup_new_project.py` orchestrator gates the shell
-  prompt behind this choice.
-- Default Python target raised from 3.13 to 3.14 throughout the template:
-  `.python-version`, `pyproject.toml` (`requires-python`, ruff `target-version`,
-  mypy `python_version`), `.pre-commit-config.yaml`, the docs, the README badge,
-  and the issue template. `set_python_version.py`'s built-in default is bumped to
-  3.14 to match.
-
-### Removed
-
-- `pydantic-settings` is no longer a template dependency. It was an unused runtime
-  dependency -- `.env` loading goes through `python-dotenv` in the `test` group.
-
-## [1.4.0] - 2026-06-16
-
-### Added
-
-- `choose_shell.py` template-setup step that asks for the primary shell and
-  wires the matching Claude Code `PreToolUse` command hooks into
-  `.claude/settings.json` (merging idempotently and preserving unrelated
-  entries), then removes the unused hook pair. Wired into the
-  `setup_new_project.py` orchestrator.
-- `set_python_version.py` template-setup step that retargets the project's
-  Python version everywhere it is declared (`.python-version`, `pyproject.toml`,
-  pre-commit, docs, badge, issue template). The default lives in one
-  `DEFAULT_VERSION` constant; it is also wired into the `setup_new_project.py`
-  orchestrator.
-- Per-script `__version__` constant, printed at startup, on every dev helper
-  script so copies can be compared across repos.
-- `--no-version` option to `push_new_tag_to_main.py`, which merges, tags, and
-  pushes without changing the version. Passing `--version` with the version
-  already in use is treated the same way.
-
-### Changed
-
-- `push_new_tag_to_main.py` now fetches from origin and fast-forwards both the
-  source branch and `main` before merging, aborting if either has diverged, so a
-  release can no longer be cut from a stale branch (e.g. a PR merged on the
-  remote but not yet pulled).
-- Credentials made modular. The Azure KeyVault backend moved out of
-  `tests/_bootstrap.py` into its own `tests/_keyvault.py`, loaded lazily by the
-  dispatcher; `_bootstrap.py` no longer imports `azure`. The default backend is
-  now keyring (was keyvault), still switchable at runtime via `CREDENTIAL_BACKEND`
-  in `.env`. `setup_credentials.py` is now self-contained (no longer imports from
-  `tests/`). Settings load from `.env` (was `.env.testing`). Added an "Optional
-  features & how to remove them" guide to the README, and declared the
-  `integration` pytest marker.
-
-## [1.3.0] - 2026-06-12
-
-### Added
-
-- `-y/--yes` flag to `push_new_tag_to_main.py` for non-interactive releases.
-
-### Changed
-
-- `push_new_tag_to_main.py` now takes the bump level as a positional argument
-  (e.g. `push_new_tag_to_main.py patch`) instead of `--bump`.
-
-## [1.2.1] - 2026-06-11
-
-### Added
-
-- `remove_worktree.py` shows an interactive picker of open worktrees when run
-  without a slug.
-
-### Changed
-
-- Template cleanup now removes the dev-script tests while keeping the scripts
-  themselves.
+- Which backend stores secrets is the user's choice, not the developer's. The
+  hardcoded `keyring` default is gone, `set`/`unset` accept the reserved backend
+  keys, `init` prompts for one, and each backend declares its own config keys --
+  so deleting a backend file also removes its keys from the legal config.
+- The CLI asks for a secret's name and its value separately, masking only the
+  value, and never asks for a value on a read-only backend such as keyvault.
+- `keyring` and `keyvault` moved from dependency groups to extras, so an end
+  user of an installed package can opt into a backend.
+- `scripts/setup.toml` renamed to `scripts/template_setup.toml`, to keep it
+  distinct from the per-user runtime `config.toml`. Rename yours when adopting
+  the updated scripts.
+- `compare_to_template.py` diffs the content of `config/schema.py`, leniently.
 
 ### Fixed
 
-- `complete_worktree.py` no longer fails its clean-tree check when `PR.md` is
-  uncommitted; the PR body file is exempt.
+- The azure SDK is no longer forced onto every downstream install; it ships in
+  the `keyvault` extra alone.
+- Hook wiring travels between machines. Hooks are wired in exec form and run
+  under `uv run --no-project`, instead of relying on a shell and an interpreter
+  name that is missing or a stub on other platforms.
 
-## [1.2.0] - 2026-06-11
+### Security
+
+- Secret values can no longer originate in source: `secret()` cannot express a
+  default, and the resolver rejects a schema that gives one.
+- `.claude/settings.json` denies regenerating `.secrets.baseline` from scratch,
+  which would discard its audit history.
+
+## [1.12.0] - 2026-07-20 - Setup from one config file
 
 ### Added
 
-- `-y/--yes` non-interactive flag to the worktree scripts.
-- `CLAUDE.md` that redirects to `AGENTS.md`.
+- `scripts/setup.toml` drives the whole template setup: every choice lives in
+  one file that `setup_new_project.py` validates at once, previews, and applies
+  with a single confirmation.
+- A pre-push pre-commit stage running `uv lock --locked`, `uv audit`, and the
+  offline test suite. The commit-time hooks no longer re-run on push.
+- Destructive tests split into `destructive_local` and `destructive_remote`,
+  each with its own flag and proof-of-disposability check, so opting into one
+  cannot arm the other.
 
 ### Changed
 
-- `new_worktree.py` is now interactive, matching the other helpers: a setup
-  summary, per-step y/n confirmations, and echoed commands with streamed output.
-
-## [1.1.0] - 2026-06-10
-
-### Added
-
-- `scripts/template_setup/` suite for starting a new project from the template:
-  rename the project, strip template headers, set the GitHub user, choose a
-  license, list remaining FIXMEs, reinitialize git, and an orchestrator that
-  runs the steps and removes the suite when done. Each step previews its
-  changes and asks before applying.
-- Startup warning when scripts run under plain Git Bash (mintty), where
-  interactive prompts can freeze; points to winpty, PowerShell, or the VS Code
-  terminal instead.
-
-### Changed
-
-- Worktree and release helper scripts rewritten from PowerShell/shell to
-  stdlib-only Python with a shared interactive `_cli` module.
-
-### Removed
-
-- PowerShell helper scripts, replaced by the Python versions.
-- Standalone shell and PowerShell unwanted-strings scanners, superseded by the
-  pytest-based scan in `tests/test_unwanted_strings.py`.
-
-## [1.0.2] - 2026-06-09
-
-### Added
-
-- `New-Worktree.ps1` script for creating git worktrees.
-- `find-unwanted-strings.sh` shell scanner and a pytest-based unwanted-strings
-  scan.
+- `compare_to_template.py` reads the feature choices and excludes a declined
+  feature's files entirely, instead of marking them optional.
+- The committed VS Code workspace hides less from the explorer and drops its
+  auto-approve stubs.
 
 ### Fixed
 
-- Dev and release scripts derive the package name from a variable instead of
-  hardcoding it.
-- Added a delay between `uv` commands to avoid intermittent "uv.exe busy"
-  errors on Windows.
+- The offline test filter named the retired `integration` marker instead of
+  `live`, letting live tests into offline runs.
+- Setup no longer leaves behind tests for hooks it deleted.
+- Credential setup stops hiding non-secret fields; only passwords and client
+  secrets are masked.
 
-## [1.0.1] - 2026-06-02
+## [1.11.0] - 2026-07-13 - Command hook parity
+
+### Added
+
+- The bash command hook gained the checks its PowerShell counterpart already
+  had, and both gained opt-in debug logging via `CLAUDE_HOOK_DEBUG_LOG`.
+
+### Changed
+
+- Both command hooks block a leading `cd` outright, and the bash hook accepts
+  `bash script.sh` as the single script-invocation form.
+
+## [1.10.0] - 2026-07-12 - Dependency floors and worktree guards
+
+### Added
+
+- `scripts/update_floors.py`, which raises each direct dependency's `>=` floor
+  to the newest version its upper bound allows and reports the majors a cap
+  holds back.
+- A `remove_worktree.py` preflight that aborts when a config file copied into
+  the worktree (rather than symlinked) has diverged, so force-removal cannot
+  discard it.
+- GitHub App token authentication in the docs workflow, matching `ci.yml` and
+  `audit.yml`.
+
+### Changed
+
+- `complete_worktree.py` takes the PR title from `PR.md` front-matter instead of
+  the last commit subject, and aborts when it is missing.
+- `compare_to_template.py` version-checks every `scripts/*.py` helper, not only
+  itself.
+
+### Fixed
+
+- A worktree opened from a repository with an active venv no longer inherits the
+  parent `.venv`.
+- Restored Python 3.10 compatibility in the dev scripts and the stub guard, via
+  the `tomli` backport.
+
+### Security
+
+- Raised the `pytest` floor to `>=9.0.3` (GHSA-6w46-j5rx-g56g) and the
+  `python-dotenv` floor to `>=1.2.2` (GHSA-mf9w-mj56-hr94).
+
+## [1.9.0] - 2026-07-06 - Side-by-side template diffs
+
+### Changed
+
+- `compare_to_template.py` opens drift as side-by-side diffs in VS Code, with
+  `--diff-tool` to choose the editor and a fallback to terminal unified diffs.
+  `README.md` is compared for existence only, since every project rewrites it.
+
+## [1.8.1] - 2026-07-06 - Cross-platform type check
+
+### Fixed
+
+- The Windows-only `os.startfile` call in the file-opening helpers is guarded on
+  `sys.platform`, so mypy passes off Windows.
+
+## [1.8.0] - 2026-07-06 - Settings and gitignore helpers
+
+### Added
+
+- `scripts/open_claude_settings.py` and `scripts/open_gitignore.py`, which open
+  the project, local, and global copies of those files in a resolved editor.
+
+### Changed
+
+- CI's `check` job runs on Linux, macOS, and Windows, so the cross-platform
+  helpers are exercised everywhere. Branch protection now expects the per-OS
+  status checks.
+
+### Fixed
+
+- `_cli.py`'s Windows ANSI console setup is guarded on `sys.platform`, so mypy
+  passes off Windows.
+
+## [1.7.0] - 2026-07-04 - Template drift detection
+
+### Added
+
+- `scripts/compare_to_template.py`, which replays the setup transformations and
+  reports where a generated project has drifted from the template.
+- `tests/test_mypy_stub_guard.py`, which fails when mypy config silences an
+  import whose type stubs are published on PyPI.
+- A committed `.claude/settings.json` with deny rules, so agents cannot
+  hand-edit `uv.lock`.
+
+### Changed
+
+- `scripts/` is type-checked and coverage-measured, and mypy's targets live in
+  `pyproject.toml` so the docs, CI, and pre-commit cannot drift apart.
+- The setup steps that own `.claude/settings.json` refuse to run on an
+  unreadable or invalid file, instead of starting fresh and discarding its
+  contents.
+
+### Fixed
+
+- Ruff's py314 formatter had rewritten `except (A, B):` into the PEP 758 form, a
+  syntax error on Python 3.13 that broke the copied helper scripts and hooks.
+
+## [1.6.0] - 2026-06-29 - Private dependencies in CI
+
+### Added
+
+- A commented GitHub App token block in the CI and audit workflows for
+  installing private dependencies, documented in the README.
+- An opt-in hook that asks for approval before Claude writes to its auto-memory
+  directory.
+
+## [1.5.1] - 2026-06-25 - Worktree safety
+
+### Added
+
+- Cross-device PR handoff in `complete_worktree.py`, for a device with no
+  authenticated `gh`: the PR body travels to another device as a git note.
+
+### Changed
+
+- `new_worktree.py` syncs the base branch with origin before creating the
+  worktree, and `remove_worktree.py` warns before discarding uncommitted changes
+  or unpushed commits.
+- The worktree scripts reject malformed slugs instead of building an invalid
+  branch name.
+
+### Removed
+
+- The `WT_HOME`, `WT_BASE`, and `WT_PREFIX` overrides. The worktree directory
+  and branch prefix are now fixed.
+
+## [1.5.0] - 2026-06-17 - Optional docs, licenses, Python 3.14
+
+### Added
+
+- `remove_mkdocs.py`, which drops the documentation site and every reference to
+  it, for projects that do not want one.
+- `set_version.py` and `reset_changelog.py` setup steps, which reset the
+  project's version and replace the template's changelog history.
+- A proprietary (internal-use) license option.
+
+### Changed
+
+- Setup asks whether to install the Claude Code hooks at all; declining removes
+  them instead of wiring any.
+- The default Python target rose from 3.13 to 3.14 everywhere it is declared.
+
+### Removed
+
+- `pydantic-settings`, an unused runtime dependency.
+
+## [1.4.0] - 2026-06-16 - Modular credentials
+
+### Added
+
+- `choose_shell.py` and `set_python_version.py` setup steps.
+- A `__version__` on every dev helper script, so copies can be compared across
+  repositories.
+- `--no-version` on `push_new_tag_to_main.py`, which merges, tags, and pushes
+  without changing the version.
+
+### Changed
+
+- `push_new_tag_to_main.py` fast-forwards the source branch and `main` before
+  merging, so a release cannot be cut from a stale branch.
+- Credentials are modular: the Key Vault backend moved into its own lazily
+  loaded module, the default backend is keyring, and settings load from `.env`.
+
+## [1.3.0] - 2026-06-12 - Release script arguments
+
+### Added
+
+- `-y/--yes` on `push_new_tag_to_main.py`, for non-interactive releases.
+
+### Changed
+
+- `push_new_tag_to_main.py` takes the bump level as a positional argument
+  instead of `--bump`.
+
+## [1.2.1] - 2026-06-11 - Worktree picker
+
+### Added
+
+- `remove_worktree.py` shows a picker of open worktrees when run without a slug.
+
+### Changed
+
+- Template cleanup removes the dev-script tests while keeping the scripts.
+
+### Fixed
+
+- `complete_worktree.py`'s clean-tree check exempts an uncommitted `PR.md`.
+
+## [1.2.0] - 2026-06-11 - Interactive worktree scripts
+
+### Added
+
+- `-y/--yes` on the worktree scripts, and a `CLAUDE.md` redirecting to
+  `AGENTS.md`.
+
+### Changed
+
+- `new_worktree.py` is interactive like the other helpers: a setup summary,
+  per-step confirmations, and streamed output.
+
+## [1.1.0] - 2026-06-10 - Python template setup suite
+
+### Added
+
+- `scripts/template_setup/`, the suite that turns the template into a new
+  project: rename it, strip the template headers, set the GitHub user, choose a
+  license, sweep the FIXMEs, reinitialize git, then remove itself. Every step
+  previews its changes and asks before applying.
+- A startup warning when the scripts run under plain Git Bash, where interactive
+  prompts can freeze.
+
+### Changed
+
+- The worktree and release helpers were rewritten from PowerShell and shell into
+  stdlib-only Python sharing an interactive `_cli` module.
+- The standalone shell and PowerShell unwanted-strings scanners became a single
+  pytest scan.
+
+## [1.0.2] - 2026-06-09 - Worktrees and string scanning
+
+### Added
+
+- `New-Worktree.ps1`, for creating git worktrees.
+- An unwanted-strings scan, as a shell scanner and a pytest test.
+
+### Fixed
+
+- The dev and release scripts derive the package name instead of hardcoding it.
+- A delay between `uv` commands, avoiding intermittent "uv.exe busy" errors on
+  Windows.
+
+## [1.0.1] - 2026-06-02 - Initial release
 
 Initial release: a Python project template scaffold.
 
 ### Added
 
-- `src/`-layout package managed with uv, plus `pyproject.toml`, pre-commit,
-  ruff, and mypy configuration.
-- GitHub issue and pull-request templates, Dependabot config, and CI, audit,
+- A `src/`-layout package managed with uv, with `pyproject.toml`, pre-commit,
+  ruff, and mypy configured.
+- GitHub issue and pull-request templates, Dependabot config, and the CI, audit,
   and docs workflows.
-- Selectable MIT, Apache-2.0, and GNU license templates.
-- MkDocs documentation site.
-- Dev scripts: keyring-based `setup_credentials.py` and a release-tagging
-  script (PowerShell and shell), plus a PowerShell unwanted-strings scanner.
-- Test scaffolding: `conftest.py` and a `_bootstrap` module for settings and
-  keyring-backed credentials in tests.
+- Selectable MIT, Apache-2.0, and GNU licenses, and a MkDocs documentation site.
+- Dev scripts for keyring-based credential setup and release tagging, and test
+  scaffolding for settings and keyring-backed credentials.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.14.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.15.0...HEAD
+[1.15.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.11.0...v1.12.0
