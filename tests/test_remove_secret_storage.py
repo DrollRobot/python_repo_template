@@ -11,6 +11,10 @@ it. The template's normal CI only ever exercises the secret-bearing FIXME
 schema, so without this the "works with secret storage removed" promise would
 regress silently.
 
+The docstring blocks the script rewrites are read from this repo's own
+config/__init__.py rather than restated here, so the tests fail loudly if the
+two drift apart instead of passing against a stale copy.
+
 This file is itself a dev-script test: cleanup.py matches it to
 scripts/template_setup/remove_secret_storage.py and deletes it along with the
 rest of the scaffolding, so it never lingers in a project started from the
@@ -35,6 +39,7 @@ _DISPATCHER = "src/my_project/config/secrets.py"
 _KEYRING = "src/my_project/config/keyring_backend.py"
 _KEYVAULT = "src/my_project/config/keyvault_backend.py"
 _SCHEMA = "src/my_project/config/schema.py"
+_CONFIG_INIT = "src/my_project/config/__init__.py"
 _TESTS = [
     "tests/test_config_secrets.py",
     "tests/test_keyring_backend.py",
@@ -406,3 +411,106 @@ def test_config_tests_pass_with_the_machinery_removed(tmp_path: Path, policy: st
     # Skips prove the run imported the stripped copy, not the installed
     # package: requires_secret_storage only fires when secrets.py is absent.
     assert " skipped" in result.stdout, result.stdout
+
+
+# --- the config package docstring ----------------------------------------------------
+
+
+def _template_config_init() -> str:
+    """Return this repo's own config/__init__.py, the text the script targets."""
+    return (_TEMPLATE_ROOT / "src" / "python_repo_template" / "config" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.unit
+def test_rewrite_config_init_replaces_every_block() -> None:
+    """All three parts of the shipped docstring are recognized and rewritten."""
+    new_text, changed = remove_secret_storage.rewrite_config_init(_template_config_init())
+
+    assert changed == ["module title", "config.toml paragraph", "module-map entry"]
+    assert "Configuration for python_repo_template" in new_text
+    assert "This package stores no secrets" in new_text
+    # credential_backend is an illegal config.toml key once secrets.py is gone,
+    # so the docstring must stop pointing users at it.
+    assert "credential_backend`` in config.toml" not in new_text
+    assert "secrets.py`` + ``*_backend.py" not in new_text
+
+
+@pytest.mark.unit
+def test_rewrite_config_init_is_idempotent() -> None:
+    """Re-running changes nothing: the second pass finds no block to rewrite."""
+    once, _ = remove_secret_storage.rewrite_config_init(_template_config_init())
+    twice, changed = remove_secret_storage.rewrite_config_init(once)
+
+    assert changed == []
+    assert twice == once
+
+
+@pytest.mark.unit
+def test_rewrite_config_init_handles_crlf() -> None:
+    """A project checked out with CRLF is edited too, and keeps its endings."""
+    source = _template_config_init().replace("\n", "\r\n")
+    new_text, changed = remove_secret_storage.rewrite_config_init(source)
+
+    assert changed == ["module title", "config.toml paragraph", "module-map entry"]
+    assert "This package stores no secrets" in new_text
+    # Every ending survived as CRLF; no lone LF was introduced.
+    assert "\n" not in new_text.replace("\r\n", "")
+
+
+@pytest.mark.unit
+def test_rewrite_config_init_leaves_an_unrelated_docstring_alone() -> None:
+    """A project that rewrote the docstring itself keeps its own wording."""
+    new_text, changed = remove_secret_storage.rewrite_config_init('"""Our own words."""\n')
+
+    assert changed == []
+    assert new_text == '"""Our own words."""\n'
+
+
+@pytest.mark.unit
+def test_plan_edits_is_empty_without_a_config_package(tmp_path: Path) -> None:
+    """No config/__init__.py in the project: nothing to rewrite."""
+    assert remove_secret_storage.plan_edits(tmp_path) == []
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_rewrites_the_config_docstring(tmp_path: Path) -> None:
+    """The docstring describing the deleted machinery is fixed, not left lying."""
+    _make_project(tmp_path, _DISPATCHER)
+    _write_schema(tmp_path, _SCHEMA_WITHOUT_SECRETS)
+    init_path = tmp_path / _CONFIG_INIT
+    init_path.write_text(_template_config_init(), encoding="utf-8")
+
+    assert remove_secret_storage.run(tmp_path, assume_yes=True) == 0
+    rewritten = init_path.read_text(encoding="utf-8")
+    assert "This package stores no secrets" in rewritten
+    assert "secrets.py`` + ``*_backend.py" not in rewritten
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_dry_run_leaves_the_docstring_alone(tmp_path: Path) -> None:
+    """--dry-run reports the edit without making it."""
+    _make_project(tmp_path, _DISPATCHER)
+    _write_schema(tmp_path, _SCHEMA_WITHOUT_SECRETS)
+    init_path = tmp_path / _CONFIG_INIT
+    original = _template_config_init()
+    init_path.write_text(original, encoding="utf-8")
+
+    assert remove_secret_storage.run(tmp_path, assume_yes=True, dry_run=True) == 0
+    assert init_path.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_still_edits_when_the_machinery_is_already_gone(tmp_path: Path) -> None:
+    """A project that ran an older removal keeps a stale docstring; fix it."""
+    _write_schema(tmp_path, _SCHEMA_WITHOUT_SECRETS)
+    init_path = tmp_path / _CONFIG_INIT
+    init_path.write_text(_template_config_init(), encoding="utf-8")
+
+    assert remove_secret_storage.plan_deletions(tmp_path) == []
+    assert remove_secret_storage.run(tmp_path, assume_yes=True) == 0
+    assert "This package stores no secrets" in init_path.read_text(encoding="utf-8")

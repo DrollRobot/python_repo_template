@@ -9,12 +9,15 @@ backend dispatcher, every credential backend, and their test modules:
     tests/test_keyring_backend.py         the keyring backend's unit tests
     tests/test_keyvault_backend.py        the Key Vault backend's unit tests
 
-Only those files are deleted; nothing else is edited. The rest of the config
-system imports the machinery lazily and only when the settings schema marks a
-field ``secret``, so with no secret fields it keeps working untouched: the
-resolver skips the secret layer, config.toml validation stops accepting
-``credential_backend`` (and backend-declared keys), and the config CLI stops
-offering ``set-secret``/``delete-secret``.
+Those files are deleted and one is edited: ``config/__init__.py``, whose
+package docstring describes the machinery and points users at
+``credential_backend``, a config.toml key that validation rejects once the
+dispatcher is gone. The rest of the config system imports the machinery
+lazily and only when the settings schema marks a field ``secret``, so with no
+secret fields it keeps working untouched: the resolver skips the secret
+layer, config.toml validation stops accepting ``credential_backend`` (and
+backend-declared keys), and the config CLI stops offering
+``set-secret``/``delete-secret``.
 
 "With no secret fields" is a precondition, not a hope: before deleting
 anything this script parses ``src/<package>/config/schema.py`` and refuses
@@ -22,10 +25,19 @@ when ``Settings`` still declares a secret field, naming the fields. Removing
 the machinery under them leaves a package that fails on every run, so the
 schema edit comes first. ``--force`` deletes anyway, with a warning.
 
-Manual follow-up (this script only deletes files):
+Manual follow-ups:
 
 - Delete the ``keyring`` and ``keyvault`` extras in ``pyproject.toml``'s
   ``[project.optional-dependencies]``, then run ``uv lock`` and ``uv sync``.
+- Set ``CREDENTIAL_BACKEND = "none"`` in ``config/schema.py`` and prune its
+  comment block: with the machinery gone, the backend names it offers are no
+  longer choices. Nothing breaks while it says ``"prompt"``; it is just
+  wrong.
+- Expect ``config/cli.py`` coverage to drop. Its ``set-secret`` /
+  ``delete-secret`` / backend-prompt code (roughly a third of the module)
+  can never run in a project with no secret fields, and the tests for it
+  skip. Lower ``--cov-fail-under`` to match rather than keeping dead code
+  for the number.
 
 Usage:
     uv run scripts/template_setup/remove_secret_storage.py
@@ -60,6 +72,112 @@ _DELETE_GLOBS = [
 # check inspects inside it.
 _SCHEMA_GLOB = "src/*/config/schema.py"
 _SETTINGS_CLASS = "Settings"
+
+# The config package docstring, located the same way. It describes the
+# machinery this script deletes, so it is rewritten rather than left lying.
+_CONFIG_INIT_GLOB = "src/*/config/__init__.py"
+
+# The module title: the package no longer handles secrets. A fragment, not a
+# whole line, because the package name follows it.
+_INIT_TITLE_OLD = '"""Configuration and secrets for '
+_INIT_TITLE_NEW = '"""Configuration for '
+
+# The paragraph describing where values live. The replacement drops the
+# credential-backend sentence, which now names an illegal config.toml key.
+_INIT_STORAGE_OLD = """\
+Non-secret values live in a per-user ``config.toml`` (see ``paths.py`` for
+the OS-specific location); secrets live in whichever credential backend the
+user selects (``credential_backend`` in config.toml) and are never written
+to the file. The config CLI creates and edits the file; no hand-editing is
+required.
+"""
+
+_INIT_STORAGE_NEW = """\
+Values live in a per-user ``config.toml`` (see ``paths.py`` for the
+OS-specific location). This package stores no secrets: the secret-storage
+machinery has been removed, so ``credential_backend`` and the other reserved
+backend keys are no longer legal in the file. The config CLI creates and
+edits it; no hand-editing is required.
+"""
+
+# The module-map entry for the deleted files, dropped outright.
+_INIT_MODULE_MAP_ENTRY = """\
+- ``secrets.py`` + ``*_backend.py`` — optional secret-storage machinery:
+  the backend dispatcher and the individual credential backends. Only
+  consulted when the schema marks fields ``secret``; deletable as a unit
+  when it marks none.
+"""
+
+
+def _replace_block(text: str, old: str, new: str) -> tuple[str, bool]:
+    """Replace a run of whole lines in *text*, whatever its line endings.
+
+    The blocks above are written with LF endings; a project checked out with
+    CRLF must be edited too, so both sides are re-joined with the file's own
+    ending before matching.
+
+    Args:
+        text: The file contents.
+        old: The block to find, as newline-separated lines.
+        new: Its replacement, or ``""`` to delete the block.
+
+    Returns:
+        A ``(new_text, replaced)`` tuple.
+    """
+    eol = "\r\n" if "\r\n" in text else "\n"
+    old_block = eol.join(old.splitlines()) + eol
+    if old_block not in text:
+        return text, False
+    new_block = eol.join(new.splitlines()) + eol if new else ""
+    return text.replace(old_block, new_block, 1), True
+
+
+def rewrite_config_init(text: str) -> tuple[str, list[str]]:
+    """Rewrite the config package docstring for a project with no secrets.
+
+    Retitles the module, replaces the storage paragraph, and drops the
+    module-map entry for the deleted files. Each part is independent, so a
+    project that has already edited some of them keeps its wording.
+
+    Args:
+        text: Contents of ``config/__init__.py``.
+
+    Returns:
+        A ``(new_text, changed)`` tuple, where *changed* names the parts that
+        were rewritten. An empty list means the docstring needs no edit.
+    """
+    changed: list[str] = []
+    if _INIT_TITLE_OLD in text:
+        text = text.replace(_INIT_TITLE_OLD, _INIT_TITLE_NEW, 1)
+        changed.append("module title")
+    text, replaced = _replace_block(text, _INIT_STORAGE_OLD, _INIT_STORAGE_NEW)
+    if replaced:
+        changed.append("config.toml paragraph")
+    text, replaced = _replace_block(text, _INIT_MODULE_MAP_ENTRY, "")
+    if replaced:
+        changed.append("module-map entry")
+    return text, changed
+
+
+def plan_edits(root: Path) -> list[tuple[Path, str, list[str]]]:
+    """Compute the rewritten contents of every file that describes the machinery.
+
+    Args:
+        root: Project root directory.
+
+    Returns:
+        A list of ``(path, new_text, changed)`` tuples for files that
+        actually change; empty when the docstring is already correct.
+    """
+    edits: list[tuple[Path, str, list[str]]] = []
+    for path in sorted(root.glob(_CONFIG_INIT_GLOB)):
+        text = _common.read_text(path)
+        if text is None:
+            continue
+        new_text, changed = rewrite_config_init(text)
+        if changed:
+            edits.append((path, new_text, changed))
+    return edits
 
 
 def find_schema(root: Path) -> Path | None:
@@ -155,7 +273,7 @@ def plan_deletions(root: Path) -> list[Path]:
 
 
 def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False, force: bool = False) -> int:
-    """Delete the secret-storage machinery and its test suites.
+    """Delete the secret-storage machinery and rewrite what described it.
 
     Refuses before deleting anything when the settings schema still declares
     secret fields, unless *force* is set.
@@ -173,13 +291,14 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False, force: b
     _common.section("Remove the secret-storage machinery")
 
     deletions = plan_deletions(root)
-    if not deletions:
+    edits = plan_edits(root)
+    if not deletions and not edits:
         print("\n  No secret-storage machinery found; nothing to remove.")
         return 0
 
     schema_path = find_schema(root)
     secret_fields = find_secret_fields(schema_path) if schema_path is not None else []
-    if secret_fields and schema_path is not None:
+    if deletions and secret_fields and schema_path is not None:
         where = schema_path.relative_to(root)
         listing = ", ".join(secret_fields)
         if not force:
@@ -199,9 +318,14 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False, force: b
         print(f"\n  WARNING: --force: {where} still declares secret field(s): {listing}.")
         print("  Configuration will not resolve until they are removed from the schema.")
 
-    print(f"\n  Files to delete ({len(deletions)}):")
-    for path in deletions:
-        print(f"    {path.relative_to(root)}")
+    if deletions:
+        print(f"\n  Files to delete ({len(deletions)}):")
+        for path in deletions:
+            print(f"    {path.relative_to(root)}")
+    if edits:
+        print(f"\n  Files to edit ({len(edits)}):")
+        for path, _, changed in edits:
+            print(f"    {path.relative_to(root)}  ({', '.join(changed)})")
 
     if dry_run:
         print("\n  (dry run -- nothing changed)")
@@ -215,11 +339,22 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False, force: b
     for path in deletions:
         path.unlink()
         print(f"  Deleted {path.relative_to(root)}")
+    for path, new_text, _ in edits:
+        _common.write_text(path, new_text)
+        print(f"  Edited {path.relative_to(root)}")
 
-    print(f"\n  Removed the secret-storage machinery: {len(deletions)} path(s) deleted.")
-    print("  Reminder (not done automatically):")
+    print(
+        f"\n  Removed the secret-storage machinery: {len(deletions)} path(s) deleted, "
+        f"{len(edits)} edited."
+    )
+    print("  Reminders (not done automatically):")
     print("    - Delete the 'keyring' and 'keyvault' extras in pyproject.toml's")
     print("      [project.optional-dependencies], then run 'uv lock' and 'uv sync'.")
+    print('    - Set CREDENTIAL_BACKEND = "none" in config/schema.py and prune the')
+    print("      backend names its comment block offers; they are no longer choices.")
+    print("    - Expect config/cli.py coverage to drop: its secret commands can never")
+    print("      run here and their tests skip. Lower --cov-fail-under to match rather")
+    print("      than keeping dead code for the number.")
     return 0
 
 

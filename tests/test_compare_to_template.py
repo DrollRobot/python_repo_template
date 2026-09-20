@@ -27,6 +27,7 @@ from compare_to_template import (
     _PRIVATE_REPO_DEPS_END,
     _PRIVATE_REPO_DEPS_START,
     MANIFEST,
+    SECRET_STORAGE_EDITED,
     SETUP_CONFIG_REL,
     TEMPLATE_KEBAB,
     TEMPLATE_SNAKE,
@@ -461,20 +462,28 @@ def test_normalize_project_text_leaves_other_files_alone() -> None:
 @pytest.mark.unit
 def test_effective_strict_demotes_mkdocs_edited_files_when_removed() -> None:
     entry = BaselineFile("CONTRIBUTING.md")
-    assert effective_strict(entry, has_mkdocs=True) is True
-    assert effective_strict(entry, has_mkdocs=False) is False
+    assert effective_strict(entry, has_mkdocs=True, has_secret_storage=True) is True
+    assert effective_strict(entry, has_mkdocs=False, has_secret_storage=True) is False
+
+
+@pytest.mark.unit
+def test_effective_strict_demotes_the_config_docstring_when_secrets_go() -> None:
+    """remove_secret_storage.py rewrites it, so the template side diverges."""
+    (entry,) = [e for e in MANIFEST if e.path in SECRET_STORAGE_EDITED]
+    assert effective_strict(entry, has_mkdocs=True, has_secret_storage=True) is True
+    assert effective_strict(entry, has_mkdocs=True, has_secret_storage=False) is False
 
 
 @pytest.mark.unit
 def test_effective_strict_keeps_other_files_strict() -> None:
     entry = BaselineFile("CLAUDE.md")
-    assert effective_strict(entry, has_mkdocs=False) is True
+    assert effective_strict(entry, has_mkdocs=False, has_secret_storage=True) is True
 
 
 @pytest.mark.unit
 def test_effective_strict_never_promotes_lenient_files() -> None:
     entry = BaselineFile("pyproject.toml", strict=False)
-    assert effective_strict(entry, has_mkdocs=True) is False
+    assert effective_strict(entry, has_mkdocs=True, has_secret_storage=True) is False
 
 
 # --- version notes and self-check ------------------------------------------------
