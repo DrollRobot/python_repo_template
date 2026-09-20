@@ -47,7 +47,7 @@ from tests._config_test_object import (
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 
 pytestmark = pytest.mark.unit
 
@@ -73,13 +73,20 @@ def _test_object_schema(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def secret_schema(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Swap in the test object that declares a secret field.
+    """Install a schema with a secret field and a policy that stores secrets.
 
     Requested by every test that exercises a secret. It runs after the
     autouse fixture above (autouse fixtures are set up first within a scope),
     so the secret-bearing object wins for those tests only.
+
+    CREDENTIAL_BACKEND is pinned too: it is the project's own constant, and a
+    project that stores no secrets sets it to "none", which unregisters the
+    secret commands. Reading it here would make these tests depend on a value
+    they are not testing. Tests that do test the policy set it themselves,
+    inside the test body, and still win.
     """
     monkeypatch.setattr("python_repo_template.config.cli.Settings", SecretTestObject)
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "prompt")
 
 
 def _install_backend(monkeypatch: pytest.MonkeyPatch, name: str, **functions: Any) -> None:
@@ -788,6 +795,10 @@ def test_secret_command_registration_follows_the_live_schema(
     downstream secret-free schema silently kept (or lost) the secret
     commands regardless of what the tests installed.
     """
+    # Pinned for the same reason as the secret_schema fixture: this test
+    # swaps cli.Settings directly, so it must not inherit the project's
+    # CREDENTIAL_BACKEND (a no-secrets project sets it to "none").
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "prompt")
     with pytest.raises(SystemExit):  # secret-free schema: no such command
         cli.main(["set-secret", "token"])
     assert "invalid choice: 'set-secret'" in capsys.readouterr().err

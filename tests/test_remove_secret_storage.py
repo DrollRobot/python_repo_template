@@ -322,8 +322,32 @@ def _strip_secret_fields(schema_path: Path) -> None:
     schema_path.write_text("".join(kept), encoding="utf-8")
 
 
-def _build_secret_free_project(root: Path) -> Path:
+def _set_credential_backend(schema_path: Path, policy: str) -> None:
+    """Rewrite the copied schema's CREDENTIAL_BACKEND constant to *policy*.
+
+    Both values a machinery-free project can hold are legal and must stay
+    green: "none" (this package stores no secrets, what the constant's own
+    comment tells such a project to set) and "prompt" (nobody picked, the
+    shipped default). The suite used to run only under the latter.
+
+    Args:
+        schema_path: The copied package's ``config/schema.py``.
+        policy: The CREDENTIAL_BACKEND value to write.
+    """
+    source = schema_path.read_text(encoding="utf-8")
+    original = 'CREDENTIAL_BACKEND = "prompt"'
+    assert source.count(original) == 1, f"{original} not found in {schema_path}"
+    schema_path.write_text(
+        source.replace(original, f'CREDENTIAL_BACKEND = "{policy}"'), encoding="utf-8"
+    )
+
+
+def _build_secret_free_project(root: Path, policy: str = "prompt") -> Path:
     """Copy this package into *root* with a secret-free schema and no machinery.
+
+    Args:
+        root: Directory to build the throwaway project in.
+        policy: The CREDENTIAL_BACKEND value the copied schema declares.
 
     Returns:
         The copied package's schema module.
@@ -341,13 +365,15 @@ def _build_secret_free_project(root: Path) -> Path:
 
     schema_path = root / "src" / "python_repo_template" / "config" / "schema.py"
     _strip_secret_fields(schema_path)
+    _set_credential_backend(schema_path, policy)
     return schema_path
 
 
 @pytest.mark.integration
 @pytest.mark.regression
 @pytest.mark.functional
-def test_config_tests_pass_with_the_machinery_removed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("policy", ["prompt", "none"])
+def test_config_tests_pass_with_the_machinery_removed(tmp_path: Path, policy: str) -> None:
     """The shipped config tests stay green in a secret-free project.
 
     Builds the state remove_secret_storage.py is for -- no secret fields, no
@@ -355,10 +381,15 @@ def test_config_tests_pass_with_the_machinery_removed(tmp_path: Path) -> None:
     with the config system against it. Guards the promise in
     tests/_config_test_object.py's docstring, which this repo's own CI (always
     the secret-bearing FIXME schema) cannot check.
+
+    Parametrized over both CREDENTIAL_BACKEND values such a project can hold:
+    "none" is what the constant's comment tells a no-secrets project to set,
+    and the shipped tests must not read the ambient constant where they mean
+    the schema they installed themselves.
     """
     project = tmp_path / "project"
     project.mkdir()
-    schema_path = _build_secret_free_project(project)
+    schema_path = _build_secret_free_project(project, policy)
     assert remove_secret_storage.find_secret_fields(schema_path) == []
 
     assert remove_secret_storage.run(project, assume_yes=True) == 0
