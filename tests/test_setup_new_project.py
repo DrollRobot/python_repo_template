@@ -671,7 +671,9 @@ def test_step_remove_secret_storage_forwards_assume_yes(
     )
     steps[-1].call(tmp_path, False)
     assert calls[0]["args"] == (tmp_path,)
-    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False}
+    # Forced: the FIXME schema still declares secret fields at setup time, so
+    # the script would refuse (it warns and names them instead).
+    assert calls[0]["kwargs"] == {"assume_yes": True, "dry_run": False, "force": True}
 
 
 @pytest.mark.unit

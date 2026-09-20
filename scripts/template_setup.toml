@@ -61,7 +61,10 @@ config_system = true
 # The secret-storage machinery inside the config package: the backend
 # dispatcher (config/secrets.py), every credential backend, and their tests.
 # Requires config_system. false deletes them all (for projects whose config
-# holds no secrets); keyring/keyvault below must then be false too.
+# holds no secrets); keyring/keyvault below must then be false too. Setup
+# forces the removal past its own schema check and names the FIXME secret
+# fields left behind: replace them with option(...) or drop them, or the
+# config system fails loudly on every run.
 secret_storage = true
 # OS-keyring secret backend (config/keyring_backend.py) and its unit-test
 # suite. Requires config_system and secret_storage. false deletes both files.

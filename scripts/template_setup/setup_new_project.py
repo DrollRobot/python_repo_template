@@ -450,10 +450,15 @@ def _step_remove_keyvault() -> PlannedStep:
 
 
 def _step_remove_secret_storage() -> PlannedStep:
-    """Build the secret-storage-removal step (only included when declined)."""
+    """Build the secret-storage-removal step (only included when declined).
+
+    Forced: the FIXME schema still declares its example secret fields at
+    setup time, and the script would otherwise refuse. It prints a warning
+    naming them, which is the reminder to replace them with option(...).
+    """
 
     def call(root: Path, dry_run: bool) -> int:
-        return remove_secret_storage.run(root, assume_yes=True, dry_run=dry_run)
+        return remove_secret_storage.run(root, assume_yes=True, dry_run=dry_run, force=True)
 
     return PlannedStep("remove_secret_storage", "Remove the secret-storage machinery", call)
 
