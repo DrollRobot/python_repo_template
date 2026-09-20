@@ -1,9 +1,11 @@
 """Unit tests for config.toml reading and validation in config/file.py.
 
-Deliberately independent of the secret-storage machinery: no document here
-uses ``credential_backend`` or any backend-declared key (those cases live in
-test_config_secrets.py, which is deleted with the machinery), so this file
-keeps passing in a project that removed it.
+Mostly independent of the secret-storage machinery: the validation rules
+themselves know nothing about it, so the bulk of this file runs against the
+secret-free test object and keeps passing in a project that removed the
+machinery. The few cases that assert on the reserved backend keys (which the
+machinery owns) carry the requires_secret_storage skip marker; the cases
+about secret values in the file use SecretTestObject and need no machinery.
 """
 
 from __future__ import annotations
@@ -17,12 +19,17 @@ import pytest
 
 from python_repo_template.config import file as config_file
 from python_repo_template.config.schema import ConfigError
-from tests._config_test_object import ConfigTestObject, block_secrets_module
+from tests._config_test_object import (
+    ConfigTestObject,
+    SecretTestObject,
+    block_secrets_module,
+    requires_secret_storage,
+)
 
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 pytestmark = pytest.mark.unit
 
@@ -71,6 +78,7 @@ def test_validate_accepts_full_valid_document(tmp_path: Path) -> None:
     config_file.validate_config(document, ConfigTestObject, path)
 
 
+@requires_secret_storage
 def test_validate_accepts_backend_reserved_keys(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -102,6 +110,7 @@ def test_secret_reserved_keys_empty_when_machinery_removed(
         config_file.validate_config(document, ConfigTestObject, path)
 
 
+@requires_secret_storage
 @pytest.mark.parametrize(
     "text",
     [
@@ -113,7 +122,7 @@ def test_secret_reserved_keys_empty_when_machinery_removed(
 def test_validate_accepts_secret_name_keys(tmp_path: Path, text: str) -> None:
     """<secret>_secret_name is a legal reserved key while the machinery exists."""
     document, path = _load(tmp_path, text)
-    config_file.validate_config(document, ConfigTestObject, path)
+    config_file.validate_config(document, SecretTestObject, path)
 
 
 def test_validate_rejects_secret_name_key_for_non_secret_field(tmp_path: Path) -> None:
@@ -123,11 +132,12 @@ def test_validate_rejects_secret_name_key_for_non_secret_field(tmp_path: Path) -
         config_file.validate_config(document, ConfigTestObject, path)
 
 
+@requires_secret_storage
 @pytest.mark.parametrize("value", ['""', "3"], ids=["empty", "non-string"])
 def test_validate_rejects_bad_secret_name_value(tmp_path: Path, value: str) -> None:
     document, path = _load(tmp_path, f"token_secret_name = {value}\n")
     with pytest.raises(ConfigError, match="non-empty string"):
-        config_file.validate_config(document, ConfigTestObject, path)
+        config_file.validate_config(document, SecretTestObject, path)
 
 
 def test_secret_name_keys_empty_when_machinery_removed(
@@ -164,7 +174,7 @@ def test_validate_rejects_unknown_profile_key(tmp_path: Path) -> None:
 def test_validate_rejects_secret_values_in_file(tmp_path: Path, text: str) -> None:
     document, path = _load(tmp_path, text)
     with pytest.raises(ConfigError, match=r"Secrets must never be stored in config.toml"):
-        config_file.validate_config(document, ConfigTestObject, path)
+        config_file.validate_config(document, SecretTestObject, path)
 
 
 def test_validate_rejects_non_string_default_profile(tmp_path: Path) -> None:

@@ -23,12 +23,12 @@ import pytest
 from python_repo_template.config import secrets
 from python_repo_template.config.resolve import resolve_settings
 from python_repo_template.config.schema import APP_NAME, CLI_NAME, ENV_PREFIX, ConfigError
-from tests._config_test_object import ConfigTestObject
+from tests._config_test_object import SecretTestObject
 
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 pytestmark = pytest.mark.unit
 
@@ -52,6 +52,16 @@ def _install_fake_backend(
         setattr(module, attr, value)
     monkeypatch.setitem(sys.modules, module.__name__, module)
     return module
+
+
+# --- schema policy -------------------------------------------------------------------
+def test_credential_backend_policy_is_valid() -> None:
+    """The schema's CREDENTIAL_BACKEND must name a policy or an available backend.
+
+    A schema check, but it needs the dispatcher to know which backends exist,
+    so it lives here and is deleted with the secret-storage machinery.
+    """
+    assert secrets.schema_backend_policy() in {"none", "prompt", *secrets.available_backends()}
 
 
 # --- dispatcher ----------------------------------------------------------------------
@@ -345,7 +355,7 @@ def test_resolver_pulls_secret_from_profile_backend(
         """,
         encoding="utf-8",
     )
-    settings: ConfigTestObject = resolve_settings(ConfigTestObject, config_path=config_path)
+    settings: SecretTestObject = resolve_settings(SecretTestObject, config_path=config_path)
     assert settings.token == "from-backend"  # noqa: S105
     # Profile-scoped service; profile's credential_backend overrode the top level.
     assert seen == [
@@ -365,7 +375,7 @@ def test_resolver_looks_up_secret_under_custom_name(
         'name = "n"\ncredential_backend = "fake"\ntoken_secret_name = "kv-token"\n',
         encoding="utf-8",
     )
-    settings: ConfigTestObject = resolve_settings(ConfigTestObject, config_path=config_path)
+    settings: SecretTestObject = resolve_settings(SecretTestObject, config_path=config_path)
     assert settings.token == "from-backend"  # noqa: S105
 
 
@@ -378,7 +388,7 @@ def test_resolver_missing_secret_name_is_actionable(
     config_path = tmp_path / "config.toml"
     config_path.write_text('name = "n"\ncredential_backend = "fake"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="'token_secret_name' is not set"):
-        resolve_settings(ConfigTestObject, config_path=config_path)
+        resolve_settings(SecretTestObject, config_path=config_path)
 
 
 @pytest.mark.integration
@@ -397,5 +407,5 @@ def test_resolver_accepts_backend_declared_keys_in_config(
         'fake_url = "https://x.invalid/"\n',
         encoding="utf-8",
     )
-    settings: ConfigTestObject = resolve_settings(ConfigTestObject, config_path=config_path)
+    settings: SecretTestObject = resolve_settings(SecretTestObject, config_path=config_path)
     assert settings.token == "https://x.invalid/"  # noqa: S105

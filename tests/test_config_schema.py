@@ -3,6 +3,11 @@
 These tests are generic over the schema: they iterate dataclasses.fields()
 rather than naming specific options, so they keep passing when a downstream
 repo replaces the FIXME example fields with its own.
+
+Nothing here imports the secret-storage machinery, so the module type-checks
+and runs in a project that deleted it. The one schema check that needs the
+dispatcher -- that CREDENTIAL_BACKEND names a real policy or backend -- lives
+in test_config_secrets.py, which is deleted along with it.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from python_repo_template.config.schema import (
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 pytestmark = pytest.mark.unit
 
@@ -59,13 +64,6 @@ def test_field_names_avoid_reserved_keys() -> None:
     )
     collisions = {f.name for f in fields(Settings)} & reserved
     assert not collisions
-
-
-def test_credential_backend_policy_is_valid() -> None:
-    """CREDENTIAL_BACKEND must name a policy or an available backend."""
-    from python_repo_template.config import secrets
-
-    assert secrets.schema_backend_policy() in {"none", "prompt", *secrets.available_backends()}
 
 
 def test_secret_fields_disable_repr() -> None:

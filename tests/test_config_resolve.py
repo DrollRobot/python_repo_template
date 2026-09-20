@@ -1,8 +1,14 @@
 """Unit tests for the precedence engine in config/resolve.py.
 
 All tests pass an explicit config_path under tmp_path and run against the
-fixed test object (tests/_config_test_object.py), so nothing here touches the real
-user config directory or depends on the repo's FIXME example fields.
+fixed test objects (tests/_config_test_object.py), so nothing here touches the
+real user config directory or depends on the repo's FIXME example fields.
+
+The precedence, coercion, and profile tests use the secret-free test object,
+so they exercise the engine in a project that removed the secret-storage
+machinery too. Tests that need a secret field use SecretTestObject and, when
+they also need the machinery itself, carry the requires_secret_storage skip
+marker.
 """
 
 from __future__ import annotations
@@ -18,14 +24,15 @@ from python_repo_template.config.resolve import PROFILE_ENV, resolve_settings
 from python_repo_template.config.schema import CLI_NAME, ENV_PREFIX, ConfigError
 from tests._config_test_object import (
     ConfigTestObject,
-    NoSecretsTestObject,
+    SecretTestObject,
     block_secrets_module,
+    requires_secret_storage,
 )
 
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 pytestmark = pytest.mark.unit
 
@@ -48,7 +55,14 @@ def config_path(tmp_path: Path) -> Path:
 
 
 def _resolve(config_path: Path, **kwargs: Any) -> ConfigTestObject:
+    """Resolve the secret-free test object; the secret layer is never reached."""
     result: ConfigTestObject = resolve_settings(ConfigTestObject, config_path=config_path, **kwargs)
+    return result
+
+
+def _resolve_secret(config_path: Path, **kwargs: Any) -> SecretTestObject:
+    """Resolve the test object carrying a required secret field."""
+    result: SecretTestObject = resolve_settings(SecretTestObject, config_path=config_path, **kwargs)
     return result
 
 
@@ -62,14 +76,22 @@ def _write(config_path: Path, text: str) -> None:
 def test_env_only_run_with_no_file(monkeypatch: pytest.MonkeyPatch, config_path: Path) -> None:
     """CI/headless: env vars alone produce a working run; defaults fill the rest."""
     monkeypatch.setenv(ENV_PREFIX + "NAME", "from-env")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     settings = _resolve(config_path)
     assert settings.name == "from-env"
-    assert settings.token == "tok"  # noqa: S105
     assert settings.count == 3
     assert settings.ratio == 0.5
     assert settings.flag is False
     assert settings.tags == []
+
+
+@requires_secret_storage
+def test_env_only_run_supplies_secrets(monkeypatch: pytest.MonkeyPatch, config_path: Path) -> None:
+    """A secret field resolves from its env var with no backend in play."""
+    monkeypatch.setenv(ENV_PREFIX + "NAME", "from-env")
+    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
+    settings = _resolve_secret(config_path)
+    assert settings.name == "from-env"
+    assert settings.token == "tok"  # noqa: S105
 
 
 def test_missing_required_is_actionable(config_path: Path) -> None:
@@ -77,29 +99,31 @@ def test_missing_required_is_actionable(config_path: Path) -> None:
         _resolve(config_path)
     message = str(excinfo.value)
     assert "name" in message
-    assert "token" in message
     assert ENV_PREFIX + "NAME" in message
-    assert ENV_PREFIX + "TOKEN" in message
     assert f"{CLI_NAME} init" in message
     assert str(config_path) in message
 
 
+@requires_secret_storage
 def test_missing_secret_without_backend_names_the_choice(config_path: Path) -> None:
     """A missing secret with no backend configured points at picking one."""
     with pytest.raises(ConfigError) as excinfo:
-        _resolve(config_path)
+        _resolve_secret(config_path)
     message = str(excinfo.value)
+    assert "token" in message
+    assert ENV_PREFIX + "TOKEN" in message
     assert "No credential_backend is configured" in message
     assert f"{CLI_NAME} set credential_backend" in message
 
 
+@requires_secret_storage
 def test_missing_secret_under_none_policy_points_at_env(
     monkeypatch: pytest.MonkeyPatch, config_path: Path
 ) -> None:
     """Under the 'none' policy the error names env vars, not set-secret."""
     monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
     with pytest.raises(ConfigError) as excinfo:
-        _resolve(config_path)
+        _resolve_secret(config_path)
     message = str(excinfo.value)
     assert "CREDENTIAL_BACKEND is 'none'" in message
     assert "set-secret" not in message
@@ -146,7 +170,7 @@ def test_no_secret_fields_resolves_without_secret_machinery(
     """A schema with no secret fields runs with config/secrets.py deleted."""
     block_secrets_module(monkeypatch)
     _write(config_path, 'name = "n"\n')
-    settings: NoSecretsTestObject = resolve_settings(NoSecretsTestObject, config_path=config_path)
+    settings = _resolve(config_path)
     assert settings.name == "n"
     assert settings.count == 3
 
@@ -158,7 +182,7 @@ def test_secret_fields_with_machinery_removed_is_actionable(
     block_secrets_module(monkeypatch)
     _write(config_path, 'name = "n"\n')
     with pytest.raises(ConfigError, match=r"secret-storage machinery.*removed"):
-        resolve_settings(ConfigTestObject, config_path=config_path)
+        _resolve_secret(config_path)
 
 
 def test_backend_keys_rejected_when_machinery_removed(
@@ -168,7 +192,7 @@ def test_backend_keys_rejected_when_machinery_removed(
     block_secrets_module(monkeypatch)
     _write(config_path, 'name = "n"\ncredential_backend = "keyring"\n')
     with pytest.raises(ConfigError, match="Unknown key 'credential_backend'"):
-        resolve_settings(NoSecretsTestObject, config_path=config_path)
+        _resolve(config_path)
 
 
 # --- precedence ----------------------------------------------------------------------
@@ -176,7 +200,6 @@ def test_backend_keys_rejected_when_machinery_removed(
 
 def test_precedence_across_all_layers(monkeypatch: pytest.MonkeyPatch, config_path: Path) -> None:
     """Peel layers off one by one; the next one down must win each time."""
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     _write(
         config_path,
         """
@@ -199,10 +222,7 @@ def test_precedence_across_all_layers(monkeypatch: pytest.MonkeyPatch, config_pa
     assert _resolve(config_path).name == "top"
 
 
-def test_profile_values_override_top_level_fallbacks(
-    monkeypatch: pytest.MonkeyPatch, config_path: Path
-) -> None:
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
+def test_profile_values_override_top_level_fallbacks(config_path: Path) -> None:
     _write(
         config_path,
         """
@@ -220,7 +240,6 @@ def test_profile_values_override_top_level_fallbacks(
 
 def test_override_type_is_checked(monkeypatch: pytest.MonkeyPatch, config_path: Path) -> None:
     monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     with pytest.raises(ConfigError, match="'count' in overrides"):
         _resolve(config_path, overrides={"count": "not-an-int"})
 
@@ -229,7 +248,6 @@ def test_override_type_is_checked(monkeypatch: pytest.MonkeyPatch, config_path: 
 
 
 def test_profile_selection_order(monkeypatch: pytest.MonkeyPatch, config_path: Path) -> None:
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     _write(
         config_path,
         """
@@ -250,10 +268,7 @@ def test_profile_selection_order(monkeypatch: pytest.MonkeyPatch, config_path: P
     assert _resolve(config_path).name == "from-c"  # default_profile last
 
 
-def test_unknown_profile_lists_available(
-    monkeypatch: pytest.MonkeyPatch, config_path: Path
-) -> None:
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
+def test_unknown_profile_lists_available(config_path: Path) -> None:
     _write(config_path, '[profiles.a]\nname = "x"\n')
     with pytest.raises(ConfigError, match=r"Profile 'zz' not found.*a"):
         _resolve(config_path, profile="zz")
@@ -287,7 +302,6 @@ def test_env_coercion(
     expected: object,
 ) -> None:
     monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     monkeypatch.setenv(ENV_PREFIX + env_name, raw)
     assert getattr(_resolve(config_path), field_name) == expected
 
@@ -308,7 +322,6 @@ def test_env_coercion_failures(
     match: str,
 ) -> None:
     monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     monkeypatch.setenv(ENV_PREFIX + env_name, raw)
     with pytest.raises(ConfigError, match=match):
         _resolve(config_path)
@@ -321,7 +334,6 @@ def test_file_type_mismatch_fails_loudly(
     monkeypatch: pytest.MonkeyPatch, config_path: Path
 ) -> None:
     monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     _write(config_path, 'count = "seven"\n')
     with pytest.raises(ConfigError, match="'count' in the top level"):
         _resolve(config_path)
@@ -329,7 +341,6 @@ def test_file_type_mismatch_fails_loudly(
 
 def test_file_bool_does_not_satisfy_int(monkeypatch: pytest.MonkeyPatch, config_path: Path) -> None:
     monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     _write(config_path, "count = true\n")
     with pytest.raises(ConfigError, match="'count' in the top level"):
         _resolve(config_path)
@@ -337,7 +348,6 @@ def test_file_bool_does_not_satisfy_int(monkeypatch: pytest.MonkeyPatch, config_
 
 def test_file_int_fills_float_field(monkeypatch: pytest.MonkeyPatch, config_path: Path) -> None:
     monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     _write(config_path, "ratio = 1\n")
     settings = _resolve(config_path)
     assert settings.ratio == 1.0
@@ -347,7 +357,7 @@ def test_file_int_fills_float_field(monkeypatch: pytest.MonkeyPatch, config_path
 def test_secret_in_file_is_rejected(config_path: Path) -> None:
     _write(config_path, 'token = "leaked"\n')
     with pytest.raises(ConfigError, match=r"Secrets must never be stored"):
-        _resolve(config_path)
+        _resolve_secret(config_path)
 
 
 # --- public entry point --------------------------------------------------------------

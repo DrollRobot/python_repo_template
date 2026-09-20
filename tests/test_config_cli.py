@@ -1,9 +1,15 @@
 """Tests for the config CLI (init / show / set / unset / profiles / secrets).
 
 Commands run in-process via ``cli.main([...])`` with the config directory
-pointed at ``tmp_path`` and the schema swapped for the fixed test object, so
+pointed at ``tmp_path`` and the schema swapped for a fixed test object, so
 nothing here touches the real user config, a real credential store (an
 in-memory fake backend stands in), or the repo's FIXME example fields.
+
+The default test object is secret-free, so every generic command test passes
+in a project that removed the secret-storage machinery. Tests that exercise
+secrets ask for the ``secret_schema`` fixture (which swaps in the test object
+declaring one) and, when they also need the machinery itself, carry the
+``requires_secret_storage`` skip marker.
 
 The fake is a module registered in ``sys.modules`` under the name the
 dispatcher imports, so the CLI reaches it through the real lookup in
@@ -31,12 +37,17 @@ import tomlkit
 from python_repo_template.config import cli
 from python_repo_template.config.paths import CONFIG_DIR_ENV
 from python_repo_template.config.schema import APP_NAME, ENV_PREFIX, ConfigError
-from tests._config_test_object import ConfigTestObject, block_secrets_module
+from tests._config_test_object import (
+    ConfigTestObject,
+    SecretTestObject,
+    block_secrets_module,
+    requires_secret_storage,
+)
 
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 pytestmark = pytest.mark.unit
 
@@ -56,8 +67,19 @@ def config_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def _test_object_schema(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Run the CLI against the fixed test object instead of the FIXME fields."""
+    """Run the CLI against the secret-free test object, not the FIXME fields."""
     monkeypatch.setattr("python_repo_template.config.cli.Settings", ConfigTestObject)
+
+
+@pytest.fixture
+def secret_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Swap in the test object that declares a secret field.
+
+    Requested by every test that exercises a secret. It runs after the
+    autouse fixture above (autouse fixtures are set up first within a scope),
+    so the secret-bearing object wins for those tests only.
+    """
+    monkeypatch.setattr("python_repo_template.config.cli.Settings", SecretTestObject)
 
 
 def _install_backend(monkeypatch: pytest.MonkeyPatch, name: str, **functions: Any) -> None:
@@ -134,7 +156,9 @@ def test_path_prints_config_location(config_dir: Path, capsys: pytest.CaptureFix
 # --- init ----------------------------------------------------------------------------
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_init_writes_config_and_stores_secret(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -161,14 +185,16 @@ def test_init_writes_config_and_stores_secret(
 
 @pytest.mark.integration
 def test_init_required_field_reprompts(monkeypatch: pytest.MonkeyPatch, config_dir: Path) -> None:
-    # First response empty for required 'name'; it must re-prompt. The last
-    # empty response declines the backend choice.
-    _feed_input(monkeypatch, ["", "n", "", "", "", "", ""])
+    # First response empty for required 'name'; it must re-prompt. The rest
+    # keep the defaults for count, ratio, flag, and tags.
+    _feed_input(monkeypatch, ["", "n", "", "", "", ""])
     assert cli.main(["init"]) == 0
     assert tomlkit.parse(_config_text(config_dir))["name"] == "n"
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_init_profile_scopes_secret_service(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -183,7 +209,9 @@ def test_init_profile_scopes_secret_service(
     assert fake_backend == {(f"{APP_NAME}:p", "token"): "tok"}
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_init_rejects_unknown_backend_and_reprompts(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -197,7 +225,9 @@ def test_init_rejects_unknown_backend_and_reprompts(
     assert tomlkit.parse(_config_text(config_dir))["credential_backend"] == "fake"
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_init_backend_skipped_prints_guidance_and_stores_nothing(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -213,7 +243,9 @@ def test_init_backend_skipped_prints_guidance_and_stores_nothing(
     assert "credential_backend" not in tomlkit.parse(_config_text(config_dir))
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_init_skips_backend_prompt_when_already_configured(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -246,6 +278,7 @@ def test_set_writes_coerced_value(config_dir: Path) -> None:
     assert tomlkit.parse(_config_text(config_dir))["count"] == 7
 
 
+@pytest.mark.usefixtures("secret_schema")
 def test_set_rejects_secret_key(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["set", "token", "x"]) == 1
     err = capsys.readouterr().err
@@ -253,6 +286,7 @@ def test_set_rejects_secret_key(capsys: pytest.CaptureFixture[str]) -> None:
     assert "set-secret token" in err
 
 
+@requires_secret_storage
 def test_set_rejects_unknown_key(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["set", "nope", "x"]) == 1
     err = capsys.readouterr().err
@@ -260,6 +294,7 @@ def test_set_rejects_unknown_key(capsys: pytest.CaptureFixture[str]) -> None:
     assert "credential_backend" in err  # reserved keys join the listing
 
 
+@requires_secret_storage
 def test_set_credential_backend_rejects_unknown_backend(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -269,11 +304,13 @@ def test_set_credential_backend_rejects_unknown_backend(
     assert "fake" in err  # the available backends are listed
 
 
+@requires_secret_storage
 def test_set_credential_backend_writes_choice(config_dir: Path) -> None:
     assert cli.main(["set", "credential_backend", "fake"]) == 0
     assert tomlkit.parse(_config_text(config_dir))["credential_backend"] == "fake"
 
 
+@requires_secret_storage
 def test_set_backend_declared_key_writes(monkeypatch: pytest.MonkeyPatch, config_dir: Path) -> None:
     """Keys a backend declares in RESERVED_KEYS are settable while it exists."""
     _install_backend(
@@ -286,6 +323,7 @@ def test_set_backend_declared_key_writes(monkeypatch: pytest.MonkeyPatch, config
     assert tomlkit.parse(_config_text(config_dir))["vaulted_url"] == "https://x.invalid/"
 
 
+@requires_secret_storage
 def test_unset_credential_backend_removes_choice(
     config_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -358,7 +396,9 @@ def test_use_unknown_profile_fails(config_dir: Path, capsys: pytest.CaptureFixtu
 # --- show ----------------------------------------------------------------------------
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_show_masks_secrets_and_reports_sources(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -388,6 +428,8 @@ def test_show_missing_required_is_actionable(capsys: pytest.CaptureFixture[str])
 # --- secrets -------------------------------------------------------------------------
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_set_secret_stores_via_backend(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -403,6 +445,8 @@ def test_set_secret_stores_via_backend(
     assert "s3" not in out  # value never echoed
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_set_secret_without_backend_is_actionable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -414,6 +458,8 @@ def test_set_secret_without_backend_is_actionable(
     assert "set credential_backend" in err
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_set_secret_uses_default_profile_service(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -428,6 +474,8 @@ def test_set_secret_uses_default_profile_service(
     assert fake_backend == {(f"{APP_NAME}:p", "token"): "s3"}
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_set_secret_rejects_empty_value(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -440,11 +488,14 @@ def test_set_secret_rejects_empty_value(
     assert "Empty value" in capsys.readouterr().err
 
 
+@pytest.mark.usefixtures("secret_schema")
 def test_set_secret_rejects_non_secret_key(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["set-secret", "name"]) == 1
     assert "not a secret" in capsys.readouterr().err
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_delete_secret_removes_stored_value(
     config_dir: Path,
     fake_backend: dict[tuple[str, str], str],
@@ -457,6 +508,8 @@ def test_delete_secret_removes_stored_value(
     assert fake_backend == {}
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_delete_secret_missing_fails_loudly(
     config_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -467,6 +520,8 @@ def test_delete_secret_missing_fails_loudly(
     assert "nothing deleted" in capsys.readouterr().err
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_delete_secret_without_storage_name_is_actionable(
     config_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -475,7 +530,9 @@ def test_delete_secret_without_storage_name_is_actionable(
     assert "'token_secret_name' is not set" in capsys.readouterr().err
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_set_secret_on_read_only_backend_names_the_manual_route(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -505,7 +562,9 @@ def test_set_secret_on_read_only_backend_names_the_manual_route(
 # --- secret storage names ------------------------------------------------------------
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_init_custom_secret_name_persists_and_scopes_storage(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -520,7 +579,9 @@ def test_init_custom_secret_name_persists_and_scopes_storage(
     assert fake_backend == {(APP_NAME, "kv-token"): "tok"}
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_set_secret_custom_name_persists_and_scopes_storage(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -537,6 +598,8 @@ def test_set_secret_custom_name_persists_and_scopes_storage(
     assert "token_secret_name" in capsys.readouterr().out
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_delete_secret_uses_custom_name(
     config_dir: Path,
     fake_backend: dict[tuple[str, str], str],
@@ -549,6 +612,8 @@ def test_delete_secret_uses_custom_name(
     assert fake_backend == {}
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_set_accepts_secret_name_key(config_dir: Path) -> None:
     """<field>_secret_name is a reserved key the set/unset commands accept."""
     assert cli.main(["set", "token_secret_name", "kv-token"]) == 0
@@ -558,11 +623,14 @@ def test_set_accepts_secret_name_key(config_dir: Path) -> None:
     assert "token_secret_name" not in tomlkit.parse(_config_text(config_dir))
 
 
+@requires_secret_storage
+@pytest.mark.usefixtures("secret_schema")
 def test_set_rejects_empty_secret_name(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["set", "token_secret_name", ""]) == 1
     assert "non-empty" in capsys.readouterr().err
 
 
+@requires_secret_storage
 @pytest.mark.integration
 def test_set_secret_honors_schema_default_secret_name(
     monkeypatch: pytest.MonkeyPatch,
@@ -596,7 +664,9 @@ def test_set_secret_honors_schema_default_secret_name(
 # --- schema backend policy -----------------------------------------------------------
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_init_schema_default_backend_skips_choice_prompt(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -615,7 +685,9 @@ def test_init_schema_default_backend_skips_choice_prompt(
     assert fake_backend == {(APP_NAME, "token"): "tok"}
 
 
+@requires_secret_storage
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_init_read_only_backend_prompts_name_only(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -640,6 +712,7 @@ def test_init_read_only_backend_prompts_name_only(
 
 
 @pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
 def test_init_none_policy_skips_secret_storage(
     monkeypatch: pytest.MonkeyPatch,
     config_dir: Path,
@@ -648,7 +721,6 @@ def test_init_none_policy_skips_secret_storage(
 ) -> None:
     """The 'none' policy prompts for nothing secret-related and stores nothing."""
     monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
-    monkeypatch.setattr(cli, "_SECRET_STORAGE_ACTIVE", False)
     _feed_input(monkeypatch, ["n", "", "", "", ""])
     _forbid_getpass(monkeypatch)
     assert cli.main(["init"]) == 0
@@ -659,11 +731,12 @@ def test_init_none_policy_skips_secret_storage(
     assert "credential_backend" not in tomlkit.parse(_config_text(config_dir))
 
 
+@pytest.mark.usefixtures("secret_schema")
 def test_none_policy_unregisters_secret_commands(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Secret fields but a 'none' policy: the secret commands stay unregistered."""
     monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
-    monkeypatch.setattr(cli, "_SECRET_STORAGE_ACTIVE", False)
     with pytest.raises(SystemExit):
         cli.main(["set-secret", "token"])
     assert "invalid choice: 'set-secret'" in capsys.readouterr().err
@@ -673,16 +746,15 @@ def test_none_policy_unregisters_secret_commands(
 
 
 def test_secret_commands_absent_without_secret_fields(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A schema with no secret fields gets no set-secret/delete-secret commands."""
-    monkeypatch.setattr(cli, "_HAS_SECRET_FIELDS", False)
-    monkeypatch.setattr(cli, "_SECRET_STORAGE_ACTIVE", False)
     with pytest.raises(SystemExit):
         cli.main(["set-secret", "token"])
     assert "invalid choice: 'set-secret'" in capsys.readouterr().err
 
 
+@pytest.mark.usefixtures("secret_schema")
 def test_set_secret_with_machinery_removed_is_actionable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -700,6 +772,51 @@ def test_backend_keys_unknown_when_machinery_removed(
     block_secrets_module(monkeypatch)
     assert cli.main(["set", "credential_backend", "fake"]) == 1
     assert "Unknown option 'credential_backend'" in capsys.readouterr().err
+
+
+# --- call-time schema gates ----------------------------------------------------------
+
+
+@pytest.mark.regression
+def test_secret_command_registration_follows_the_live_schema(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Swapping the schema mid-process changes which commands exist.
+
+    Guards against reintroducing an import-time snapshot of the schema: the
+    parser used to be built from flags computed once, at import, so a
+    downstream secret-free schema silently kept (or lost) the secret
+    commands regardless of what the tests installed.
+    """
+    with pytest.raises(SystemExit):  # secret-free schema: no such command
+        cli.main(["set-secret", "token"])
+    assert "invalid choice: 'set-secret'" in capsys.readouterr().err
+
+    monkeypatch.setattr(cli, "Settings", SecretTestObject)
+    # Registered now: the command parses and reaches its own error path
+    # (no backend configured) instead of argparse's "invalid choice".
+    assert cli.main(["set-secret", "token"]) == 1
+    assert "invalid choice" not in capsys.readouterr().err
+
+
+@pytest.mark.integration
+@pytest.mark.regression
+def test_init_secret_handling_follows_the_live_schema(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """init reads the schema at call time, so a mid-process swap is honored."""
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
+    _forbid_getpass(monkeypatch)
+    _feed_input(monkeypatch, ["n", "", "", "", ""])
+    assert cli.main(["init"]) == 0
+    assert "CREDENTIAL_BACKEND is 'none'" not in capsys.readouterr().out
+
+    monkeypatch.setattr(cli, "Settings", SecretTestObject)
+    _feed_input(monkeypatch, ["n", "", "", "", ""])
+    assert cli.main(["init", "--profile", "p"]) == 0
+    assert "CREDENTIAL_BACKEND is 'none'" in capsys.readouterr().out
 
 
 # --- file permissions ----------------------------------------------------------------

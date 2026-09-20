@@ -1,18 +1,29 @@
-"""Shared settings test object for the config unit tests.
+"""Shared settings test objects for the config unit tests.
 
 The resolver engine is generic over any dataclass following the schema
 conventions (see src/python_repo_template/config/schema.py). Tests run it
-against this fixed test object instead of the real ``Settings`` so they stay
+against these fixed test objects instead of the real ``Settings`` so they stay
 green when a downstream repo replaces the FIXME example fields.
 
-Also hosts :func:`block_secrets_module`, which simulates a project that
-deleted the secret-storage machinery (``config/secrets.py``), so the tests
-proving the rest of the config system survives that removal can run without
-actually deleting the file.
+Two objects, so the generic tests never depend on secret storage:
+
+- :class:`ConfigTestObject` -- every supported field type, no secret field.
+  The generic resolution / validation / coercion / CLI tests use it, so they
+  keep passing in a project whose schema declares no secrets and that deleted
+  the secret-storage machinery.
+- :class:`SecretTestObject` -- the same fields plus a required secret, for the
+  tests that genuinely exercise secrets.
+
+Also hosts :data:`requires_secret_storage`, the skip marker for tests that
+need the machinery present, and :func:`block_secrets_module`, which simulates
+a project that deleted it (``config/secrets.py``), so the tests proving the
+rest of the config system survives that removal can run without actually
+deleting the file.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,17 +33,25 @@ import pytest
 # Version of this test helper. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "1.1.0"
+__version__ = "2.0.0"
 
 _SECRETS_MODULE = "python_repo_template.config.secrets"
+
+# Skip marker for tests that need the secret-storage machinery itself: the
+# backend dispatcher, the reserved backend keys, or the CREDENTIAL_BACKEND
+# policy. Everything else must pass with or without it -- including the tests
+# that simulate its removal with block_secrets_module(), which stay unmarked.
+requires_secret_storage = pytest.mark.skipif(
+    importlib.util.find_spec(_SECRETS_MODULE) is None,
+    reason="secret-storage machinery (config/secrets.py) has been removed",
+)
 
 
 @dataclass(frozen=True)
 class ConfigTestObject:
-    """Fixed schema exercising every supported field type and classification."""
+    """Secret-free schema exercising every supported field type."""
 
     name: str = field(metadata={"help": "Required plain string"})
-    token: str = field(repr=False, metadata={"secret": True, "help": "Required secret"})
     count: int = field(default=3, metadata={"help": "Defaulted int"})
     ratio: float = field(default=0.5, metadata={"help": "Defaulted float"})
     flag: bool = field(default=False, metadata={"help": "Defaulted bool"})
@@ -40,11 +59,19 @@ class ConfigTestObject:
 
 
 @dataclass(frozen=True)
-class NoSecretsTestObject:
-    """Schema with no secret fields, for the machinery-is-optional tests."""
+class SecretTestObject:
+    """:class:`ConfigTestObject`'s fields plus a required secret.
+
+    Field order matches ConfigTestObject's so both objects prompt for the
+    same non-secret values, in the same order, during ``init``.
+    """
 
     name: str = field(metadata={"help": "Required plain string"})
+    token: str = field(repr=False, metadata={"secret": True, "help": "Required secret"})
     count: int = field(default=3, metadata={"help": "Defaulted int"})
+    ratio: float = field(default=0.5, metadata={"help": "Defaulted float"})
+    flag: bool = field(default=False, metadata={"help": "Defaulted bool"})
+    tags: list[str] = field(default_factory=list, metadata={"help": "Defaulted list"})
 
 
 class _BlockFinder:

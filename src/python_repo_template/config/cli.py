@@ -79,22 +79,40 @@ from python_repo_template.config.schema import (
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 _SECRET_MASK = "********"  # noqa: S105  (display placeholder, not a credential)
 
-# Whether the schema declares any secret field. Gates every secret-storage
-# path: with no secret fields, secrets.py is never imported and the secret
-# commands are not registered.
-_HAS_SECRET_FIELDS = any(is_secret(f) for f in fields(Settings))
 
-# Whether secret storage is in play at all: secret fields exist AND the
-# schema's CREDENTIAL_BACKEND policy is not "none". The raw constant is read
-# here (missing means "prompt", the pre-policy behavior); full validation
-# happens in secrets.schema_backend_policy() on paths that use it.
-_SECRET_STORAGE_ACTIVE = _HAS_SECRET_FIELDS and (
-    str(getattr(schema_module, "CREDENTIAL_BACKEND", "prompt")) != "none"
-)
+def _has_secret_fields() -> bool:
+    """Return True when the schema declares at least one secret field.
+
+    Gates every secret-storage path: with no secret fields, secrets.py is
+    never imported and the secret commands are not registered. Read at call
+    time, never snapshotted at import, so it tracks the schema actually in
+    force (tests swap ``Settings``; a downstream project replaces it).
+
+    Returns:
+        True when any field of ``Settings`` is marked secret.
+    """
+    return any(is_secret(f) for f in fields(Settings))
+
+
+def _secret_storage_active() -> bool:
+    """Return True when secret storage is in play at all.
+
+    Secret fields exist AND the schema's CREDENTIAL_BACKEND policy is not
+    ``"none"``. The raw constant is read here (missing means ``"prompt"``,
+    the pre-policy behavior); full validation happens in
+    ``secrets.schema_backend_policy()`` on the paths that use it. Like
+    :func:`_has_secret_fields`, evaluated at call time.
+
+    Returns:
+        True when the CLI should offer and use secret storage.
+    """
+    return _has_secret_fields() and (
+        str(getattr(schema_module, "CREDENTIAL_BACKEND", "prompt")) != "none"
+    )
 
 
 def _secrets_module() -> Any:
@@ -400,8 +418,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
                 break  # keep the schema default; write nothing
             print(f"{f.name} is required.")
 
-    secrets = _secrets_module() if _SECRET_STORAGE_ACTIVE else None
-    if _HAS_SECRET_FIELDS and secrets is None:
+    secrets = _secrets_module() if _secret_storage_active() else None
+    if _has_secret_fields() and secrets is None:
         print(
             "schema.CREDENTIAL_BACKEND is 'none'; secrets are not stored. "
             "Provide them via environment variables."
@@ -765,7 +783,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("profile")
     p.set_defaults(func=_cmd_use)
 
-    if _SECRET_STORAGE_ACTIVE:
+    if _secret_storage_active():
         p = add("set-secret", "Prompt for a secret's name (visible) and value (hidden); store it.")
         p.add_argument("key")
         p.add_argument("--profile", default=None, help="Target this profile's backend.")
