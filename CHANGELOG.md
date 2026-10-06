@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - With profiles defined but none selected, the config error now says to pick
   a profile instead of listing missing values.
+- The audit workflow's secret-scan job no longer fails in a project with
+  private git dependencies. It installed the whole project with no token to
+  fetch them; it now installs only detect-secrets, from a new `secrets`
+  dependency group that `dev` includes, so it needs no token at all.
 
 ## [1.15.0] - 2026-09-20 - Live schema gating
 
