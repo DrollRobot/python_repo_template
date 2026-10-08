@@ -110,13 +110,11 @@ class PlannedStep:
         label: One-line description shown in the preview/summary.
         call: Runs the step; ``call(root, dry_run)`` forwards to the
             underlying script's own ``run(..., assume_yes=True, dry_run=...)``.
-        destructive: Whether this step deletes things that cannot be restored.
     """
 
     key: str
     label: str
     call: Callable[[Path, bool], int]
-    destructive: bool = False
 
 
 def _load_toml(path: Path) -> tuple[dict[str, Any], str | None]:
@@ -516,9 +514,7 @@ def _step_reinit_git(config: Config) -> PlannedStep:
     def call(root: Path, dry_run: bool) -> int:
         return reinit_git.run(root, branch=config.branch, assume_yes=True, dry_run=dry_run)
 
-    return PlannedStep(
-        "reinit_git", f"Re-initialize git (branch '{config.branch}')", call, destructive=True
-    )
+    return PlannedStep("reinit_git", f"Re-initialize git (branch '{config.branch}')", call)
 
 
 def build_steps(config: Config) -> tuple[PlannedStep, ...]:

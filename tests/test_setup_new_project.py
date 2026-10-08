@@ -500,7 +500,6 @@ def test_build_steps_includes_reinit_when_requested() -> None:
     """reinit=true adds the destructive reinit_git step last."""
     steps = setup_new_project.build_steps(_make_config(reinit=True))
     assert steps[-1].key == "reinit_git"
-    assert steps[-1].destructive is True
 
 
 @pytest.mark.unit
