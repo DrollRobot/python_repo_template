@@ -16,6 +16,8 @@ Command              Behavior
                      only; read-only backends get the storage names plus a
                      pointer at where the values live.
 ``path``             Print the resolved config file path.
+``open``             Open config.toml in the program the OS associates
+                     with the file type.
 ``show``             Effective config after full resolution, secrets masked,
                      with each value's provenance.
 ``set KEY VALUE``    Write a non-secret to config.toml (comment-preserving).
@@ -50,6 +52,8 @@ import argparse
 import getpass
 import importlib
 import os
+import shutil
+import subprocess
 import sys
 from dataclasses import Field, fields
 from pathlib import Path
@@ -79,7 +83,7 @@ from python_repo_template.config.schema import (
 # Version of this module. It ships to projects generated from this template,
 # so bump on every change to let scripts/compare_to_template.py flag stale
 # copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 
 _SECRET_MASK = "********"  # noqa: S105  (display placeholder, not a credential)
 
@@ -480,6 +484,45 @@ def _cmd_path(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_open(args: argparse.Namespace) -> int:
+    """Open the config file in the program the OS associates with it.
+
+    The OS picks the program: ``os.startfile`` on Windows, ``open`` on macOS,
+    ``xdg-open`` elsewhere.
+
+    Args:
+        args: Parsed CLI arguments (unused).
+
+    Returns:
+        Process exit code.
+
+    Raises:
+        ConfigError: When the file does not exist yet, or, off Windows, the
+            opener command is missing or fails.
+    """
+    path = paths.config_path()
+    if not path.exists():
+        raise ConfigError(f"No config file at {path}. Run '{CLI_NAME} init' to create it.")
+    if sys.platform == "win32":
+        os.startfile(path)  # noqa: S606  (opens a known file path, no shell)
+    else:
+        opener = "open" if sys.platform == "darwin" else "xdg-open"
+        executable = shutil.which(opener)
+        if executable is None:
+            raise ConfigError(
+                f"Could not open {path}: {opener!r} not found. Open the file directly."
+            )
+        result = subprocess.run(  # noqa: S603  (fixed argv list, no shell)
+            [executable, str(path)], check=False
+        )
+        if result.returncode != 0:
+            raise ConfigError(
+                f"Could not open {path}: {opener!r} exited with status {result.returncode}."
+            )
+    print(f"Opened {path}")
+    return 0
+
+
 def _cmd_show(args: argparse.Namespace) -> int:
     """Print the effective configuration with provenance, secrets masked.
 
@@ -760,6 +803,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = add("path", "Print the config file path.")
     p.set_defaults(func=_cmd_path)
+
+    p = add("open", "Open the config file in the OS's default program for it.")
+    p.set_defaults(func=_cmd_open)
 
     p = add("show", "Show the effective config with provenance; secrets masked.")
     p.add_argument("--profile", default=None, help="Resolve this profile.")

@@ -1,4 +1,4 @@
-"""Tests for the config CLI (init / show / set / unset / profiles / secrets).
+"""Tests for the config CLI (init / open / show / set / unset / profiles / secrets).
 
 Commands run in-process via ``cli.main([...])`` with the config directory
 pointed at ``tmp_path`` and the schema swapped for a fixed test object, so
@@ -26,6 +26,7 @@ monkeypatch the schema constant.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -47,7 +48,7 @@ from tests._config_test_object import (
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "2.3.1"
+__version__ = "2.4.0"
 
 pytestmark = pytest.mark.unit
 
@@ -158,6 +159,71 @@ def _config_text(config_dir: Path) -> str:
 def test_path_prints_config_location(config_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["path"]) == 0
     assert str(config_dir / "config.toml") in capsys.readouterr().out
+
+
+# --- open ----------------------------------------------------------------------------
+
+
+def _fake_run(calls: list[list[str]], returncode: int = 0) -> Any:
+    """Stand-in for ``subprocess.run`` that records argv instead of launching."""
+
+    def run(argv: list[str], check: bool) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, returncode)
+
+    return run
+
+
+def test_open_missing_file_points_at_init(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["open"]) == 1
+    err = capsys.readouterr().err
+    assert "No config file" in err
+    assert "init" in err
+
+
+def test_open_on_windows_uses_startfile(monkeypatch: pytest.MonkeyPatch, config_dir: Path) -> None:
+    path = config_dir / "config.toml"
+    path.write_text('name = "n"\n', encoding="utf-8")
+    opened: list[Path] = []
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setattr("os.startfile", opened.append, raising=False)
+    assert cli.main(["open"]) == 0
+    assert opened == [path]
+
+
+@pytest.mark.parametrize(("platform", "opener"), [("darwin", "open"), ("linux", "xdg-open")])
+def test_open_on_posix_runs_the_platform_opener(
+    monkeypatch: pytest.MonkeyPatch, config_dir: Path, platform: str, opener: str
+) -> None:
+    path = config_dir / "config.toml"
+    path.write_text('name = "n"\n', encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr("sys.platform", platform)
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr("subprocess.run", _fake_run(calls))
+    assert cli.main(["open"]) == 0
+    assert calls == [[f"/usr/bin/{opener}", str(path)]]
+
+
+def test_open_without_opener_installed_is_actionable(
+    monkeypatch: pytest.MonkeyPatch, config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text('name = "n"\n', encoding="utf-8")
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert cli.main(["open"]) == 1
+    assert "'xdg-open' not found" in capsys.readouterr().err
+
+
+def test_open_opener_failure_is_reported(
+    monkeypatch: pytest.MonkeyPatch, config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text('name = "n"\n', encoding="utf-8")
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr("subprocess.run", _fake_run([], returncode=4))
+    assert cli.main(["open"]) == 1
+    assert "exited with status 4" in capsys.readouterr().err
 
 
 # --- init ----------------------------------------------------------------------------
