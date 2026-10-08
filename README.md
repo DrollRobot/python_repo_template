@@ -15,6 +15,7 @@ Based on some personal preference, and what I understand are the most widely use
 - **pre-commit** for git hooks to run checks before commits.
 - **ruff** for linting and formatting. Fast.
 - **mypy** for static type checking.
+- **vulture** for dead code detection.
 - **pytest** for testing.
 - **mkdocs** for documentation. Integrates easily with GitHub Pages for hosting.
 - **keyring** for local credential storage (optional backend). Cross-platform. Allows never keeping secrets in the repo.

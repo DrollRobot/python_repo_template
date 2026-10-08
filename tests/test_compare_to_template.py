@@ -323,8 +323,11 @@ def test_replay_python_version_leaves_other_files_alone() -> None:
 def test_replay_cleanup_pyproject_drops_template_only_lines() -> None:
     text = (
         'addopts = [\n    "--cov=scripts",\n]\nmypy_path = ["scripts", "scripts/template_setup"]\n'
+        'paths = ["src", "scripts"]\n'
     )
-    assert replay_cleanup_pyproject(text) == 'addopts = [\n]\nmypy_path = ["scripts"]\n'
+    assert replay_cleanup_pyproject(text) == (
+        'addopts = [\n]\nmypy_path = ["scripts"]\npaths = ["src"]\n'
+    )
 
 
 @pytest.mark.unit

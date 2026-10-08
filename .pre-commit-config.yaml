@@ -41,6 +41,9 @@
 # Pre-push hooks (run once on `git push`, slower whole-repo gates):
 #   uv-lock-check     -- fails if uv.lock is out of sync with pyproject.toml
 #   uv-audit          -- fails on known-vulnerable dependencies (needs network)
+#   vulture           -- fails on dead code (unused functions, classes,
+#                        variables); paths and ignored names are set in
+#                        pyproject.toml [tool.vulture]
 #   pytest-prepush    -- runs the pre-push test suite
 #                        (`-m "not live and not slow and not destructive_local
 #                        and not destructive_remote"`)
@@ -147,6 +150,15 @@ repos:
       - id: uv-audit
         name: uv audit
         entry: uv audit
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
+      # dead code checking
+      - id: vulture
+        name: vulture
+        entry: uv run vulture
         language: system
         stages: [pre-push]
         pass_filenames: false

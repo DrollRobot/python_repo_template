@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A vulture dead-code check over `src/` and `scripts/`, run as a pre-push hook
+  and in CI. Configured in pyproject.toml `[tool.vulture]`. `cleanup.py`
+  narrows it to `src/`, as it does for mypy.
+
 ### Fixed
 
 - With profiles defined but none selected, the config error now says to pick

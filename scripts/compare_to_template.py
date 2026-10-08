@@ -97,7 +97,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.25.0"
+__version__ = "1.26.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -706,7 +706,8 @@ def replay_cleanup_pyproject(text: str) -> str:
     text = text.replace(
         'mypy_path = ["scripts", "scripts/template_setup"]', 'mypy_path = ["scripts"]'
     )
-    return text.replace('files = ["src", "tests", "scripts"]', 'files = ["src", "tests"]')
+    text = text.replace('files = ["src", "tests", "scripts"]', 'files = ["src", "tests"]')
+    return text.replace('paths = ["src", "scripts"]', 'paths = ["src"]')
 
 
 def replay_private_repo_deps(rel: str, text: str) -> str:

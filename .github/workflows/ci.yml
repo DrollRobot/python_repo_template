@@ -4,8 +4,8 @@
 # This ci.yml is part of a starter repo scaffold.
 #
 # Purpose: Runs on every push to any branch and on every pull request to main,
-# on Ubuntu and Windows. Blocks merges if lint, formatting, type checking, or
-# unit tests fail. Integration tests (marked @pytest.mark.integration) are
+# on Ubuntu and Windows. Blocks merges if lint, formatting, type checking, dead
+# code checking, or unit tests fail. Integration tests (marked @pytest.mark.integration) are
 # excluded here because they require credentials; run them separately in a
 # secrets-aware workflow if needed.
 #
@@ -93,6 +93,9 @@ jobs:
 
       - name: Type check (mypy)
         run: uv run mypy
+
+      - name: Dead code (vulture)
+        run: uv run vulture
 
       - name: Offline tests
         run: uv run pytest -m "not live"

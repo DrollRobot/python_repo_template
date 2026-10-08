@@ -34,6 +34,9 @@ PYPROJECT = (
     "[tool.mypy]\n"
     'files = ["src", "tests", "scripts"]\n'
     'mypy_path = ["scripts", "scripts/template_setup"]\n'
+    "\n"
+    "[tool.vulture]\n"
+    'paths = ["src", "scripts"]\n'
 )
 
 
@@ -107,6 +110,12 @@ def test_strip_narrows_mypy_files_to_the_project() -> None:
     """The template's own scripts drop out of mypy's files."""
     result = strip_template_config(PYPROJECT)
     assert 'files = ["src", "tests"]\n' in result
+
+
+def test_strip_narrows_vulture_paths_to_the_project() -> None:
+    """The template's own scripts drop out of vulture's paths."""
+    result = strip_template_config(PYPROJECT)
+    assert 'paths = ["src"]\n' in result
 
 
 def test_strip_keeps_unrelated_lines() -> None:

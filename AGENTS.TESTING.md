@@ -36,6 +36,7 @@ uv lock --check
 uv run ruff check .                 # lint
 uv run ruff format .                # apply ruff formatting
 uv run mypy                         # type check (targets set in pyproject.toml)
+uv run vulture                      # dead code (paths set in pyproject.toml)
 
 # if package requires cross-platform support: type check the other OS targets
 # (bare `uv run mypy` above only checks the host platform)

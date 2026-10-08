@@ -12,10 +12,10 @@ It also trims the pyproject.toml lines that only matter while developing the
 template itself: the ``--cov=scripts`` coverage flag (the dev-script tests are
 deleted here, so scripts coverage would read as untested), the
 ``scripts/template_setup`` entry in mypy's search path (that folder is gone),
-and ``scripts`` from mypy's ``files``. The scripts themselves stay -- but they
-are the template's code, not the project's, so a downstream project should not
-have its type check fail on them. Run mypy on them by path
-(``uv run mypy scripts``) if you do edit them.
+and ``scripts`` from mypy's ``files`` and vulture's ``paths``. The scripts
+themselves stay -- but they are the template's code, not the project's, so a
+downstream project should not have its type check or dead-code check fail on
+them. Run mypy on them by path (``uv run mypy scripts``) if you do edit them.
 
 It does NOT edit prose for you; it prints reminders for the manual bits (such as
 working through the FIXMEs left in the project's own files).
@@ -54,6 +54,9 @@ PYPROJECT_EDITS = [
     # of the project: drop them from mypy's files so a downstream
     # `uv run mypy` covers src/ and tests/ only.
     ('files = ["src", "tests", "scripts"]', 'files = ["src", "tests"]'),
+    # Same for vulture: with scripts/template_setup/ gone, the compare script's
+    # feature flags read as dead code, which is not the project's to fix.
+    ('paths = ["src", "scripts"]', 'paths = ["src"]'),
 ]
 
 
