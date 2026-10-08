@@ -340,7 +340,87 @@ def test_init_refuses_configured_target(
 ) -> None:
     (config_dir / "config.toml").write_text('name = "n"\n', encoding="utf-8")
     assert cli.main(["init"]) == 1
-    assert "already configured" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "already configured" in err
+    assert "init --force" in err
+
+
+@pytest.mark.integration
+def test_init_force_replaces_whole_file(
+    monkeypatch: pytest.MonkeyPatch, config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text(
+        '# old comment\nname = "old"\ncount = 9\ndefault_profile = "p"\n\n'
+        '[profiles.p]\nname = "pn"\n',
+        encoding="utf-8",
+    )
+    _feed_input(monkeypatch, ["n", "", "", "", ""])
+    assert cli.main(["init", "--force"]) == 0
+    text = _config_text(config_dir)
+    assert tomlkit.parse(text).unwrap() == {"name": "n"}
+    assert "# old comment" not in text
+    assert "starting over" in capsys.readouterr().out
+
+
+@pytest.mark.integration
+def test_init_force_with_profile_still_replaces_whole_file(
+    monkeypatch: pytest.MonkeyPatch, config_dir: Path
+) -> None:
+    (config_dir / "config.toml").write_text(
+        'name = "top"\n\n[profiles.p]\nname = "old"\n\n[profiles.q]\nname = "q"\n',
+        encoding="utf-8",
+    )
+    _feed_input(monkeypatch, ["n", "", "", "", ""])
+    assert cli.main(["init", "--profile", "p", "--force"]) == 0
+    assert tomlkit.parse(_config_text(config_dir)).unwrap() == {"profiles": {"p": {"name": "n"}}}
+
+
+@pytest.mark.integration
+def test_init_force_recovers_malformed_file(
+    monkeypatch: pytest.MonkeyPatch, config_dir: Path
+) -> None:
+    (config_dir / "config.toml").write_text("name = [unclosed\n", encoding="utf-8")
+    _feed_input(monkeypatch, ["n", "", "", "", ""])
+    assert cli.main(["init", "--force"]) == 0
+    assert tomlkit.parse(_config_text(config_dir))["name"] == "n"
+
+
+def test_init_force_aborted_keeps_old_file(
+    monkeypatch: pytest.MonkeyPatch, config_dir: Path
+) -> None:
+    original = 'name = "old"\n'
+    (config_dir / "config.toml").write_text(original, encoding="utf-8")
+
+    def abort(prompt: str = "") -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", abort)
+    with pytest.raises(KeyboardInterrupt):
+        cli.main(["init", "--force"])
+    assert _config_text(config_dir) == original
+
+
+@requires_secret_storage
+@pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
+def test_init_force_restarts_secret_setup_and_leaves_stored_values(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+) -> None:
+    (config_dir / "config.toml").write_text(
+        'name = "old"\ncredential_backend = "fake"\ntoken_secret_name = "old-name"\n',
+        encoding="utf-8",
+    )
+    fake_backend[(APP_NAME, "old-name")] = "old-tok"
+    # The backend choice is prompted again: nothing from the old file survives.
+    _feed_input(monkeypatch, ["n", "", "", "", "", "fake", ""])
+    _feed_getpass(monkeypatch, ["tok"])
+    assert cli.main(["init", "--force"]) == 0
+    document = tomlkit.parse(_config_text(config_dir))
+    assert document["credential_backend"] == "fake"
+    assert document["token_secret_name"] == "token"  # noqa: S105  (a name, not a secret)
+    assert fake_backend == {(APP_NAME, "old-name"): "old-tok", (APP_NAME, "token"): "tok"}
 
 
 # --- set / unset ---------------------------------------------------------------------

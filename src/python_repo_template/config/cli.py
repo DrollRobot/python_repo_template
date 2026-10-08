@@ -14,7 +14,10 @@ Command              Behavior
                      backend storage NAME (visible input), then stores
                      secret VALUES via hidden prompts -- writable backends
                      only; read-only backends get the storage names plus a
-                     pointer at where the values live.
+                     pointer at where the values live. ``--force`` starts
+                     over: the new file replaces the whole existing one
+                     (every profile, every comment); secret values already
+                     in the backend stay there.
 ``path``             Print the resolved config file path.
 ``open``             Open config.toml in the program the OS associates
                      with the file type.
@@ -387,14 +390,20 @@ def _cmd_init(args: argparse.Namespace) -> int:
     already-configured target so a typo cannot silently overwrite a tenant's
     settings.
 
+    ``--force`` skips that refusal and starts from an empty document, so the
+    saved file replaces the existing one whole: every profile and comment is
+    dropped, and a malformed file is never parsed. The old file stays intact
+    until that save, so an aborted run loses nothing. Secret values already
+    in the backend are left there.
+
     Args:
-        args: Parsed CLI arguments (``profile``).
+        args: Parsed CLI arguments (``profile``, ``force``).
 
     Returns:
         Process exit code.
     """
     path = paths.config_path()
-    document = _load_document(path)
+    document = tomlkit.document() if args.force else _load_document(path)
     table = _profile_table(document, args.profile, create=True)
 
     already = [f.name for f in fields(Settings) if f.name in table]
@@ -402,10 +411,13 @@ def _cmd_init(args: argparse.Namespace) -> int:
         target = f"profile {args.profile!r}" if args.profile else f"the top level of {path}"
         raise ConfigError(
             f"{target} is already configured ({', '.join(already)}). "
-            f"Use '{CLI_NAME} set' / '{CLI_NAME} set-secret' to change values."
+            f"Use '{CLI_NAME} set' / '{CLI_NAME} set-secret' to change values, or "
+            f"'{CLI_NAME} init --force' to start over with a new config file."
         )
 
     hints = get_type_hints(Settings)
+    if args.force and path.exists():
+        print(f"--force: starting over; the existing {path} will be replaced.")
     print(f"Writing {path}" + (f" (profile {args.profile!r})" if args.profile else ""))
     for f in fields(Settings):
         if is_secret(f):
@@ -799,6 +811,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = add("init", "Interactive first-time setup.")
     p.add_argument("--profile", default=None, help="Create/populate this profile.")
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="Start over: replace the whole existing config file, every profile included.",
+    )
     p.set_defaults(func=_cmd_init)
 
     p = add("path", "Print the config file path.")

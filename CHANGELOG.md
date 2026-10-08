@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `config open` opens config.toml in the program the OS associates with the
   file type (`os.startfile` on Windows, `open` on macOS, `xdg-open` elsewhere).
+- `config init --force` starts over: the new file replaces the whole existing
+  config.toml, every profile included, and a malformed file is never parsed.
+  The old file is kept until the new one is saved. Secret values already in
+  the backend are left there.
 - A vulture dead-code check over `src/` and `scripts/`, run as a pre-push hook
   and in CI. Configured in pyproject.toml `[tool.vulture]`. `cleanup.py`
   narrows it to `src/`, as it does for mypy.
