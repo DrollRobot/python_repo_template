@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   private git dependencies. It installed the whole project with no token to
   fetch them; it now installs only detect-secrets, from a new `secrets`
   dependency group that `dev` includes, so it needs no token at all.
+- The audit workflow's secret-scan job no longer fails after a Windows commit
+  removes a file's last secret. The pre-commit hook kept that file's baseline
+  entries on Windows, and CI then rewrote the baseline and failed.
 
 ## [1.15.0] - 2026-09-20 - Live schema gating
 

@@ -24,7 +24,9 @@
 #                        types-* package instead); runs when pyproject.toml
 #                        is staged
 #   detect-secrets    -- prevents secrets from being committed; runs from the
-#                        project venv (dev dependency, version from uv.lock).
+#                        project venv (dev dependency, version from uv.lock)
+#                        through tests/detect_secrets_hook.py, which makes it
+#                        update the baseline on Windows the way CI does.
 #                        Requires a baseline file; create it once with:
 #                          uv run detect-secrets scan > .secrets.baseline
 #   secrets-baseline-audited
@@ -82,10 +84,14 @@ repos:
   # detect-secrets
   - repo: local
     hooks:
+      # The wrapper fixes path matching on Windows, where the plain hook keeps
+      # baseline entries for files with no secrets left and CI then fails.
+      # Serial: parallel batches each rewrite the baseline and the last one wins.
       - id: detect-secrets
         name: Detect secrets
-        entry: uv run detect-secrets-hook --baseline .secrets.baseline
+        entry: uv run python tests/detect_secrets_hook.py --baseline .secrets.baseline
         language: system
+        require_serial: true
 
       # The hook above only checks that findings are *in* the baseline; this
       # gate requires every entry to be an audited false positive, so a

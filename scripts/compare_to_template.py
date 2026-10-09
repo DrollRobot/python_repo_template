@@ -299,6 +299,11 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # Same deal for the hook-environment gate: it ships to every project (no
     # matching script, so cleanup.py keeps it) and carries a __version__.
     BaselineFile("tests/test_secrets_guards_under_hook_env.py", versioned=True),
+    # The detect-secrets hook wrapper ships to every project (it backs the
+    # detect-secrets pre-commit hook) along with its tests; both carry a
+    # __version__.
+    BaselineFile("tests/detect_secrets_hook.py", versioned=True),
+    BaselineFile("tests/test_detect_secrets_hook.py", versioned=True),
 )
 
 # Tracked template paths deliberately not compared. Prefixes cover the
