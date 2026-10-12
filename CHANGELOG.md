@@ -7,17 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-10-12 - Config open and init --force
+
 ### Added
 
-- `config open` opens config.toml in the program the OS associates with the
-  file type (`os.startfile` on Windows, `open` on macOS, `xdg-open` elsewhere).
-- `config init --force` starts over: the new file replaces the whole existing
-  config.toml, every profile included, and a malformed file is never parsed.
-  The old file is kept until the new one is saved. Secret values already in
-  the backend are left there.
-- A vulture dead-code check over `src/` and `scripts/`, run as a pre-push hook
-  and in CI. Configured in pyproject.toml `[tool.vulture]`. `cleanup.py`
-  narrows it to `src/`, as it does for mypy.
+- `config open` opens config.toml.
+- `config init --force` replaces the existing config.toml with a new one.
+- A dead-code check (vulture) in pre-push and CI.
 
 ### Changed
 
@@ -26,15 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- With profiles defined but none selected, the config error now says to pick
-  a profile instead of listing missing values.
-- The audit workflow's secret-scan job no longer fails in a project with
-  private git dependencies. It installed the whole project with no token to
-  fetch them; it now installs only detect-secrets, from a new `secrets`
-  dependency group that `dev` includes, so it needs no token at all.
-- The audit workflow's secret-scan job no longer fails after a Windows commit
-  removes a file's last secret. The pre-commit hook kept that file's baseline
-  entries on Windows, and CI then rewrote the baseline and failed.
+- The config error now says to pick a profile when none is selected.
+- The CI secret scan no longer fails in projects with private dependencies.
+- The CI secret scan no longer fails after a secret is removed on Windows.
+- `remove_secret_storage.py` no longer fails on Python versions before 3.14.
+
+### Security
+
+- Upgraded `pyjwt` to 2.15.1 (GHSA-42vr-xj54-vc7v).
 
 ## [1.15.0] - 2026-09-20 - Live schema gating
 
@@ -420,7 +415,8 @@ Initial release: a Python project template scaffold.
   scaffolding for settings and keyring-backed credentials.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.15.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.16.0...HEAD
+[1.16.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.12.0...v1.13.0
