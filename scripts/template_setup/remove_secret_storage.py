@@ -238,7 +238,7 @@ def find_secret_fields(schema_path: Path) -> list[str]:
     """
     try:
         tree = ast.parse(schema_path.read_text(encoding="utf-8"))
-    except OSError, SyntaxError, ValueError:
+    except (OSError, SyntaxError, ValueError):  # fmt: skip
         return []
     names: list[str] = []
     for node in ast.walk(tree):
