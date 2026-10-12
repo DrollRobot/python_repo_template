@@ -97,17 +97,17 @@ uv run detect-secrets scan > .secrets.baseline
        - Permissions → Repository permissions → Contents: Read-only (Metadata: Read is added automatically). Nothing else.
        - Webhook → uncheck Active (you don't need events).
        - Where can this be installed → Only on this account.
-   2. Mint a private key — on the App's page, "Generate a private key", download the .pem. Note the numeric App ID shown at the top.
+   2. Mint a private key — on the App's page, "Generate a private key", download the .pem. Note the Client ID shown at the top.
    3. Install the App onto the repos it needs to touch.
        - Org Settings → the App → Install → select repositories.
    4. Save the credentials in the repo using the private dependencies:
 ```bash
-      gh secret set GRAPH_AUTH_APP_PRIVATE_KEY < path/to/app.private-key.pem
-      gh variable set GRAPH_AUTH_CLIENT_ID --body "123456"
+      gh secret set GH_APP_PRIVATE_KEY < path/to/app.private-key.pem
+      gh variable set GH_APP_CLIENT_ID --body "<app client id>"
 ```
 ```powershell
-      Get-Content -Raw path\to\app.private-key.pem | gh secret set GRAPH_AUTH_APP_PRIVATE_KEY
-      gh variable set GRAPH_AUTH_CLIENT_ID --body "123456"
+      Get-Content -Raw path\to\app.private-key.pem | gh secret set GH_APP_PRIVATE_KEY
+      gh variable set GH_APP_CLIENT_ID --body "<app client id>"
 ```
    6. Uncomment section in .github/workflows/ audit.yml, ci.yml, and docs.yml.
    7. Update actions/create-github-app-token to latest trusted commit.

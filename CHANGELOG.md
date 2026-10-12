@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and in CI. Configured in pyproject.toml `[tool.vulture]`. `cleanup.py`
   narrows it to `src/`, as it does for mypy.
 
+### Changed
+
+- The private-repo token variable and secret are renamed to `GH_APP_CLIENT_ID`
+  and `GH_APP_PRIVATE_KEY`.
+
 ### Fixed
 
 - With profiles defined but none selected, the config error now says to pick
