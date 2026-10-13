@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The config tests now pass whatever `CREDENTIAL_BACKEND` a project picks.
+- Dependabot PRs no longer fail CI in projects with private dependencies. The README's
+  setup steps now save the app key for Dependabot too.
 
 ## [1.16.0] - 2026-10-12 - Config open and init --force
 

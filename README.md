@@ -100,13 +100,16 @@ uv run detect-secrets scan > .secrets.baseline
    2. Mint a private key — on the App's page, "Generate a private key", download the .pem. Note the Client ID shown at the top.
    3. Install the App onto the repos it needs to touch.
        - Org Settings → the App → Install → select repositories.
-   4. Save the credentials in the repo using the private dependencies:
+   4. Save the credentials in the repo using the private dependencies. The key is saved
+      twice because Dependabot's CI runs can't read the repo's other secrets:
 ```bash
       gh secret set GH_APP_PRIVATE_KEY < path/to/app.private-key.pem
+      gh secret set GH_APP_PRIVATE_KEY --app dependabot < path/to/app.private-key.pem
       gh variable set GH_APP_CLIENT_ID --body "<app client id>"
 ```
 ```powershell
       Get-Content -Raw path\to\app.private-key.pem | gh secret set GH_APP_PRIVATE_KEY
+      Get-Content -Raw path\to\app.private-key.pem | gh secret set GH_APP_PRIVATE_KEY --app dependabot
       gh variable set GH_APP_CLIENT_ID --body "<app client id>"
 ```
    6. Uncomment section in .github/workflows/ audit.yml, ci.yml, and docs.yml.
