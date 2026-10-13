@@ -20,17 +20,20 @@ from typing import Any
 
 import pytest
 
-from python_repo_template.config import secrets
+from python_repo_template.config import schema, secrets
 from python_repo_template.config.resolve import resolve_settings
 from python_repo_template.config.schema import APP_NAME, CLI_NAME, ENV_PREFIX, ConfigError
-from tests._config_test_object import SecretTestObject
+from tests._config_test_object import SecretTestObject, pin_prompt_policy
 
 # Version of this test module. It ships to projects generated from this
 # template, so bump on every change to let scripts/compare_to_template.py
 # flag stale copies.
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 
 pytestmark = pytest.mark.unit
+
+# The project's own policy, read at import, before _prompt_policy replaces it.
+_PROJECT_POLICY = schema.CREDENTIAL_BACKEND
 
 
 @pytest.fixture(autouse=True)
@@ -41,6 +44,12 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ):
         if key.startswith(ENV_PREFIX):
             monkeypatch.delenv(key)
+
+
+@pytest.fixture(autouse=True)
+def _prompt_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test the dispatcher, not the project's CREDENTIAL_BACKEND choice."""
+    pin_prompt_policy(monkeypatch)
 
 
 def _install_fake_backend(
@@ -55,12 +64,14 @@ def _install_fake_backend(
 
 
 # --- schema policy -------------------------------------------------------------------
-def test_credential_backend_policy_is_valid() -> None:
+def test_credential_backend_policy_is_valid(monkeypatch: pytest.MonkeyPatch) -> None:
     """The schema's CREDENTIAL_BACKEND must name a policy or an available backend.
 
     A schema check, but it needs the dispatcher to know which backends exist,
-    so it lives here and is deleted with the secret-storage machinery.
+    so it lives here and is deleted with the secret-storage machinery. It is
+    the one test about the project's own value, so it puts that value back.
     """
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", _PROJECT_POLICY)
     assert secrets.schema_backend_policy() in {"none", "prompt", *secrets.available_backends()}
 
 
@@ -216,11 +227,6 @@ def test_reserved_config_passes_secret_name_keys(monkeypatch: pytest.MonkeyPatch
 
 
 # --- schema backend policy -----------------------------------------------------------
-
-
-def test_schema_backend_policy_defaults_to_prompt() -> None:
-    """The template schema ships with the 'prompt' policy."""
-    assert secrets.schema_backend_policy() == "prompt"
 
 
 def test_schema_backend_policy_rejects_unknown_value(monkeypatch: pytest.MonkeyPatch) -> None:

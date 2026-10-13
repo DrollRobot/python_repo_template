@@ -26,19 +26,21 @@ from tests._config_test_object import (
     ConfigTestObject,
     SecretTestObject,
     block_secrets_module,
+    pin_prompt_policy,
     requires_secret_storage,
 )
 
 # Version of this test module. It ships to projects generated from this
 # template (cleanup.py keeps it: no script or hook shares its name), so bump
 # on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "2.3.1"
+__version__ = "2.4.0"
 
 pytestmark = pytest.mark.unit
 
-# No test here configures a credential_backend, so the resolver never touches
-# a real credential store: with no backend configured the secret layer is
-# skipped by design (the old autouse get_secret stub is unnecessary).
+# No test here configures a credential_backend, and _prompt_policy removes the
+# schema default, so the resolver never touches a real credential store: with
+# no backend selected the secret layer is skipped by design (the old autouse
+# get_secret stub is unnecessary).
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +49,12 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ):
         if key.startswith(ENV_PREFIX):
             monkeypatch.delenv(key)
+
+
+@pytest.fixture(autouse=True)
+def _prompt_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test the resolver, not the project's CREDENTIAL_BACKEND choice."""
+    pin_prompt_policy(monkeypatch)
 
 
 @pytest.fixture

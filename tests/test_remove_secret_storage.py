@@ -24,6 +24,7 @@ template.
 from __future__ import annotations
 
 import ast
+import re
 import shutil
 import subprocess
 import sys
@@ -340,10 +341,10 @@ def _set_credential_backend(schema_path: Path, policy: str) -> None:
         policy: The CREDENTIAL_BACKEND value to write.
     """
     source = schema_path.read_text(encoding="utf-8")
-    original = 'CREDENTIAL_BACKEND = "prompt"'
-    assert source.count(original) == 1, f"{original} not found in {schema_path}"
+    constant = re.compile(r'^CREDENTIAL_BACKEND = "[^"]*"$', re.MULTILINE)
+    assert len(constant.findall(source)) == 1, f"CREDENTIAL_BACKEND not found in {schema_path}"
     schema_path.write_text(
-        source.replace(original, f'CREDENTIAL_BACKEND = "{policy}"'), encoding="utf-8"
+        constant.sub(f'CREDENTIAL_BACKEND = "{policy}"', source), encoding="utf-8"
     )
 
 

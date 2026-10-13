@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The config tests now pass whatever `CREDENTIAL_BACKEND` a project picks.
+
 ## [1.16.0] - 2026-10-12 - Config open and init --force
 
 ### Added
