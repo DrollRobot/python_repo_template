@@ -29,10 +29,10 @@ conventions, required checks, and how to run tests.
 - Do not fight automatic formatting. Always commit autoformatting changes, even if
   they're out of scope for the current task.
 
-## pre-commit
+  ## pre-commit
 - Formatting changes and detect-secrets updates to the .secrets.baseline are routine
-  and expected. If all that's required is re-staging and re-committing, this is not
-  something worth reporting to the user. Just move on.
+  and expected. If all that's required is re-staging and re-committing, DO NOT REPORT
+  TO THE USER. Only report when user interaction is required.
 
 ## detect-secrets
 This repo uses detect-secrets.
