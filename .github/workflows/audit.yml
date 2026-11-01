@@ -29,7 +29,7 @@ run-name: Audit on ${{ github.ref_name }} ${{ github.event_name }} by @${{ githu
 
 on:
   push:
-    branches: ['**']  # '**' also matches names with a slash (feature/foo); tags excluded
+    branches: ['**']
   pull_request:
     branches: [main]
 
@@ -81,10 +81,6 @@ jobs:
         run: uv audit
 
   # Secret scanning.
-
-  # detect-secrets runs at the version locked in uv.lock (the "secrets"
-  # dependency group), so local pre-commit scans and CI use the same release.
-  # Only that group is installed: no project, so no private deps or token.
   secret-scan:
     runs-on: ubuntu-latest
     steps:
@@ -99,18 +95,11 @@ jobs:
       - name: Sync detect-secrets
         run: uv sync --locked --only-group secrets
 
-      # --no-sync: a plain `uv run` would sync the whole project first.
-      # Fails if any tracked file contains a detection that is not already
-      # recorded in .secrets.baseline.
       - name: Scan tracked files for new secrets
         run: |
           git ls-files -z | xargs -0 -r \
             uv run --no-sync detect-secrets-hook --baseline .secrets.baseline
 
-      # This blocks the two ways the baseline can be used to smuggle a secret
-      # past the scan above:
-      #   UNVERIFIED    -- entry added by `scan` that nobody reviewed
-      #   VERIFIED_TRUE -- entry a human confirmed is a real secret
       - name: Require every baseline entry to be an audited false positive
         run: |
           uv run --no-sync detect-secrets audit --report .secrets.baseline > secrets-report.json
