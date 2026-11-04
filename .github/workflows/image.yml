@@ -1,0 +1,133 @@
+# .github/workflows/image.yml
+
+name: Image
+run-name: Image on ${{ github.ref_name }} ${{ github.event_name }} by @${{ github.actor }}
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ${{ github.event.repository.name }}:ci
+  # Publish from main only, and only once scripts/container_job.py has set the
+  # repo up: the CI identity's federated credential trusts refs/heads/main and
+  # nothing else, so other branches build and test only. Without ACR_NAME (the
+  # template itself, or a project not onboarded yet) main builds and tests too.
+  PUBLISH: ${{ github.ref == 'refs/heads/main' && vars.ACR_NAME != '' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # the OIDC token azure/login exchanges for an Azure sign-in
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the Python version
+        id: python
+        run: echo "version=$(cat .python-version)" >> "$GITHUB_OUTPUT"
+
+      # <private-repo-deps>
+      # FIXME uncomment if using Github app tokens to access private repos
+      # - name: Mint a token for private git deps
+      #   id: app-token
+      #   # Best practice to use specific commit hashes of external dependencies
+      #   # Find major tag commit hashes:
+      #   # gh api repos/actions/create-github-app-token/tags --jq '.[] | "\(.name) \(.commit.sha)"'
+      #   uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      #   with:
+      #     client-id: ${{ vars.GH_APP_CLIENT_ID }}
+      #     private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+      #     owner: ${{ github.repository_owner }}
+      #     repositories: repo1, repo2
+      # </private-repo-deps>
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the image
+        # Pinned to a commit: with private deps, this step receives the token.
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          build-args: PYTHON_VERSION=${{ steps.python.outputs.version }}
+          load: true
+          tags: ${{ env.IMAGE }}
+          # <private-repo-deps>
+          # FIXME uncomment along with the token step above
+          # secrets: gh_token=${{ steps.app-token.outputs.token }}
+          # </private-repo-deps>
+
+      - name: Smoke test the entrypoint
+        # --help imports every module, so a missing dependency fails here.
+        run: docker run --rm "$IMAGE" --help
+
+      # <private-repo-deps>
+      # FIXME uncomment along with the token step above
+      # - name: Check the image holds no GitHub token
+      #   env:
+      #     GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      #   run: |
+      #     if docker history --no-trunc "$IMAGE" | grep -qF "$GH_TOKEN"; then
+      #       echo "::error::The GitHub token is in the image history."
+      #       exit 1
+      #     fi
+      #     if docker run --rm --user root -e T="$GH_TOKEN" --entrypoint sh "$IMAGE" -c \
+      #         'grep -rlF "$T" / --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev 2>/dev/null'; then
+      #       echo "::error::The GitHub token is in the image's files (listed above)."
+      #       exit 1
+      #     fi
+      # </private-repo-deps>
+
+      - name: Read the package version
+        if: env.PUBLISH == 'true'
+        id: version
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to Azure
+        if: env.PUBLISH == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Push the image
+        if: env.PUBLISH == 'true'
+        env:
+          REGISTRY: ${{ vars.ACR_NAME }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          az acr login --name "$REGISTRY"
+          repository="$REGISTRY.azurecr.io/${{ github.event.repository.name }}"
+          for tag in "$VERSION" "$GITHUB_SHA"; do
+            docker tag "$IMAGE" "$repository:$tag"
+            docker push "$repository:$tag"
+          done
+
+      - name: Point the job at the new image
+        # The job runs one exact image, so without this a release would sit in
+        # the registry while the job kept running the previous one.
+        if: env.PUBLISH == 'true'
+        env:
+          REGISTRY: ${{ vars.ACR_NAME }}
+          JOB: ${{ vars.CONTAINER_APP_JOB }}
+          RESOURCE_GROUP: ${{ vars.CONTAINER_APP_RESOURCE_GROUP }}
+        run: |
+          az extension add --name containerapp --upgrade --only-show-errors
+          az containerapp job update --name "$JOB" --resource-group "$RESOURCE_GROUP" \
+            --image "$REGISTRY.azurecr.io/${{ github.event.repository.name }}:$GITHUB_SHA" \
+            --only-show-errors --query properties.template.containers[0].image -o tsv

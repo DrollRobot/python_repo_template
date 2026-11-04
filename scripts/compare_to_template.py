@@ -98,7 +98,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.27.0"
+__version__ = "1.28.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -203,6 +203,12 @@ MANIFEST: tuple[BaselineFile, ...] = (
     # GitHub community docs, each independently removable at setup time.
     BaselineFile("CONTRIBUTING.md", gate="contributing_guide"),
     BaselineFile("SECURITY.md", gate="security_policy"),
+    # Azure Container Apps job files (container_job feature, off by default).
+    BaselineFile("Dockerfile", gate="container_job"),
+    BaselineFile(".dockerignore", gate="container_job"),
+    BaselineFile(".github/workflows/image.yml", gate="container_job"),
+    BaselineFile("scripts/container_job.py", gate="container_job"),
+    BaselineFile("scripts/container_job.example.toml", gate="container_job"),
     BaselineFile("README.md", compare_content=False),  # rewritten per project: only check it exists
     # Project configuration: always diverges (version, description, deps).
     BaselineFile("pyproject.toml", strict=False),
@@ -345,6 +351,7 @@ _PRIVATE_REPO_DEPS_PATHS = (
     ".github/workflows/ci.yml",
     ".github/workflows/audit.yml",
     ".github/workflows/docs.yml",
+    ".github/workflows/image.yml",
     ".github/dependabot.yml",
 )
 _PRIVATE_REPO_DEPS_START = "# <private-repo-deps>"
@@ -416,6 +423,8 @@ class FeatureFlags:
         security_policy: ``SECURITY.md`` kept (``[features].security_policy``).
         contributing_guide: ``CONTRIBUTING.md`` kept
             (``[features].contributing_guide``).
+        container_job: The Azure Container Apps job files kept
+            (``[features].container_job``). Off unless the config turns it on.
         source: Where these flags came from -- always :data:`SETUP_CONFIG_REL`,
             the only supported source -- shown in the report for provenance.
     """
@@ -429,6 +438,7 @@ class FeatureFlags:
     remote_disposable_scripts: bool
     security_policy: bool
     contributing_guide: bool
+    container_job: bool
     source: str
 
     def wanted(self, gate: str) -> bool:
@@ -1062,6 +1072,7 @@ def feature_flags_from_config(raw: dict[str, Any]) -> FeatureFlags:
         remote_disposable_scripts=bool(features.get("remote_disposable_scripts", True)),
         security_policy=bool(features.get("security_policy", True)),
         contributing_guide=bool(features.get("contributing_guide", True)),
+        container_job=bool(features.get("container_job", False)),
         source=SETUP_CONFIG_REL,
     )
 
@@ -1932,6 +1943,7 @@ _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("remote_disposable_scripts", "remote-disposability scripts"),
     ("security_policy", "SECURITY.md"),
     ("contributing_guide", "CONTRIBUTING.md"),
+    ("container_job", "container job files"),
 )
 
 

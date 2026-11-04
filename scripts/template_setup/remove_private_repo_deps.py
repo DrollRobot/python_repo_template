@@ -2,13 +2,15 @@
 
 ``.github/workflows/ci.yml``, ``audit.yml``, and ``docs.yml`` each ship a
 commented-out pair of steps for minting a GitHub App token and using it to
-clone private git dependencies during CI. ``.github/dependabot.yml`` ships two
+clone private git dependencies during CI; ``image.yml`` ships the same token
+step plus the image build's use of it and a check that it stays out of the
+image. ``.github/dependabot.yml`` ships two
 commented-out blocks that give Dependabot its own token for the same repos:
 the ``registries`` entry and the ``uv`` update's reference to it. Each block
 is delimited by ``# <private-repo-deps>`` / ``# </private-repo-deps>`` marker
 comments so it can be found and stripped mechanically.
 
-This deletes every such block from those four files. It never deletes the
+This deletes every such block from those five files. It never deletes the
 files themselves -- unlike ``remove_mkdocs.py`` -- since ``ci.yml``,
 ``audit.yml`` and ``dependabot.yml`` are required regardless of this feature,
 and ``docs.yml`` is already handled by the ``mkdocs`` feature.
@@ -31,6 +33,7 @@ _FILES = [
     ".github/workflows/ci.yml",
     ".github/workflows/audit.yml",
     ".github/workflows/docs.yml",
+    ".github/workflows/image.yml",
     ".github/dependabot.yml",
 ]
 

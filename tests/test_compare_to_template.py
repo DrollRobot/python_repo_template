@@ -116,6 +116,7 @@ def make_flags(
     remote_disposable_scripts: bool = True,
     security_policy: bool = True,
     contributing_guide: bool = True,
+    container_job: bool = True,
     source: str = "test",
 ) -> FeatureFlags:
     """Build a FeatureFlags with every feature on, unless overridden."""
@@ -129,6 +130,7 @@ def make_flags(
         remote_disposable_scripts=remote_disposable_scripts,
         security_policy=security_policy,
         contributing_guide=contributing_guide,
+        container_job=container_job,
         source=source,
     )
 
@@ -1536,6 +1538,7 @@ def test_manifest_gates_match_feature_flags_fields() -> None:
         "remote_disposable_scripts",
         "security_policy",
         "contributing_guide",
+        "container_job",
     }
     gates = {entry.gate for entry in MANIFEST if entry.gate is not None}
     assert gates == valid_gates

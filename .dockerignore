@@ -1,0 +1,20 @@
+# .dockerignore
+#
+# Keeps the build context to what the image build needs: pyproject.toml,
+# uv.lock, README.md (the package readme) and src/.
+
+.git
+.github
+.venv
+.local
+.claude
+.vscode
+.mypy_cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.pyc
+docs
+site
+scripts
+tests

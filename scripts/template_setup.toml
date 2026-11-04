@@ -51,7 +51,8 @@ branch = "main"
 # ==========================================================================
 
 [features]
-# Each false removes that feature. All default true (no-op if unedited).
+# Each false removes that feature. All default true (no-op if unedited),
+# except container_job.
 mkdocs = true
 # The config system: the per-user config.toml package (src/<package>/config/
 # -- schema, config CLI, credential backends) and its tests. false deletes
@@ -83,3 +84,7 @@ remote_disposable_scripts = true
 security_policy = true
 # CONTRIBUTING.md, linked in GitHub's issue/PR sidebar. false deletes it.
 contributing_guide = true
+# The Azure Container Apps job files: Dockerfile, .dockerignore, the Image
+# workflow (build, publish, deploy) and scripts/container_job.py with its
+# example config. Off by default; true keeps them. See the README.
+container_job = false

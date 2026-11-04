@@ -125,7 +125,31 @@ uv run detect-secrets scan > .secrets.baseline
       gh secret set DEPENDABOT_GIT_TOKEN --app dependabot
 ```
    6. Uncomment the private-repo-deps sections in .github/workflows/ audit.yml, ci.yml,
-      and docs.yml, and both sections in .github/dependabot.yml.
+      docs.yml and (with `container_job`) image.yml, and both sections in
+      .github/dependabot.yml.
    7. Update actions/create-github-app-token to latest trusted commit.
 
-10. **Write some code!**
+10. **If the project runs as a scheduled Azure Container Apps job** (`container_job = true`):
+   1. Check the package can run unattended in a container:
+       - Its settings resolve with no `config.toml`: from defaults, or from environment
+         variables set on the job (`[job.env]` in the config below).
+       - It reads secrets through the job's managed identity: azure-auth with
+         `managed_identity=True`, or the Key Vault backend, whose
+         `DefaultAzureCredential` picks the identity from an `AZURE_CLIENT_ID`
+         variable on the job.
+       - It logs to the console; Log Analytics keeps the output. It needs no log file.
+       - It never prompts or opens a browser.
+       - `<entrypoint> --help` imports every module: it is the image's smoke test.
+   2. Copy `scripts/container_job.example.toml` somewhere outside the repo's tracked
+      files, fill it in, and run the setup with an account that can grant roles:
+```bash
+      uv run scripts/container_job.py path/to/your.toml --dry-run
+      uv run scripts/container_job.py path/to/your.toml
+```
+      It creates whatever is missing (the shared resources, the job's identities and
+      roles, the job, the repo variables, the failed-run alert) and updates whatever
+      differs from the file. To change a setting later, edit the file and run it again.
+   3. The job starts on Microsoft's quickstart image. Each push to `main` then builds
+      the package's image, publishes it, and points the job at it.
+
+11. **Write some code!**
