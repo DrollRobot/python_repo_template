@@ -1,15 +1,17 @@
-"""Remove the commented-out private-repo-deps GitHub Actions steps.
+"""Remove the commented-out private-repo-deps blocks.
 
 ``.github/workflows/ci.yml``, ``audit.yml``, and ``docs.yml`` each ship a
 commented-out pair of steps for minting a GitHub App token and using it to
-clone private git dependencies during CI. The block is delimited by
-``# <private-repo-deps>`` / ``# </private-repo-deps>`` marker comments so it
-can be found and stripped mechanically.
+clone private git dependencies during CI. ``.github/dependabot.yml`` ships two
+commented-out blocks that give Dependabot its own token for the same repos:
+the ``registries`` entry and the ``uv`` update's reference to it. Each block
+is delimited by ``# <private-repo-deps>`` / ``# </private-repo-deps>`` marker
+comments so it can be found and stripped mechanically.
 
-This deletes that block from all three workflow files. It never deletes the
-files themselves -- unlike ``remove_mkdocs.py`` -- since ``ci.yml`` and
-``audit.yml`` are required regardless of this feature, and ``docs.yml`` is
-already handled by the ``mkdocs`` feature.
+This deletes every such block from those four files. It never deletes the
+files themselves -- unlike ``remove_mkdocs.py`` -- since ``ci.yml``,
+``audit.yml`` and ``dependabot.yml`` are required regardless of this feature,
+and ``docs.yml`` is already handled by the ``mkdocs`` feature.
 
 Usage:
     uv run scripts/template_setup/remove_private_repo_deps.py
@@ -24,27 +26,27 @@ from pathlib import Path
 
 import _common
 
-# Workflow files that carry the private-repo-deps block (relative to the
-# project root).
-_WORKFLOWS = [
+# Files that carry private-repo-deps blocks (relative to the project root).
+_FILES = [
     ".github/workflows/ci.yml",
     ".github/workflows/audit.yml",
     ".github/workflows/docs.yml",
+    ".github/dependabot.yml",
 ]
 
 _START = "# <private-repo-deps>"
 _END = "</private-repo-deps>"
 
 
-def _strip_workflow(text: str) -> tuple[str, list[str]]:
-    """Remove the private-repo-deps block from one workflow file's contents."""
+def _strip_file(text: str) -> tuple[str, list[str]]:
+    """Remove every private-repo-deps block from one file's contents."""
     return _common.remove_region(text, _START, _END, blank="leading")
 
 
 def plan_edits(root: Path) -> list[tuple[Path, str, list[str]]]:
-    """Compute the rewritten contents for every workflow that has the block.
+    """Compute the rewritten contents for every file that has a block.
 
-    Files that are missing, unreadable, or already free of the block are
+    Files that are missing, unreadable, or already free of blocks are
     skipped.
 
     Args:
@@ -55,19 +57,19 @@ def plan_edits(root: Path) -> list[tuple[Path, str, list[str]]]:
         actually change.
     """
     edits: list[tuple[Path, str, list[str]]] = []
-    for relpath in _WORKFLOWS:
+    for relpath in _FILES:
         path = root / relpath
         text = _common.read_text(path)
         if text is None:
             continue
-        new_text, removed = _strip_workflow(text)
+        new_text, removed = _strip_file(text)
         if removed:
             edits.append((path, new_text, removed))
     return edits
 
 
 def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
-    """Strip the private-repo-deps block from every workflow that has it.
+    """Strip the private-repo-deps blocks from every file that has them.
 
     Args:
         root: Project root directory.
@@ -77,7 +79,7 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
     Returns:
         Process exit code (0 on success or when nothing matched, 1 if aborted).
     """
-    _common.section("Remove private-repo-deps workflow steps")
+    _common.section("Remove private-repo-deps blocks")
 
     edits = plan_edits(root)
     if not edits:
@@ -95,7 +97,7 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
         return 0
 
     print()
-    if not _common.confirm("Remove the private-repo-deps workflow steps?", assume_yes=assume_yes):
+    if not _common.confirm("Remove the private-repo-deps blocks?", assume_yes=assume_yes):
         print("  Aborted; nothing changed.")
         return 1
 
@@ -103,7 +105,7 @@ def run(root: Path, *, assume_yes: bool = False, dry_run: bool = False) -> int:
         _common.write_text(path, new_text)
         print(f"  Updated {path.relative_to(root)}")
 
-    print(f"\n  Removed private-repo-deps steps: {len(edits)} file(s) updated.")
+    print(f"\n  Removed private-repo-deps blocks: {len(edits)} file(s) updated.")
     return 0
 
 

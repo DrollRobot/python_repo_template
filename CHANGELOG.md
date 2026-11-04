@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - New worktrees start with links to the main repo's `.local/` files.
+- Dependabot can update Python dependencies in projects with private git
+  dependencies. `dependabot.yml` ships a commented-out token registry, and the
+  README covers creating the token.
 
 ### Changed
 

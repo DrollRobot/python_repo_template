@@ -21,6 +21,19 @@
 # .github/dependabot.yml
 
 version: 2
+
+# <private-repo-deps>
+# FIXME uncomment if the project has private git dependencies
+# Dependabot can't use the GitHub App key, so it reads private repos with
+# its own token (fine-grained, Contents: read-only). See README.
+# registries:
+#   github-private:
+#     type: git
+#     url: https://github.com
+#     username: x-access-token
+#     password: ${{ secrets.DEPENDABOT_GIT_TOKEN }}
+# </private-repo-deps>
+
 updates:
   - package-ecosystem: "uv"
     directory: "/"
@@ -31,6 +44,10 @@ updates:
     groups:
       python-deps:
         patterns: ["*"]
+    # <private-repo-deps>
+    # FIXME uncomment along with the registries block above
+    # registries: [github-private]
+    # </private-repo-deps>
 
   - package-ecosystem: "github-actions"
     directory: "/"

@@ -24,7 +24,7 @@ license -> remove mkdocs (if declined) -> remove keyring backend (if
 declined) -> remove Key Vault backend (if declined) -> remove the whole
 secret-storage machinery (if declined; replaces the two backend steps) ->
 remove the whole config system (if declined; replaces all three) -> remove
-private-repo-deps workflow steps (if declined) -> remove the
+private-repo-deps blocks (if declined) -> remove the
 remote-disposability scripts (if declined) -> remove SECURITY.md (if
 declined) -> remove CONTRIBUTING.md (if declined) -> re-initialize git (if
 requested). A read-only FIXME report always runs last, whether or not anything
@@ -476,7 +476,7 @@ def _step_remove_private_repo_deps() -> PlannedStep:
     def call(root: Path, dry_run: bool) -> int:
         return remove_private_repo_deps.run(root, assume_yes=True, dry_run=dry_run)
 
-    return PlannedStep("remove_private_repo_deps", "Remove private-repo-deps workflow steps", call)
+    return PlannedStep("remove_private_repo_deps", "Remove private-repo-deps blocks", call)
 
 
 def _step_remove_remote_disposable_scripts() -> PlannedStep:

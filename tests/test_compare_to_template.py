@@ -354,6 +354,41 @@ def test_replay_private_repo_deps_strips_block_from_known_workflow() -> None:
     assert result == ("      - name: Install uv\n\n      - name: Sync dependencies\n")
 
 
+_DEPENDABOT_WITH_BLOCKS = (
+    "version: 2\n"
+    "\n"
+    f"{_PRIVATE_REPO_DEPS_START}\n"
+    "# registries:\n"
+    "#   github-private:\n"
+    f"# {_PRIVATE_REPO_DEPS_END}\n"
+    "\n"
+    "updates:\n"
+    '  - package-ecosystem: "uv"\n'
+    '        patterns: ["*"]\n'
+    f"    {_PRIVATE_REPO_DEPS_START}\n"
+    "    # registries: [github-private]\n"
+    f"    # {_PRIVATE_REPO_DEPS_END}\n"
+    "\n"
+    '  - package-ecosystem: "github-actions"\n'
+)
+
+_DEPENDABOT_STRIPPED = (
+    "version: 2\n"
+    "\n"
+    "updates:\n"
+    '  - package-ecosystem: "uv"\n'
+    '        patterns: ["*"]\n'
+    "\n"
+    '  - package-ecosystem: "github-actions"\n'
+)
+
+
+@pytest.mark.unit
+def test_replay_private_repo_deps_strips_every_block_from_dependabot_yml() -> None:
+    result = replay_private_repo_deps(".github/dependabot.yml", _DEPENDABOT_WITH_BLOCKS)
+    assert result == _DEPENDABOT_STRIPPED
+
+
 @pytest.mark.unit
 def test_replay_private_repo_deps_leaves_unrelated_files_alone() -> None:
     text = "      - name: Install uv\n\n" + _PRIVATE_REPO_DEPS_BLOCK + "\n"
@@ -684,6 +719,17 @@ def test_compare_one_matches_after_private_repo_deps_removal(tmp_path: Path) -> 
     write(ctx.template_root, ".github/workflows/ci.yml", template)
     write(ctx.project_root, ".github/workflows/ci.yml", project)
     result = compare_one(BaselineFile(".github/workflows/ci.yml"), ctx)
+    assert result.status == "match"
+
+
+@pytest.mark.unit
+def test_compare_one_matches_dependabot_yml_after_private_repo_deps_removal(
+    tmp_path: Path,
+) -> None:
+    ctx = make_ctx(tmp_path, flags=make_flags(private_repo_deps=False))
+    write(ctx.template_root, ".github/dependabot.yml", _DEPENDABOT_WITH_BLOCKS)
+    write(ctx.project_root, ".github/dependabot.yml", _DEPENDABOT_STRIPPED)
+    result = compare_one(BaselineFile(".github/dependabot.yml"), ctx)
     assert result.status == "match"
 
 

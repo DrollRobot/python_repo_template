@@ -12,8 +12,9 @@ so that only real drift is reported:
   - the "TEMPLATE SETUP NOTES" banner comments -> stripped from both sides
   - the pinned Python version -> the project's (from `.python-version`)
   - the template-only pyproject.toml config -> dropped, as cleanup.py does
-  - the commented-out private-repo-deps workflow steps -> stripped, as
-    remove_private_repo_deps.py does, when the project declined them
+  - the commented-out private-repo-deps blocks (workflows, dependabot.yml)
+    -> stripped, as remove_private_repo_deps.py does, when the project
+    declined them
   - AGENTS.md's "Package Purpose" section -> stripped from both sides, since
     every project fills it in with its own description
 
@@ -37,9 +38,9 @@ project declined is left out of the comparison, the version preflight, and
 like a file the project simply doesn't have. A feature the project kept is
 compared like any other required file, so an accidentally deleted one is
 reported as drift instead of silently ignored. The private-repo-deps feature
-is different: it is not a ``gate`` on any file (ci.yml/audit.yml/docs.yml
-stay required and strict either way) -- instead its commented-out steps are
-replayed away from the template side before comparing, per
+is different: it is not a ``gate`` on any file (ci.yml/audit.yml/docs.yml and
+dependabot.yml stay required and strict either way) -- instead its
+commented-out blocks are replayed away from the template side before comparing, per
 ``replay_private_repo_deps()``.
 
 Before anything else -- reading ``template_setup.toml`` included -- the script checks
@@ -97,7 +98,7 @@ else:
 # Version of this helper script itself. Bump on every change so copies in other
 # repos can be compared: patch = bugfix, minor = new flag/behavior, major =
 # breaking CLI change.
-__version__ = "1.26.0"
+__version__ = "1.27.0"
 
 # The template's identity tokens. Built from pieces so that a child project's
 # rename_project.py / set_github_user.py runs (which string-replace these
@@ -335,15 +336,16 @@ MKDOCS_EDITED = ("CONTRIBUTING.md", "AGENTS.RELEASING.md")
 # template side keeps wording the project no longer has.
 SECRET_STORAGE_EDITED = (f"src/{TEMPLATE_SNAKE}/config/__init__.py",)
 
-# Workflow files that carry the commented-out private-repo-deps GitHub
-# Actions steps (see scripts/template_setup/remove_private_repo_deps.py).
-# Unlike MKDOCS_EDITED, these stay strictly compared -- the block is stripped
+# Files that carry the commented-out private-repo-deps blocks (see
+# scripts/template_setup/remove_private_repo_deps.py).
+# Unlike MKDOCS_EDITED, these stay strictly compared -- the blocks are stripped
 # from the template side by replay_private_repo_deps() before comparing, so a
 # project that declined the feature still needs to match byte-for-byte.
 _PRIVATE_REPO_DEPS_PATHS = (
     ".github/workflows/ci.yml",
     ".github/workflows/audit.yml",
     ".github/workflows/docs.yml",
+    ".github/dependabot.yml",
 )
 _PRIVATE_REPO_DEPS_START = "# <private-repo-deps>"
 _PRIVATE_REPO_DEPS_END = "</private-repo-deps>"
@@ -399,12 +401,12 @@ class FeatureFlags:
             (``[features].keyvault``). Also gates
             ``tests/test_keyvault_backend.py``, as above. Forced ``False``
             when ``secret_storage`` is ``False``, as above.
-        private_repo_deps: Commented-out private-git-deps GitHub Actions
-            steps kept in ci.yml/audit.yml/docs.yml
+        private_repo_deps: Commented-out private-git-deps blocks kept in
+            ci.yml/audit.yml/docs.yml and dependabot.yml
             (``[features].private_repo_deps``). Not a ``gate`` on any
-            :class:`BaselineFile` -- those workflow files are always
+            :class:`BaselineFile` -- those files are always
             required/strict; when this is ``False``,
-            :func:`normalize_template_text` strips the block from the
+            :func:`normalize_template_text` strips the blocks from the
             template side before comparing, via
             :func:`replay_private_repo_deps`.
         remote_disposable_scripts: The mark/verify remote-disposability script
@@ -716,37 +718,47 @@ def replay_cleanup_pyproject(text: str) -> str:
 
 
 def replay_private_repo_deps(rel: str, text: str) -> str:
-    """Strip the commented-out private-repo-deps GitHub Actions block.
+    """Strip the commented-out private-repo-deps blocks.
 
-    Mirrors scripts/template_setup/remove_private_repo_deps.py: removes the
+    Mirrors scripts/template_setup/remove_private_repo_deps.py: removes every
     ``# <private-repo-deps>`` ... ``# </private-repo-deps>`` block (and the
-    blank line immediately before it) from a workflow file's template-side
-    text, so a project that declined ``[features].private_repo_deps``
-    compares byte-equal instead of showing permanent drift. A no-op for any
-    other file, or for one of the three workflows if the block is somehow
-    already gone.
+    blank line immediately before each) from a file's template-side text, so
+    a project that declined ``[features].private_repo_deps`` compares
+    byte-equal instead of showing permanent drift. A no-op for any file not
+    in :data:`_PRIVATE_REPO_DEPS_PATHS`, or for one whose blocks are somehow
+    already gone. A block with no end marker is left in place.
 
     Args:
         rel: Template-relative path of the file.
         text: Template-side file contents (LF line endings).
 
     Returns:
-        The contents with the block removed, or unchanged.
+        The contents with the blocks removed, or unchanged.
     """
     if rel not in _PRIVATE_REPO_DEPS_PATHS:
         return text
     lines = text.splitlines(keepends=True)
-    start = next(
-        (i for i, line in enumerate(lines) if line.strip() == _PRIVATE_REPO_DEPS_START), None
-    )
-    if start is None:
-        return text
-    end = next((i for i in range(start, len(lines)) if _PRIVATE_REPO_DEPS_END in lines[i]), None)
-    if end is None:
-        return text
-    if start > 0 and not lines[start - 1].strip():
-        start -= 1
-    del lines[start : end + 1]
+    search_from = 0
+    while True:
+        start = next(
+            (
+                i
+                for i in range(search_from, len(lines))
+                if lines[i].strip() == _PRIVATE_REPO_DEPS_START
+            ),
+            None,
+        )
+        if start is None:
+            break
+        end = next(
+            (i for i in range(start, len(lines)) if _PRIVATE_REPO_DEPS_END in lines[i]), None
+        )
+        if end is None:
+            break
+        if start > 0 and not lines[start - 1].strip():
+            start -= 1
+        del lines[start : end + 1]
+        search_from = start
     return "".join(lines)
 
 
@@ -821,7 +833,7 @@ def normalize_template_text(
         compact: Project Python version as ``pyMAJORMINOR`` (skip when ``None``).
         ran_cleanup: Whether to drop the template-only pyproject.toml lines.
         private_repo_deps: Whether the project kept the private-repo-deps
-            workflow steps (``[features].private_repo_deps``); ``False``
+            blocks (``[features].private_repo_deps``); ``False``
             strips them from the template side too, mirroring
             ``remove_private_repo_deps.py``.
 
@@ -1916,7 +1928,7 @@ _FEATURE_LABELS: tuple[tuple[str, str], ...] = (
     ("secret_storage", "secret-storage machinery"),
     ("keyring", "keyring secret backend"),
     ("keyvault", "Key Vault secret backend"),
-    ("private_repo_deps", "private-repo-deps workflow steps"),
+    ("private_repo_deps", "private-repo-deps blocks"),
     ("remote_disposable_scripts", "remote-disposability scripts"),
     ("security_policy", "SECURITY.md"),
     ("contributing_guide", "CONTRIBUTING.md"),

@@ -73,7 +73,8 @@ keyring = true
 # config_system and secret_storage. false deletes it.
 keyvault = true
 # Commented-out "mint a GitHub App token" steps in .github/workflows/
-# {ci,audit,docs}.yml, for cloning private git deps in CI. false deletes them.
+# {ci,audit,docs}.yml, for cloning private git deps in CI, and the Dependabot
+# token registry in .github/dependabot.yml. false deletes them.
 private_repo_deps = true
 # scripts/mark_remote_disposable.py + tests/verify_remote_disposable.py script
 # pair, gating @pytest.mark.destructive_remote tests. false deletes both.

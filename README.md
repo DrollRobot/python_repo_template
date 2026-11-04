@@ -92,7 +92,7 @@ uv run mkdocs gh-deploy --force
 uv run detect-secrets scan > .secrets.baseline
 ```
 
-9. **If using GitHub App tokens to access private repos:**
+9. **If the project has private git dependencies:**
    1. Create the GitHub App (in the Github account → Settings → Developer settings → GitHub Apps → New):
        - Permissions → Repository permissions → Contents: Read-only (Metadata: Read is added automatically). Nothing else.
        - Webhook → uncheck Active (you don't need events).
@@ -112,7 +112,20 @@ uv run detect-secrets scan > .secrets.baseline
       Get-Content -Raw path\to\app.private-key.pem | gh secret set GH_APP_PRIVATE_KEY --app dependabot
       gh variable set GH_APP_CLIENT_ID --body "<app client id>"
 ```
-   6. Uncomment section in .github/workflows/ audit.yml, ci.yml, and docs.yml.
+   5. Give Dependabot its own token. Dependabot can't use the App key when it updates
+      `uv.lock`, so it reads the private repos with a fine-grained personal access token
+      (Settings → Developer settings → Personal access tokens → Fine-grained tokens):
+       - Resource owner → the account that owns the private repos.
+       - Repository access → Only select repositories → the private repos the project depends on.
+       - Permissions → Repository permissions → Contents: Read-only. Nothing else.
+       - Expiration → set one, and note when to rotate it.
+
+      Save it in the repo (`gh` prompts for the value):
+```bash
+      gh secret set DEPENDABOT_GIT_TOKEN --app dependabot
+```
+   6. Uncomment the private-repo-deps sections in .github/workflows/ audit.yml, ci.yml,
+      and docs.yml, and both sections in .github/dependabot.yml.
    7. Update actions/create-github-app-token to latest trusted commit.
 
 10. **Write some code!**
