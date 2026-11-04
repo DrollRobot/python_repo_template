@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The config tests now pass whatever `CREDENTIAL_BACKEND` a project picks.
 
+### Security
+
+- Upgraded `certifi` to 2026.10.23, `filelock` to 4.2.8 and `virtualenv` to
+  21.15.5.
+
 ## [1.16.0] - 2026-10-12 - Config open and init --force
 
 ### Added
