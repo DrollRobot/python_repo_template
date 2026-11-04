@@ -48,3 +48,16 @@
 ```
 ssh-add -T "$(git config user.signingkey)" && git commit
 ```
+
+# Pushing
+
+- After every push, verify that every GitHub Actions workflow passes.
+   List the runs for the pushed commit, then watch each one to the end:
+   ```
+   gh run list --commit "$(git rev-parse HEAD)"
+   gh run watch <run-id> --exit-status
+   ```
+
+- A failed run is a blocker, the same as a failing local test. Fix it. If you
+   cannot, tell the user which run failed and why. Do not report the work done
+   while a run is failing.
