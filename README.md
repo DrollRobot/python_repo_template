@@ -150,6 +150,8 @@ uv run detect-secrets scan > .secrets.baseline
       roles, the job, the repo variables, the failed-run alert) and updates whatever
       differs from the file. To change a setting later, edit the file and run it again.
    3. The job starts on Microsoft's quickstart image. Each push to `main` then builds
-      the package's image, publishes it, and points the job at it.
+      the package's image, publishes it, and points the job at it. A scheduled run also
+      rebuilds `main` weekly on a freshly pulled base image; the cron in `image.yml`
+      sets how often.
 
 11. **Write some code!**

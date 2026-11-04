@@ -9,12 +9,15 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Rebuild main on a freshly pulled base image. Cron, UTC: Sundays 09:00.
+    - cron: '0 9 * * 0'
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
@@ -107,27 +110,34 @@ jobs:
 
       - name: Push the image
         if: env.PUBLISH == 'true'
+        id: push
         env:
           REGISTRY: ${{ vars.ACR_NAME }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           az acr login --name "$REGISTRY"
           repository="$REGISTRY.azurecr.io/${{ github.event.repository.name }}"
-          for tag in "$VERSION" "$GITHUB_SHA"; do
+          # A rebuild keeps the release's version and commit tags on the release build.
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            tags="$GITHUB_SHA-$(date -u +%Y%m%d)"
+          else
+            tags="$VERSION $GITHUB_SHA"
+          fi
+          for tag in $tags; do
             docker tag "$IMAGE" "$repository:$tag"
             docker push "$repository:$tag"
           done
+          echo "deploy_tag=${tags##* }" >> "$GITHUB_OUTPUT"
 
       - name: Point the job at the new image
-        # The job runs one exact image, so without this a release would sit in
-        # the registry while the job kept running the previous one.
         if: env.PUBLISH == 'true'
         env:
           REGISTRY: ${{ vars.ACR_NAME }}
           JOB: ${{ vars.CONTAINER_APP_JOB }}
           RESOURCE_GROUP: ${{ vars.CONTAINER_APP_RESOURCE_GROUP }}
+          TAG: ${{ steps.push.outputs.deploy_tag }}
         run: |
           az extension add --name containerapp --upgrade --only-show-errors
           az containerapp job update --name "$JOB" --resource-group "$RESOURCE_GROUP" \
-            --image "$REGISTRY.azurecr.io/${{ github.event.repository.name }}:$GITHUB_SHA" \
+            --image "$REGISTRY.azurecr.io/${{ github.event.repository.name }}:$TAG" \
             --only-show-errors --query properties.template.containers[0].image -o tsv

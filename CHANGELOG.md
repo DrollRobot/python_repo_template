@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dependencies. `dependabot.yml` ships a commented-out token registry, and the
   README covers creating the token.
 - Optional `container_job` feature, off by default, for packages that run as a
-  scheduled Azure Container Apps job: the image build and its workflow, and
+  scheduled Azure Container Apps job: the image build and its workflow, which also
+  rebuilds weekly on a fresh base image, and
   `scripts/container_job.py`, which creates the job and everything it needs from a
   config file and updates whatever differs on later runs.
 
