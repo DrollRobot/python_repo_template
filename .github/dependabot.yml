@@ -9,8 +9,9 @@
 #   - uv          -- Python package dependencies (uv.lock / pyproject.toml)
 #   - github-actions -- .github/workflows action version pins
 #
-# Deps in each ecosystem are grouped into a single PR per cycle so you get
-# one review rather than one PR per package.
+# Minor and patch updates in each ecosystem are grouped into a single PR per
+# cycle so you get one review rather than one PR per package. Each major
+# update gets its own PR, so one breaking change can't hold back the rest.
 #
 # To customize:
 #   - Change interval to "monthly" if weekly PRs are too noisy.
@@ -24,8 +25,6 @@ version: 2
 
 # <private-repo-deps>
 # FIXME uncomment if the project has private git dependencies
-# Dependabot can't use the GitHub App key, so it reads private repos with
-# its own token (fine-grained, Contents: read-only). See README.
 # registries:
 #   github-private:
 #     type: git
@@ -44,6 +43,7 @@ updates:
     groups:
       python-deps:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
     # <private-repo-deps>
     # FIXME uncomment along with the registries block above
     # registries: [github-private]
@@ -58,3 +58,4 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]

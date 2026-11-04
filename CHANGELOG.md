@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Worktree config files are hard-linked, not copied, where symlinks are
   unavailable (Windows without Developer Mode).
+- Dependabot opens each major update as its own PR, outside the grouped PR.
 
 ### Fixed
 
