@@ -46,7 +46,8 @@ Report that everything is committed and `.local/PR.md` is written, then stop. Th
 takes it from there.
 
 ## Review
-- Never open a PR, run `scripts/complete_worktree.py`, merge, approve,
-  enable auto-merge, force-push, or push to the base branch. Your job ends at
-  "everything committed, `.local/PR.md` written."
-- Stay in this worktree. Don't modify any other branch.
+- Agents should never move the new code into the base branch; the human does that by
+  opening the PR. Don't open a PR, run `scripts/complete_worktree.py`,
+  or use any other workaround to get new code to the base branch. The agent's job
+  ends at "everything committed, `.local/PR.md` written."
+- Stay in this worktree. Don't modify any other branch without direct user approval.

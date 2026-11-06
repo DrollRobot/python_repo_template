@@ -10,17 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - New worktrees start with links to the main repo's `.local/` files.
+- Dependabot can update Python dependencies in projects with private git
+  dependencies. `dependabot.yml` ships a commented-out token registry, and the
+  README covers creating the token.
+- Optional `container_job` feature, off by default, for packages that run as a
+  scheduled Azure Container Apps job: the image build and its workflow, which also
+  rebuilds weekly on a fresh base image, and
+  `scripts/container_job.py`, which creates the job and everything it needs from a
+  config file and updates whatever differs on later runs.
 
 ### Changed
 
 - Worktree config files are hard-linked, not copied, where symlinks are
   unavailable (Windows without Developer Mode).
+- Dependabot opens each major update as its own PR, outside the grouped PR.
 
 ### Fixed
 
 - The config tests now pass whatever `CREDENTIAL_BACKEND` a project picks.
-- Dependabot PRs no longer fail CI in projects with private dependencies. The README's
-  setup steps now save the app key for Dependabot too.
+
+### Security
+
+- Upgraded `certifi` to 2026.10.23, `filelock` to 4.2.8 and `virtualenv` to
+  21.15.5.
 
 ## [1.16.0] - 2026-10-12 - Config open and init --force
 

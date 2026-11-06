@@ -24,11 +24,11 @@ license -> remove mkdocs (if declined) -> remove keyring backend (if
 declined) -> remove Key Vault backend (if declined) -> remove the whole
 secret-storage machinery (if declined; replaces the two backend steps) ->
 remove the whole config system (if declined; replaces all three) -> remove
-private-repo-deps workflow steps (if declined) -> remove the
+private-repo-deps blocks (if declined) -> remove the
 remote-disposability scripts (if declined) -> remove SECURITY.md (if
-declined) -> remove CONTRIBUTING.md (if declined) -> re-initialize git (if
-requested). A read-only FIXME report always runs last, whether or not anything
-failed.
+declined) -> remove CONTRIBUTING.md (if declined) -> remove the container job
+files (if declined) -> re-initialize git (if requested). A read-only FIXME
+report always runs last, whether or not anything failed.
 
 Each step is also runnable on its own with its own prompts/flags -- see that
 script's module docstring (e.g. ``remove_mkdocs.py``). This script does NOT
@@ -57,6 +57,7 @@ import choose_license
 import find_fixmes
 import reinit_git
 import remove_config_system
+import remove_container_job
 import remove_contributing_guide
 import remove_keyring
 import remove_keyvault
@@ -97,6 +98,7 @@ class Config:
     remote_disposable_scripts: bool
     security_policy: bool
     contributing_guide: bool
+    container_job: bool
     reinit: bool
     branch: str
 
@@ -243,6 +245,7 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
     )
     security_policy = _require_bool(features, "security_policy", "features", problems)
     contributing_guide = _require_bool(features, "contributing_guide", "features", problems)
+    container_job = _require_bool(features, "container_job", "features", problems)
 
     reinit = _require_bool(git, "reinit", "git", problems)
     branch = _require_str(git, "branch", "git", problems)
@@ -333,6 +336,7 @@ def validate_config(root: Path, raw: dict[str, Any]) -> tuple[Config | None, lis
             remote_disposable_scripts=remote_disposable_scripts,
             security_policy=security_policy,
             contributing_guide=contributing_guide,
+            container_job=container_job,
             reinit=reinit,
             branch=branch,
         ),
@@ -476,7 +480,7 @@ def _step_remove_private_repo_deps() -> PlannedStep:
     def call(root: Path, dry_run: bool) -> int:
         return remove_private_repo_deps.run(root, assume_yes=True, dry_run=dry_run)
 
-    return PlannedStep("remove_private_repo_deps", "Remove private-repo-deps workflow steps", call)
+    return PlannedStep("remove_private_repo_deps", "Remove private-repo-deps blocks", call)
 
 
 def _step_remove_remote_disposable_scripts() -> PlannedStep:
@@ -497,6 +501,15 @@ def _step_remove_security_policy() -> PlannedStep:
         return remove_security_policy.run(root, assume_yes=True, dry_run=dry_run)
 
     return PlannedStep("remove_security_policy", "Remove SECURITY.md", call)
+
+
+def _step_remove_container_job() -> PlannedStep:
+    """Build the container-job-files-removal step (only included when declined)."""
+
+    def call(root: Path, dry_run: bool) -> int:
+        return remove_container_job.run(root, assume_yes=True, dry_run=dry_run)
+
+    return PlannedStep("remove_container_job", "Remove the container job files", call)
 
 
 def _step_remove_contributing_guide() -> PlannedStep:
@@ -566,6 +579,8 @@ def build_steps(config: Config) -> tuple[PlannedStep, ...]:
         steps.append(_step_remove_security_policy())
     if not config.contributing_guide:
         steps.append(_step_remove_contributing_guide())
+    if not config.container_job:
+        steps.append(_step_remove_container_job())
     if config.reinit:
         steps.append(_step_reinit_git(config))
     return tuple(steps)

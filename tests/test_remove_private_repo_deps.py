@@ -18,8 +18,40 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+import compare_to_template
 import remove_private_repo_deps
+
+_ROOT = Path(__file__).resolve().parent.parent
+
+DEPENDABOT_WITH_BLOCKS = (
+    "version: 2\n"
+    "\n"
+    "# <private-repo-deps>\n"
+    "# registries:\n"
+    "#   github-private:\n"
+    "# </private-repo-deps>\n"
+    "\n"
+    "updates:\n"
+    '  - package-ecosystem: "uv"\n'
+    '        patterns: ["*"]\n'
+    "    # <private-repo-deps>\n"
+    "    # registries: [github-private]\n"
+    "    # </private-repo-deps>\n"
+    "\n"
+    '  - package-ecosystem: "github-actions"\n'
+)
+
+DEPENDABOT_STRIPPED = (
+    "version: 2\n"
+    "\n"
+    "updates:\n"
+    '  - package-ecosystem: "uv"\n'
+    '        patterns: ["*"]\n'
+    "\n"
+    '  - package-ecosystem: "github-actions"\n'
+)
 
 WORKFLOW_WITH_BLOCK = (
     "      - name: Install uv\n"
@@ -59,19 +91,55 @@ WORKFLOW_WITHOUT_BLOCK = (
 
 
 @pytest.mark.unit
-def test_strip_workflow_removes_block_and_leading_blank() -> None:
+def test_strip_file_removes_block_and_leading_blank() -> None:
     """The marked block and its preceding blank line are removed; a single blank remains."""
-    new_text, removed = remove_private_repo_deps._strip_workflow(WORKFLOW_WITH_BLOCK)
+    new_text, removed = remove_private_repo_deps._strip_file(WORKFLOW_WITH_BLOCK)
     assert new_text == WORKFLOW_STRIPPED
     assert removed
 
 
 @pytest.mark.unit
-def test_strip_workflow_without_block_is_unchanged() -> None:
+def test_strip_file_without_block_is_unchanged() -> None:
     """A workflow that never had the block is left untouched."""
-    new_text, removed = remove_private_repo_deps._strip_workflow(WORKFLOW_WITHOUT_BLOCK)
+    new_text, removed = remove_private_repo_deps._strip_file(WORKFLOW_WITHOUT_BLOCK)
     assert new_text == WORKFLOW_WITHOUT_BLOCK
     assert removed == []
+
+
+@pytest.mark.unit
+def test_strip_file_removes_every_block_from_dependabot_yml() -> None:
+    """Both dependabot.yml blocks go, leaving the file as it was before they were added."""
+    new_text, _removed = remove_private_repo_deps._strip_file(DEPENDABOT_WITH_BLOCKS)
+    assert new_text == DEPENDABOT_STRIPPED
+
+
+@pytest.mark.integration
+def test_strip_file_matches_compare_replay_on_the_template_files() -> None:
+    """The setup script and compare_to_template strip the real files identically.
+
+    A project that declined private_repo_deps keeps what this script leaves;
+    compare_to_template replays the strip on the template side. Any
+    difference would show as permanent drift.
+    """
+    for relpath in remove_private_repo_deps._FILES:
+        text = (_ROOT / relpath).read_text(encoding="utf-8")
+        stripped, removed = remove_private_repo_deps._strip_file(text)
+        assert removed, relpath
+        assert "private-repo-deps>" not in stripped, relpath
+        assert stripped == compare_to_template.replay_private_repo_deps(relpath, text), relpath
+
+
+@pytest.mark.integration
+@pytest.mark.functional
+def test_run_strips_dependabot_yml(tmp_path: Path) -> None:
+    """A real run strips dependabot.yml along with the workflows."""
+    github = tmp_path / ".github"
+    github.mkdir()
+    dependabot = github / "dependabot.yml"
+    dependabot.write_text(DEPENDABOT_WITH_BLOCKS, encoding="utf-8")
+
+    assert remove_private_repo_deps.run(tmp_path, assume_yes=True) == 0
+    assert dependabot.read_text(encoding="utf-8") == DEPENDABOT_STRIPPED
 
 
 @pytest.mark.unit

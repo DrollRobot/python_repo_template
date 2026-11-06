@@ -1,0 +1,69 @@
+# scripts/container_job.example.toml
+#
+# Example config for scripts/container_job.py. Copy it somewhere outside the
+# repo's tracked files (it holds your environment's names), fill in every
+# value, and run:
+#
+#   uv run scripts/container_job.py path/to/your.toml --dry-run
+#   uv run scripts/container_job.py path/to/your.toml
+#
+# Every run compares this file with Azure and GitHub and changes what differs,
+# so to change the schedule, arguments or alert email later, edit your copy
+# and run it again.
+
+[shared]
+# Resources every job in the environment shares. Each one that doesn't exist
+# is created; existing ones are never changed.
+subscription = "00000000-0000-0000-0000-000000000000"
+location = "eastus2"
+resource_group = "rg-container-jobs"
+# Globally unique, lowercase letters and digits only.
+registry = "acrexamplejobs"
+log_workspace = "log-container-jobs"
+# The environment runs on this network's subnet, so a Key Vault firewall can
+# allow it. Pick ranges that don't overlap networks you may peer with later.
+vnet = "vnet-container-jobs"
+vnet_address_prefix = "10.200.0.0/24"
+subnet = "snet-cae"
+subnet_address_prefix = "10.200.0.0/25"
+environment = "cae-container-jobs"
+
+[job]
+name = "job-example"
+# Runs the job and reads its secrets.
+identity = "id-example-job"
+# What the image workflow signs in as, from the repo's main branch only.
+ci_identity = "id-example-ci"
+# Cron, evaluated in UTC: this one runs every 2 hours from 11:00 to 21:00 UTC,
+# Monday to Friday.
+schedule = "0 11-21/2 * * 1-5"
+# Arguments to the image's entrypoint, such as the package's flag for signing
+# in with the job's managed identity. Log Analytics keeps the console output.
+args = ["--log-level", "DEBUG"]
+cpu = 0.25
+memory = "0.5Gi"
+# Seconds before a run is stopped.
+timeout = 600
+
+# Optional: environment variables for the container, such as the config
+# system's <APP>_<OPTION> overrides, or AZURE_CLIENT_ID for code that signs in
+# with DefaultAzureCredential. Never put secrets here; they belong in Key Vault.
+[job.env]
+# EXAMPLE_OPTION = "value"
+
+# Optional: the Key Vault the job reads secrets from. It must be in the shared
+# subscription. The job's identity gets read access to exactly these secrets.
+[key_vault]
+name = "kv-example"
+resource_group = "rg-example"
+secrets = ["example-secret-name"]
+
+[alert]
+# Who hears about failed or timed-out runs.
+email = "alerts@example.com"
+action_group = "ag-example-alerts"
+rule = "alert-job-example-failed"
+
+[github]
+# The repo whose image workflow publishes this job's image.
+repository = "owner/name"

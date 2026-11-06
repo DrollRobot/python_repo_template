@@ -65,6 +65,7 @@ private_repo_deps = true
 remote_disposable_scripts = true
 security_policy = true
 contributing_guide = true
+container_job = true
 
 [git]
 reinit = false
@@ -92,6 +93,7 @@ def _valid_raw() -> dict[str, Any]:
             "remote_disposable_scripts": True,
             "security_policy": True,
             "contributing_guide": True,
+            "container_job": True,
         },
         "git": {"reinit": False, "branch": "main"},
     }
@@ -117,6 +119,7 @@ def _make_config(**overrides: Any) -> setup_new_project.Config:
         "remote_disposable_scripts": True,
         "security_policy": True,
         "contributing_guide": True,
+        "container_job": True,
         "reinit": False,
         "branch": "main",
     }
@@ -481,6 +484,13 @@ def test_build_steps_includes_remove_contributing_guide_when_declined() -> None:
     """contributing_guide=false adds the remove_contributing_guide step."""
     steps = setup_new_project.build_steps(_make_config(contributing_guide=False))
     assert steps[-1].key == "remove_contributing_guide"
+
+
+@pytest.mark.unit
+def test_build_steps_includes_remove_container_job_when_declined() -> None:
+    """container_job=false adds the remove_container_job step."""
+    steps = setup_new_project.build_steps(_make_config(container_job=False))
+    assert steps[-1].key == "remove_container_job"
 
 
 @pytest.mark.unit

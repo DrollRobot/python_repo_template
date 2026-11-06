@@ -116,6 +116,7 @@ def make_flags(
     remote_disposable_scripts: bool = True,
     security_policy: bool = True,
     contributing_guide: bool = True,
+    container_job: bool = True,
     source: str = "test",
 ) -> FeatureFlags:
     """Build a FeatureFlags with every feature on, unless overridden."""
@@ -129,6 +130,7 @@ def make_flags(
         remote_disposable_scripts=remote_disposable_scripts,
         security_policy=security_policy,
         contributing_guide=contributing_guide,
+        container_job=container_job,
         source=source,
     )
 
@@ -352,6 +354,41 @@ def test_replay_private_repo_deps_strips_block_from_known_workflow() -> None:
     )
     result = replay_private_repo_deps(".github/workflows/ci.yml", text)
     assert result == ("      - name: Install uv\n\n      - name: Sync dependencies\n")
+
+
+_DEPENDABOT_WITH_BLOCKS = (
+    "version: 2\n"
+    "\n"
+    f"{_PRIVATE_REPO_DEPS_START}\n"
+    "# registries:\n"
+    "#   github-private:\n"
+    f"# {_PRIVATE_REPO_DEPS_END}\n"
+    "\n"
+    "updates:\n"
+    '  - package-ecosystem: "uv"\n'
+    '        patterns: ["*"]\n'
+    f"    {_PRIVATE_REPO_DEPS_START}\n"
+    "    # registries: [github-private]\n"
+    f"    # {_PRIVATE_REPO_DEPS_END}\n"
+    "\n"
+    '  - package-ecosystem: "github-actions"\n'
+)
+
+_DEPENDABOT_STRIPPED = (
+    "version: 2\n"
+    "\n"
+    "updates:\n"
+    '  - package-ecosystem: "uv"\n'
+    '        patterns: ["*"]\n'
+    "\n"
+    '  - package-ecosystem: "github-actions"\n'
+)
+
+
+@pytest.mark.unit
+def test_replay_private_repo_deps_strips_every_block_from_dependabot_yml() -> None:
+    result = replay_private_repo_deps(".github/dependabot.yml", _DEPENDABOT_WITH_BLOCKS)
+    assert result == _DEPENDABOT_STRIPPED
 
 
 @pytest.mark.unit
@@ -684,6 +721,17 @@ def test_compare_one_matches_after_private_repo_deps_removal(tmp_path: Path) -> 
     write(ctx.template_root, ".github/workflows/ci.yml", template)
     write(ctx.project_root, ".github/workflows/ci.yml", project)
     result = compare_one(BaselineFile(".github/workflows/ci.yml"), ctx)
+    assert result.status == "match"
+
+
+@pytest.mark.unit
+def test_compare_one_matches_dependabot_yml_after_private_repo_deps_removal(
+    tmp_path: Path,
+) -> None:
+    ctx = make_ctx(tmp_path, flags=make_flags(private_repo_deps=False))
+    write(ctx.template_root, ".github/dependabot.yml", _DEPENDABOT_WITH_BLOCKS)
+    write(ctx.project_root, ".github/dependabot.yml", _DEPENDABOT_STRIPPED)
+    result = compare_one(BaselineFile(".github/dependabot.yml"), ctx)
     assert result.status == "match"
 
 
@@ -1490,6 +1538,7 @@ def test_manifest_gates_match_feature_flags_fields() -> None:
         "remote_disposable_scripts",
         "security_policy",
         "contributing_guide",
+        "container_job",
     }
     gates = {entry.gate for entry in MANIFEST if entry.gate is not None}
     assert gates == valid_gates

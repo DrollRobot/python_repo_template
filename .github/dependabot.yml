@@ -9,8 +9,9 @@
 #   - uv          -- Python package dependencies (uv.lock / pyproject.toml)
 #   - github-actions -- .github/workflows action version pins
 #
-# Deps in each ecosystem are grouped into a single PR per cycle so you get
-# one review rather than one PR per package.
+# Minor and patch updates in each ecosystem are grouped into a single PR per
+# cycle so you get one review rather than one PR per package. Each major
+# update gets its own PR, so one breaking change can't hold back the rest.
 #
 # To customize:
 #   - Change interval to "monthly" if weekly PRs are too noisy.
@@ -21,6 +22,17 @@
 # .github/dependabot.yml
 
 version: 2
+
+# <private-repo-deps>
+# FIXME uncomment if the project has private git dependencies
+# registries:
+#   github-private:
+#     type: git
+#     url: https://github.com
+#     username: x-access-token
+#     password: ${{ secrets.DEPENDABOT_GIT_TOKEN }}
+# </private-repo-deps>
+
 updates:
   - package-ecosystem: "uv"
     directory: "/"
@@ -31,6 +43,11 @@ updates:
     groups:
       python-deps:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    # <private-repo-deps>
+    # FIXME uncomment along with the registries block above
+    # registries: [github-private]
+    # </private-repo-deps>
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -41,3 +58,4 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
