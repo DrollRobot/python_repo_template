@@ -31,13 +31,11 @@ exclude = [
   "scripts/update_floors.py",
   "scripts/open_claude_settings.py",
   "scripts/open_gitignore.py",
-  "scripts/set_python_version.py",
   "tests/test_complete_worktree.py",
   "tests/test_new_worktree.py",
   "tests/test_remove_worktree.py",
   "tests/test_push_new_tag_to_main.py",
   "tests/test_update_floors.py",
-  "tests/test_set_python_version.py",
 ]
 
 [tokens]

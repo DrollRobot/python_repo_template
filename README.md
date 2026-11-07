@@ -208,6 +208,6 @@ to resolve once.
   end of life), move the version tokens in `template.toml` and their literals in
   the files together: `.python-version`, `pyproject.toml`, the CI matrix, the
   badges and `CONTRIBUTING.md`. The `all-supported` aliases list the maintained
-  versions. `validate` reports any literal left behind.
+  versions. `tests/test_template_manifest.py` fails on any literal left behind.
 - `uv run scripts/template_sync.py validate` checks all of it; the pre-commit hook
   and CI run it too.
