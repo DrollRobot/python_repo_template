@@ -46,6 +46,19 @@ ENV_PREFIX = APP_NAME.upper() + "_"
 # Name of the config CLI's console script, used in error messages.
 CLI_NAME = APP_NAME.replace("_", "-") + "-config"
 
+# <template-only>
+# The first CREDENTIAL_BACKEND below is what a project without secret storage
+# gets (the config tests monkeypatch the constant, so it must exist); here in
+# the template the second assignment overrides it.
+# </template-only>
+# <template-only feature="!secret_storage">
+# Credential-backend policy: "none". This package stores no secrets, so the
+# schema declares no secret fields (a secret field would resolve from
+# environment variables only) and the reserved backend keys are illegal in
+# config.toml.
+CREDENTIAL_BACKEND = "none"
+# </template-only>
+# <template-only feature="secret_storage">
 # Credential-backend policy for every secret field in the schema. One of:
 #
 # - "none":    this package stores no secrets. Secret fields resolve from
@@ -60,6 +73,7 @@ CLI_NAME = APP_NAME.replace("_", "-") + "-config"
 # Validated at use time by secrets.schema_backend_policy(); an unknown value
 # fails loudly there. FIXME: pick the policy that fits your project.
 CREDENTIAL_BACKEND = "prompt"
+# </template-only>
 
 
 class ConfigError(Exception):
@@ -148,11 +162,13 @@ class Settings:
         default_value="https://example.invalid",
         help="Base URL of the API this tool calls",
     )
+    # <template-only feature="secret_storage">
     client_secret: str = secret(help="App registration client secret")
     api_key: str = secret(
         help="API key for the example service",
         default_secret_name="example-api-key",  # noqa: S106  (a name, not a secret)
     )
+    # </template-only>
 
 
 def is_secret(f: Field[Any]) -> bool:

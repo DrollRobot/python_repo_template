@@ -1,12 +1,14 @@
+<!-- <template-only> -->
 <!--
 =============================================================================
-TEMPLATE SETUP NOTES -- remove this block when you use this template
+TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 =============================================================================
 This docs/index.md is part of a starter repo scaffold.
 It becomes the homepage of your MkDocs site (and the PyPI long description
 - Fill in the overview, installation, and quick-start sections.
 =============================================================================
 -->
+<!-- </template-only> -->
 
 # python-repo-template
 

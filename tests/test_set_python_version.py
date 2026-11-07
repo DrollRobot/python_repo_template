@@ -1,12 +1,7 @@
-"""Unit tests for scripts/template_setup/set_python_version.py.
+"""Unit tests for scripts/set_python_version.py.
 
-The template_setup folder is not a package, so the module is imported by adding
-the folder to sys.path, mirroring how the setup scripts import their shared
-_common module (and how test_cleanup.py imports cleanup).
-
-This file is itself a dev-script test: cleanup.py matches it to
-scripts/template_setup/set_python_version.py and deletes it along with the rest
-of the scaffolding, so it never lingers in a project started from the template.
+scripts/ is not a package, so the module is imported by adding the folder to
+sys.path.
 """
 
 from __future__ import annotations
@@ -16,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "template_setup"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import set_python_version
 

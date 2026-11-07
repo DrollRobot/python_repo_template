@@ -1,0 +1,224 @@
+# template.toml -- how scripts/template_sync.py creates projects from this
+# template and keeps them in sync. Every tracked file is classified exactly
+# once; `uv run scripts/template_sync.py validate` (also a pre-commit hook and
+# a CI job) fails on any file that isn't.
+#
+#   managed  the template owns it: projects get every change; local edits are drift
+#   merge    both sides edit it: template changes are 3-way merged into the project's copy
+#   seed     written when a project is created, never looked at again
+#   exclude  never leaves the template
+#
+# A [features.x] table ships its files only to projects that keep feature x;
+# `<template-only feature="x">` blocks do the same for parts of a file.
+
+manifest_format = 3
+
+exclude = [
+  "template.toml",
+  "scripts/template_sync.py",
+  "tests/test_template_sync.py",
+  "tests/test_template_manifest.py",
+  "README.md",                       # the template's own; projects get child/README.md
+  "CHANGELOG.md",                    # the template's own; projects get child/CHANGELOG.md
+  "uv.lock",                         # each project locks its own (uv sync)
+  ".secrets.baseline",               # each project scans and audits its own
+  # Dev helpers, until they move to their own repo (.local/dev-tools-plan.md).
+  "scripts/_cli.py",
+  "scripts/complete_worktree.py",
+  "scripts/new_worktree.py",
+  "scripts/remove_worktree.py",
+  "scripts/push_new_tag_to_main.py",
+  "scripts/update_floors.py",
+  "scripts/open_claude_settings.py",
+  "scripts/open_gitignore.py",
+  "scripts/set_python_version.py",
+  "tests/test_complete_worktree.py",
+  "tests/test_new_worktree.py",
+  "tests/test_remove_worktree.py",
+  "tests/test_push_new_tag_to_main.py",
+  "tests/test_update_floors.py",
+  "tests/test_set_python_version.py",
+]
+
+[tokens]
+# One `project` value (any of "My Widget", "my-widget", "my_widget") gives both
+# spellings. The handle has no default: a project never inherits the template's.
+"python_repo_template" = { key = "project", transform = "snake" }
+"python-repo-template" = { key = "project", transform = "kebab" }
+"DrollRobot" = { key = "github_user", required = true }
+"<COPYRIGHT HOLDER>" = "copyright_holder"
+"<COPYRIGHT YEAR>" = "copyright_year"
+"<COMPANY>" = "company"
+
+# The Python version. A project pins one: `python = "3.13"` gives it
+# requires-python "==3.13.*" and CI on 3.13 alone; `new` offers the template's
+# own, always the newest. `python = "all-supported"` makes a library:
+# requires-python ">=" the oldest supported version, which is also the one it
+# develops and type-checks on, and CI on every supported version. When Python
+# ships a release (or one reaches end of life), move every literal and alias here.
+[tokens."3.14"]
+key = "python"
+aliases = { all-supported = "3.11" }
+
+[tokens."==3.14.*"]
+key = "python"
+format = "=={}.*"
+aliases = { all-supported = ">=3.11" }
+
+[tokens."Requires Python 3.14"]
+key = "python"
+format = "Requires Python {}"
+aliases = { all-supported = "Requires Python 3.11 or newer" }
+
+[tokens."badge/python-3.14-blue"]
+key = "python"
+format = "badge/python-{}-blue"
+aliases = { all-supported = "badge/python-3.11%2B-blue" }
+
+[tokens.'python: ["3.14"]']
+key = "python"
+format = 'python: ["{}"]'
+aliases = { all-supported = 'python: ["3.11", "3.12", "3.13", "3.14"]' }
+
+[paths]
+"child/" = ""
+
+[base]
+managed = [
+  ".editorconfig",
+  ".gitattributes",
+  ".pre-commit-config.yaml",
+  ".github/dependabot.yml",
+  ".github/ISSUE_TEMPLATE/*.yml",
+  ".github/PULL_REQUEST_TEMPLATE.md",
+  ".github/workflows/ci.yml",
+  ".github/workflows/audit.yml",
+  "AGENTS.COMMITTING.md",
+  "AGENTS.RELEASING.md",
+  "AGENTS.TESTING.md",
+  "AGENTS.WORKTREE.md",
+  "CLAUDE.md",
+  "tests/detect_secrets_hook.py",
+  "tests/test_detect_secrets_hook.py",
+  "tests/test_mypy_stub_guard.py",
+  "tests/test_no_inline_suppressions_for_secrets.py",
+  "tests/test_secrets_baseline_audited.py",
+  "tests/test_secrets_guards_under_hook_env.py",
+  "tests/test_scripts_stand_alone.py",
+]
+merge = [
+  "AGENTS.md",                       # Package Purpose and project rules
+  "pyproject.toml",                  # dependencies, version, coverage floor
+  ".gitignore",                      # projects add their own ignores
+  ".claude/settings.json",           # projects add permissions
+  ".python-version",                 # a project may pin another Python
+  "tests/conftest.py",               # projects add fixtures
+  "tests/test_unwanted_strings.py",  # projects add patterns
+]
+seed = [
+  "child/README.md",
+  "child/CHANGELOG.md",
+  "child/LICENSE",
+  "src/python_repo_template/__init__.py",
+  "src/python_repo_template/__main__.py",
+  "src/python_repo_template/main.py",
+  "src/python_repo_template/py.typed",
+  "tests/__init__.py",
+]
+
+[features.mkdocs]
+description = "MkDocs site published to GitHub Pages"
+managed = [".github/workflows/docs.yml"]
+merge = ["mkdocs.yml"]
+seed = ["docs/index.md", "docs/reference/python_repo_template.md"]
+
+[features.config_system]
+description = "per-user config.toml package: schema, config CLI, resolver"
+managed = [
+  "src/python_repo_template/config/__init__.py",
+  "src/python_repo_template/config/__main__.py",
+  "src/python_repo_template/config/cli.py",
+  "src/python_repo_template/config/file.py",
+  "src/python_repo_template/config/paths.py",
+  "src/python_repo_template/config/resolve.py",
+  "tests/_config_test_object.py",
+  "tests/test_config_cli.py",
+  "tests/test_config_file.py",
+  "tests/test_config_paths.py",
+  "tests/test_config_resolve.py",
+  "tests/test_config_schema.py",
+]
+merge = ["src/python_repo_template/config/schema.py"]  # the project's own fields
+
+[features.secret_storage]
+description = "secret backends behind the config system"
+requires = ["config_system"]
+managed = ["src/python_repo_template/config/secrets.py", "tests/test_config_secrets.py"]
+
+[features.keyring]
+description = "OS keyring secret backend"
+requires = ["secret_storage"]
+managed = [
+  "src/python_repo_template/config/keyring_backend.py",
+  "tests/test_keyring_backend.py",
+]
+
+[features.keyvault]
+description = "Azure Key Vault secret backend"
+requires = ["secret_storage"]
+managed = [
+  "src/python_repo_template/config/keyvault_backend.py",
+  "tests/test_keyvault_backend.py",
+]
+
+[features.private_repo_deps]
+description = "commented-out steps for private git dependencies in CI and Dependabot"
+# No files: <template-only feature="private_repo_deps"> blocks in the workflows
+# and dependabot.yml.
+
+[features.remote_disposable_scripts]
+description = "mark/verify-remote-disposable pair gating destructive_remote tests"
+seed = [  # each project implements them for its own remote target
+  "scripts/mark_remote_disposable.py",
+  "tests/verify_remote_disposable.py",
+  "tests/test_verify_remote_disposable.py",
+]
+
+[features.security_policy]
+description = "SECURITY.md"
+merge = ["SECURITY.md"]
+
+[features.contributing_guide]
+description = "CONTRIBUTING.md"
+merge = ["CONTRIBUTING.md"]
+
+[features.container_job]
+description = "scheduled Azure Container Apps job: image, image workflow, setup script"
+default = false
+managed = [
+  ".dockerignore",
+  ".github/workflows/image.yml",
+  "scripts/container_job.py",
+  "scripts/container_job.example.toml",
+  "tests/test_container_job.py",
+]
+merge = ["Dockerfile"]  # projects add system packages and build args
+
+# One license, chosen at `new`: each selects its block of child/LICENSE.
+[features.license_mit]
+description = "MIT license"
+conflicts = ["license_apache", "license_gnu", "license_proprietary"]
+
+[features.license_apache]
+description = "Apache License 2.0"
+default = false
+conflicts = ["license_gnu", "license_proprietary"]
+
+[features.license_gnu]
+description = "GNU General Public License v3.0"
+default = false
+conflicts = ["license_proprietary"]
+
+[features.license_proprietary]
+description = "proprietary license, all rights reserved"
+default = false

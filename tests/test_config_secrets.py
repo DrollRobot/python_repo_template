@@ -25,11 +25,6 @@ from python_repo_template.config.resolve import resolve_settings
 from python_repo_template.config.schema import APP_NAME, CLI_NAME, ENV_PREFIX, ConfigError
 from tests._config_test_object import SecretTestObject, pin_prompt_policy
 
-# Version of this test module. It ships to projects generated from this
-# template, so bump on every change to let scripts/compare_to_template.py
-# flag stale copies.
-__version__ = "2.4.0"
-
 pytestmark = pytest.mark.unit
 
 # The project's own policy, read at import, before _prompt_policy replaces it.

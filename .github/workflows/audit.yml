@@ -1,5 +1,6 @@
+# <template-only>
 # =============================================================================
-# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 # =============================================================================
 # This audit.yml is part of a starter repo scaffold.
 #
@@ -21,6 +22,7 @@
 # merging. To suppress a dependency false positive, add a pyproject.toml
 # [tool.uv.audit] ignore entry with a justification comment.
 # =============================================================================
+# </template-only>
 
 # .github/workflows/audit.yml
 
@@ -52,7 +54,7 @@ jobs:
           enable-cache: true
           version: "0.11.x"
 
-      # <private-repo-deps>
+      # <template-only feature="private_repo_deps">
       # FIXME uncomment if using Github app tokens to access private repos
       # - name: Mint a token for private git deps
       #   id: app-token
@@ -72,7 +74,7 @@ jobs:
       #     git config --global \
       #       url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf \
       #       "https://github.com/"
-      # </private-repo-deps>
+      # </template-only>
 
       - name: Sync dependencies
         run: uv sync --locked --all-groups --all-extras

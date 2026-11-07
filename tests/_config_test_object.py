@@ -31,11 +31,6 @@ from typing import Any
 
 import pytest
 
-# Version of this test helper. It ships to projects generated from this
-# template (cleanup.py keeps it: no script or hook shares its name), so bump
-# on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "2.1.0"
-
 _SECRETS_MODULE = "python_repo_template.config.secrets"
 _SCHEMA_MODULE = "python_repo_template.config.schema"
 

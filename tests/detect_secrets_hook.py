@@ -26,11 +26,6 @@ from collections.abc import Sequence
 from detect_secrets.pre_commit_hook import main as hook_main
 from detect_secrets.util.path import convert_local_os_path
 
-# Version of this hook wrapper. It ships to every project (it backs the
-# detect-secrets pre-commit hook), so bump on every change to let
-# scripts/compare_to_template.py flag stale copies.
-__version__ = "1.0.0"
-
 
 def native_paths(argv: Sequence[str]) -> list[str]:
     """Convert every argument that names an existing file to detect-secrets' path style.

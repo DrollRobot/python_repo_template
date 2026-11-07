@@ -1,6 +1,7 @@
+<!-- <template-only> -->
 <!--
 =============================================================================
-TEMPLATE SETUP NOTES -- remove this block - FIXME
+TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 =============================================================================
 This PULL_REQUEST_TEMPLATE.md is part of a starter repo scaffold.
 
@@ -13,6 +14,7 @@ To customize:
 - Keep the checklist short -- contributors skip long lists.
 =============================================================================
 -->
+<!-- </template-only> -->
 
 ## Summary
 

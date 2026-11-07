@@ -31,11 +31,6 @@ from typing import Any
 
 from python_repo_template.config.schema import ConfigError
 
-# Version of this module. It ships to projects generated from this template,
-# so bump on every change to let scripts/compare_to_template.py flag stale
-# copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.0.1"
-
 # Backend-specific config.toml keys this backend consumes, mapped to the help
 # text shown when prompting for them. The dispatcher (secrets.py) unions these
 # into the set of reserved profile keys.

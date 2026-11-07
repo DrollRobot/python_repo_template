@@ -1,7 +1,7 @@
 # python-repo-template
 <!-- FIXME: replace badges below with your own CI/PyPI/coverage links -->
 [![CI](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml/badge.svg)](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) # FIXME replace with correct license link
 <!-- FIXME: one paragraph describing what this package does and who should use it -->
 My goal with this project is to create a baseline for new python projects with the most commonly used tools and community best practices.
@@ -36,49 +36,50 @@ default backend, makes the user choose, or disables secret storage outright, and
 the whole secret-storage layer is removable for projects whose config holds no
 secrets.
 
-## Making a new repo from this template
+## Making a new project from this template
 
-1. **Clone the repo.** Name the new folder after your project:
+1. **Clone the template** once, beside your projects (`git pull` it later to get
+   its changes):
 ```bash
-git clone https://github.com/DrollRobot/python_repo_template.git YOUR-PROJECT-NAME
+git clone https://github.com/DrollRobot/python_repo_template.git
 ```
 
-2. **Edit `scripts/template_setup.toml`** to determine which features you want to keep.
-
-3. **Run the setup script:**
-```powershell
-uv run scripts/template_setup/setup_new_project.py
+2. **Create the project** from the template checkout:
+```bash
+cd python_repo_template
+uv run scripts/template_sync.py new ../my-widget --set github_user=YOUR-GITHUB-USER
 ```
-   It validates every field in the config up front — if anything is wrong,
-   nothing runs and every problem is listed at once. It then previews every
-   change, asks for a single confirmation, and applies everything, including
-   dropping any optional features you turned off.
-   Add `--dry-run` to preview only, or `-y`/`--yes` to skip the confirmation
-   (the preview still runs first).
+   It asks for whatever `--set` didn't give: the project name (default: the
+   directory's name; any of `My Widget`, `my-widget` or `my_widget` gives both the
+   `my_widget` package and the `my-widget` distribution), your GitHub user (no
+   default), the Python version, the copyright holder, year and company for the
+   license, and which optional features to keep, one license among them (MIT
+   unless you decline it).
 
-   It also replaces this README with `README.md.FIXME`, a skeleton README for
-   your project, and deletes the `.FIXME` file. Work through the FIXMEs it
-   leaves — including the license badge, which must match the license you
-   chose. Re-running the setup will not touch that README again: the skeleton
-   is gone, so the step reports "already reset" and leaves your version alone.
+   The Python version defaults to the newest, 3.14, which the template always
+   targets. A version such as `3.13` pins the project to exactly that Python
+   (`requires-python = "==3.13.*"`, CI on 3.13 alone). `all-supported` makes a
+   library: it supports every Python version still maintained (3.11 to 3.14 today),
+   develops and type-checks on the oldest, and CI tests all of them.
+   `-y` takes every default without asking; `--feature NAME=false` turns a feature
+   off. The target must not exist, or be empty, or be an empty git repository (as
+   cloning a newly created GitHub repo leaves). It writes the project, runs
+   `git init` on `main`, and stages everything. It commits nothing.
 
-   This does **not** delete `scripts/template_setup/` — that stays a
-   separate, manual step (`cleanup.py`, or just delete the folder) once
-   you're done with it.
-
-5. **Create the venv and install dev/test dependencies:**
-```powershell
-uv sync
-```
-
-6. **Install and update pre-commit hooks:**
-```powershell
+3. **Finish the setup** in the new project:
+```bash
+cd ../my-widget
+uv version 0.1.0                                 # it starts at the template's version
+uv sync                                          # writes uv.lock
+uv run detect-secrets scan > .secrets.baseline   # then audit every entry:
+uv run detect-secrets audit .secrets.baseline
 uv run pre-commit install
 uv run pre-commit install --hook-type pre-push
-uv run pre-commit autoupdate
+git grep -n FIXME                                # placeholders left for you to fill in
+git add -A && git commit
 ```
 
-7. **If you kept mkdocs, enable GitHub Pages for docs:**
+4. **If you kept mkdocs, enable GitHub Pages for docs:**
    - In the GitHub repo settings, set Pages source to the `gh-pages` branch.
    - Then deploy:
 ```bash
@@ -87,12 +88,7 @@ uv run mkdocs gh-deploy --force
    The GitHub Actions workflow in `.github/workflows/docs.yml` will keep the
    site updated on future pushes to `main`.
 
-8. **Initialize the secrets baseline:**
-```powershell
-uv run detect-secrets scan > .secrets.baseline
-```
-
-9. **If the project has private git dependencies:**
+5. **If the project has private git dependencies:**
    1. Create the GitHub App (in the Github account → Settings → Developer settings → GitHub Apps → New):
        - Permissions → Repository permissions → Contents: Read-only (Metadata: Read is added automatically). Nothing else.
        - Webhook → uncheck Active (you don't need events).
@@ -124,12 +120,12 @@ uv run detect-secrets scan > .secrets.baseline
 ```bash
       gh secret set DEPENDABOT_GIT_TOKEN --app dependabot
 ```
-   6. Uncomment the private-repo-deps sections in .github/workflows/ audit.yml, ci.yml,
-      docs.yml and (with `container_job`) image.yml, and both sections in
-      .github/dependabot.yml.
+   6. Uncomment the commented-out blocks that start with `# FIXME uncomment` in
+      .github/workflows/ audit.yml, ci.yml, docs.yml and (with `container_job`)
+      image.yml, and both in .github/dependabot.yml.
    7. Update actions/create-github-app-token to latest trusted commit.
 
-10. **If the project runs as a scheduled Azure Container Apps job** (`container_job = true`):
+6. **If the project runs as a scheduled Azure Container Apps job** (`container_job` on):
    1. Check the package can run unattended in a container:
        - Its settings resolve with no `config.toml`: from defaults, or from environment
          variables set on the job (`[job.env]` in the config below).
@@ -154,4 +150,64 @@ uv run detect-secrets scan > .secrets.baseline
       rebuilds `main` weekly on a freshly pulled base image; the cron in `image.yml`
       sets how often.
 
-11. **Write some code!**
+7. **Write some code!**
+
+## Staying in sync
+
+A project carries one file from the template: `.template.toml`, which records the
+template commit it was last synced to (its pin), its values, its feature choices
+and any per-file overrides. To keep even that out of the project's history, move
+it to `.local/.template.toml` (`.local/` is gitignored); a fresh clone then needs
+its own copy. Delete it to cut the project loose from the template.
+
+To bring the template's later changes into a project, commit the project's work,
+then from the template checkout:
+```bash
+git pull
+uv run scripts/template_sync.py check ../my-widget    # what would change; writes nothing
+uv run scripts/template_sync.py update ../my-widget   # apply it, then review and commit
+```
+
+`template.toml` decides what each file gets:
+
+- **managed** files belong to the template: `update` brings them to the template's
+  version, and `check` reports local edits as drift.
+- **merge** files are edited on both sides (`pyproject.toml`, `AGENTS.md`,
+  `.gitignore`, ...): `update` 3-way merges the template's changes into the
+  project's copy, and leaves conflict markers, like git, when both sides changed
+  the same lines.
+- **seed** files (`README.md`, `src/<package>/main.py`, ...) are written once, by
+  `new`. `update --seed` installs seed files the template has added since.
+
+A project keeps the Python version it was created with when the template moves
+on. To move it, change `python` in `.template.toml` and run `update`, which
+rewrites the managed files; then make the same change by hand in the merge files
+that name the version (`pyproject.toml`, `.python-version`, and `CONTRIBUTING.md`
+if you have it), since `update` keeps your copies of those.
+
+A project that forks a managed file for good sets, for example,
+`"src/my_widget/config/cli.py" = "merge"` (or `"ignore"`) under `[overrides]` in
+`.template.toml`. `update` also asks about features the template has gained and
+records the answers there.
+
+Projects created with the old setup scripts (`scripts/template_setup/`) have no
+`.template.toml`: `check` prints a skeleton to fill in. Pin it to the last template
+commit before the switch to `template_sync.py`. The first `update` then replaces the
+managed files outright and may leave conflicts in `AGENTS.md` and `pyproject.toml`
+to resolve once.
+
+## Changing the template
+
+- Classify every new tracked file in `template.toml`, under `[base]` or the
+  feature it belongs to.
+- Wrap anything that must not reach projects in a `<template-only>` block: a line
+  holding only the tag in the file's comment syntax (`# <template-only>` ...
+  `# </template-only>`). Tagged blocks (`feature="mkdocs"`, `feature="!mkdocs"`,
+  `feature="a|b"`) reach only the projects whose features match.
+- When Python ships a release (in October, when the oldest version also reaches
+  end of life), move the version tokens in `template.toml` and their literals in
+  the files together: `.python-version`, `pyproject.toml`, the CI matrix, the
+  badges and `CONTRIBUTING.md`. The `all-supported` aliases list the maintained
+  versions. `validate` reports any literal left behind.
+- `uv run scripts/template_sync.py validate` checks all of it; the pre-commit hook
+  and CI run it too.

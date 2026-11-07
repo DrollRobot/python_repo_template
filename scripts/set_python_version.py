@@ -15,9 +15,9 @@ The default version lives in :data:`DEFAULT_VERSION` below; edit that one line t
 change what a fresh clone targets, or pass a version on the command line.
 
 Usage:
-    uv run scripts/template_setup/set_python_version.py
-    uv run scripts/template_setup/set_python_version.py 3.14
-    uv run scripts/template_setup/set_python_version.py 3.14 --dry-run
+    uv run scripts/set_python_version.py
+    uv run scripts/set_python_version.py 3.14
+    uv run scripts/set_python_version.py 3.14 --dry-run
 """
 
 from __future__ import annotations
@@ -28,14 +28,97 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import _common
-
 # The Python version a fresh clone targets. Bump this one line (or pass a
 # version on the command line) to retarget the whole project.
 DEFAULT_VERSION = "3.14"
 
 # Accepts MAJOR.MINOR or MAJOR.MINOR.PATCH (e.g. "3.14" or "3.14.3").
 _VERSION_RE = re.compile(r"^(\d+)\.(\d+)(?:\.\d+)*$")
+
+
+def _find_root() -> Path:
+    """Walk upward from this script's folder to the directory holding ``pyproject.toml``.
+
+    Returns:
+        The project root directory.
+
+    Raises:
+        RuntimeError: If no ``pyproject.toml`` is found in any parent directory.
+    """
+    current = Path(__file__).resolve().parent
+    while current != current.parent:
+        if (current / "pyproject.toml").exists():
+            return current
+        current = current.parent
+    raise RuntimeError("Could not find project root (no pyproject.toml found).")
+
+
+def _read_text(path: Path) -> str | None:
+    """Read a file as UTF-8 without altering its line endings.
+
+    Args:
+        path: File to read.
+
+    Returns:
+        The contents, or ``None`` if the file is unreadable or not UTF-8.
+    """
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            return handle.read()
+    except (UnicodeDecodeError, OSError):  # fmt: skip
+        return None
+
+
+def _write_text(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` as UTF-8, preserving its line endings.
+
+    Args:
+        path: File to write.
+        text: Full file contents.
+    """
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+
+
+def _confirm(prompt: str, *, assume_yes: bool = False) -> bool:
+    """Ask a yes/no question on the terminal.
+
+    Args:
+        prompt: Question to display (without the ``[y/n]`` suffix).
+        assume_yes: Return ``True`` without prompting.
+
+    Returns:
+        ``True`` for yes, ``False`` for no.
+    """
+    if assume_yes:
+        return True
+    while True:
+        answer = input(f"{prompt} [y/n] ").strip().lower()
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+        print("  Please answer 'y' or 'n'.")
+
+
+def _section(title: str) -> None:
+    """Print a section header.
+
+    Args:
+        title: Section title.
+    """
+    print()
+    print(f"== {title} ==")
+
+
+def _info(label: str, value: str) -> None:
+    """Print an aligned ``label: value`` line.
+
+    Args:
+        label: Short field name.
+        value: Field value.
+    """
+    print(f"  {label + ':':<20}{value}")
 
 
 @dataclass(frozen=True)
@@ -185,7 +268,7 @@ def plan_changes(
     changes: list[tuple[Path, str, list[tuple[int, str, str]]]] = []
     for relpath, file_edits in by_file.items():
         path = root / relpath
-        text = _common.read_text(path)
+        text = _read_text(path)
         if text is None:
             continue
         new_text = text
@@ -213,10 +296,10 @@ def run(root: Path, version: str, *, assume_yes: bool = False, dry_run: bool = F
     """
     full, dotted, compact = version_forms(version)
 
-    _common.section("Set Python version")
-    _common.info("Version", full)
-    _common.info("requires-python", f">={dotted}")
-    _common.info("ruff / mypy", f"{compact} / {dotted}")
+    _section("Set Python version")
+    _info("Version", full)
+    _info("requires-python", f">={dotted}")
+    _info("ruff / mypy", f"{compact} / {dotted}")
 
     changes = plan_changes(root, _build_edits(full, dotted, compact))
     if not changes:
@@ -234,12 +317,12 @@ def run(root: Path, version: str, *, assume_yes: bool = False, dry_run: bool = F
         return 0
 
     print()
-    if not _common.confirm("Apply Python version change?", assume_yes=assume_yes):
+    if not _confirm("Apply Python version change?", assume_yes=assume_yes):
         print("  Aborted; nothing changed.")
         return 1
 
     for path, new_text, _lines in changes:
-        _common.write_text(path, new_text)
+        _write_text(path, new_text)
     print(f"\n  Updated {len(changes)} file(s) to Python {dotted}.")
     print("  Reminder: run 'uv sync' to regenerate uv.lock and the virtualenv.")
     return 0
@@ -262,7 +345,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    root = _common.find_root()
+    root = _find_root()
     try:
         exit_code = run(root, args.version, assume_yes=args.yes, dry_run=args.dry_run)
     except ValueError as error:

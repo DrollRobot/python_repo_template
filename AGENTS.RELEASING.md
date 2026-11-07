@@ -69,6 +69,7 @@ uv run pre-commit autoupdate
    Re-run the test suite as described in [AGENTS.TESTING.md](AGENTS.TESTING.md)
    before continuing.
 
+<!-- <template-only feature="mkdocs"> -->
 ## Update docs
 ```
 uv run mkdocs build --strict          # build docs, fail on warnings
@@ -76,6 +77,7 @@ uv run mkdocs build --strict          # build docs, fail on warnings
 - Review all .md files in the root of the docs folder for accuracy or any new
    features that should be added.
 - Don't review or modify files in docs/reference. (built by mkdocs)
+<!-- </template-only> -->
 
 ## Review/Update README.md
 

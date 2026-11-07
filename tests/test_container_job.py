@@ -3,9 +3,6 @@
 Azure is faked at the HTTP layer (:class:`FakeAzure`): PUTs store resources, GETs
 read them back, so a test can apply a plan and then plan again against the result.
 GitHub is faked at the client layer (:class:`FakeGitHub`).
-
-This file is a dev-script test: cleanup.py matches it to scripts/container_job.py
-and deletes it in projects started from the template.
 """
 
 from __future__ import annotations

@@ -24,8 +24,8 @@ env:
   IMAGE: ${{ github.event.repository.name }}:ci
   # Publish from main only, and only once scripts/container_job.py has set the
   # repo up: the CI identity's federated credential trusts refs/heads/main and
-  # nothing else, so other branches build and test only. Without ACR_NAME (the
-  # template itself, or a project not onboarded yet) main builds and tests too.
+  # nothing else, so other branches build and test only. Without ACR_NAME (a
+  # repo not set up yet) main builds and tests too.
   PUBLISH: ${{ github.ref == 'refs/heads/main' && vars.ACR_NAME != '' }}
 
 jobs:
@@ -41,7 +41,7 @@ jobs:
         id: python
         run: echo "version=$(cat .python-version)" >> "$GITHUB_OUTPUT"
 
-      # <private-repo-deps>
+      # <template-only feature="private_repo_deps">
       # FIXME uncomment if using Github app tokens to access private repos
       # - name: Mint a token for private git deps
       #   id: app-token
@@ -54,7 +54,7 @@ jobs:
       #     private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
       #     owner: ${{ github.repository_owner }}
       #     repositories: repo1, repo2
-      # </private-repo-deps>
+      # </template-only>
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -67,16 +67,16 @@ jobs:
           build-args: PYTHON_VERSION=${{ steps.python.outputs.version }}
           load: true
           tags: ${{ env.IMAGE }}
-          # <private-repo-deps>
+          # <template-only feature="private_repo_deps">
           # FIXME uncomment along with the token step above
           # secrets: gh_token=${{ steps.app-token.outputs.token }}
-          # </private-repo-deps>
+          # </template-only>
 
       - name: Smoke test the entrypoint
         # --help imports every module, so a missing dependency fails here.
         run: docker run --rm "$IMAGE" --help
 
-      # <private-repo-deps>
+      # <template-only feature="private_repo_deps">
       # FIXME uncomment along with the token step above
       # - name: Check the image holds no GitHub token
       #   env:
@@ -91,7 +91,7 @@ jobs:
       #       echo "::error::The GitHub token is in the image's files (listed above)."
       #       exit 1
       #     fi
-      # </private-repo-deps>
+      # </template-only>
 
       - name: Read the package version
         if: env.PUBLISH == 'true'

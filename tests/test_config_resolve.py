@@ -30,11 +30,6 @@ from tests._config_test_object import (
     requires_secret_storage,
 )
 
-# Version of this test module. It ships to projects generated from this
-# template (cleanup.py keeps it: no script or hook shares its name), so bump
-# on every change to let scripts/compare_to_template.py flag stale copies.
-__version__ = "2.4.0"
-
 pytestmark = pytest.mark.unit
 
 # No test here configures a credential_backend, and _prompt_policy removes the

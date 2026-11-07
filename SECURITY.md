@@ -1,6 +1,7 @@
+<!-- <template-only> -->
 <!--
 =============================================================================
-TEMPLATE SETUP NOTES -- remove this block - FIXME
+TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 =============================================================================
 This SECURITY.md is part of a starter repo scaffold.
 
@@ -15,6 +16,7 @@ To customize for your project:
 - Update the response timeline if 5 business days does not fit your project.
 =============================================================================
 -->
+<!-- </template-only> -->
 
 # Security Policy
 

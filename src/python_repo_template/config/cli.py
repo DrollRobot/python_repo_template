@@ -83,11 +83,6 @@ from python_repo_template.config.schema import (
     is_secret,
 )
 
-# Version of this module. It ships to projects generated from this template,
-# so bump on every change to let scripts/compare_to_template.py flag stale
-# copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.4.0"
-
 _SECRET_MASK = "********"  # noqa: S105  (display placeholder, not a credential)
 
 

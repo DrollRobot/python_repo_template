@@ -18,12 +18,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuilds weekly on a fresh base image, and
   `scripts/container_job.py`, which creates the job and everything it needs from a
   config file and updates whatever differs on later runs.
+- `scripts/template_sync.py` creates projects from the template (`new`) and keeps
+  them in sync (`check`, `update`), driven by `template.toml`. A project carries
+  only `.template.toml`, which pins the template commit it was last synced to.
+  Template changes reach projects as updates to managed files, 3-way merges into
+  shared ones such as `pyproject.toml`, and new optional features to choose.
+- `new` asks for one license (MIT, Apache 2.0, GPL 3.0 or proprietary) and fills
+  in the copyright holder, year and company.
+- `new` asks for the project's Python version: the template's own (the newest)
+  by default, a pinned version such as `3.13` (exactly that Python, in
+  `requires-python` and CI), or `all-supported` for a library, which supports
+  and tests every maintained Python version.
+- CI tests a matrix of Python versions: the pinned one, or every supported one for
+  a library.
 
 ### Changed
 
+- **Breaking:** making a project no longer means cloning the template and running
+  `scripts/template_setup/setup_new_project.py`; run `template_sync.py new` from a
+  template checkout instead. Existing projects have no `.template.toml`; see "Staying
+  in sync" in the README to adopt it.
+- Projects no longer get the template's dev helpers (the worktree, release and
+  editor scripts) or their tests.
+- `container_job.py` and `mark_remote_disposable.py` stand alone, without the
+  shared `_cli.py`.
 - Worktree config files are hard-linked, not copied, where symlinks are
   unavailable (Windows without Developer Mode).
 - Dependabot opens each major update as its own PR, outside the grouped PR.
+- The template pins its Python exactly (`requires-python = "==3.14.*"`), and ruff
+  takes its target version from `requires-python`.
+
+### Removed
+
+- `scripts/template_setup/` (the setup scripts and `template_setup.toml`),
+  `scripts/compare_to_template.py`, and the `.FIXME` skeleton files, which
+  `child/` replaces.
+- The `__version__` counters in the config package and the feature scripts: the
+  pin in `.template.toml` replaces them.
 
 ### Fixed
 

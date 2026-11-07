@@ -1,5 +1,6 @@
+# <template-only>
 # =============================================================================
-# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 # =============================================================================
 # This dependabot.yml is part of a starter repo scaffold.
 #
@@ -18,12 +19,13 @@
 #   - Adjust open-pull-requests-limit if you want more or fewer open at once.
 #   - Add a target-branch key if your default branch is not "main".
 # =============================================================================
+# </template-only>
 
 # .github/dependabot.yml
 
 version: 2
 
-# <private-repo-deps>
+# <template-only feature="private_repo_deps">
 # FIXME uncomment if the project has private git dependencies
 # registries:
 #   github-private:
@@ -31,7 +33,7 @@ version: 2
 #     url: https://github.com
 #     username: x-access-token
 #     password: ${{ secrets.DEPENDABOT_GIT_TOKEN }}
-# </private-repo-deps>
+# </template-only>
 
 updates:
   - package-ecosystem: "uv"
@@ -44,10 +46,10 @@ updates:
       python-deps:
         patterns: ["*"]
         update-types: ["minor", "patch"]
-    # <private-repo-deps>
+    # <template-only feature="private_repo_deps">
     # FIXME uncomment along with the registries block above
     # registries: [github-private]
-    # </private-repo-deps>
+    # </template-only>
 
   - package-ecosystem: "github-actions"
     directory: "/"

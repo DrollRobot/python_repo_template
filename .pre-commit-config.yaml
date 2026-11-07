@@ -1,5 +1,6 @@
+# <template-only>
 # =============================================================================
-# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 # =============================================================================
 # This .pre-commit-config.yaml is part of a starter repo scaffold.
 # pre-commit runs a suite of checks automatically on every
@@ -39,6 +40,10 @@
 #                     -- fails the commit if any file in the repo contains an
 #                        inline detect-secrets suppression pragma (runs the
 #                        enforcement test against the whole working tree)
+#   template-validate -- (this template repo only) runs
+#                        `uv run scripts/template_sync.py validate`: every
+#                        tracked file classified in template.toml, markers
+#                        balanced, features and tokens valid
 #
 # Pre-push hooks (run once on `git push`, slower whole-repo gates):
 #   uv-lock-check     -- fails if uv.lock is out of sync with pyproject.toml
@@ -50,6 +55,7 @@
 #                        (`-m "not live and not slow and not destructive_local
 #                        and not destructive_remote"`)
 # =============================================================================
+# </template-only>
 
 # .pre-commit-config.yaml
 
@@ -139,6 +145,19 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+  # <template-only>
+  # Template self-check: an unclassified file or a broken marker cannot be
+  # committed.
+  - repo: local
+    hooks:
+      - id: template-validate
+        name: template validate
+        entry: uv run scripts/template_sync.py validate
+        language: system
+        pass_filenames: false
+        always_run: true
+  # </template-only>
 
   # Pre-push checks
   - repo: local

@@ -20,9 +20,6 @@ import pytest
 
 from tests.detect_secrets_hook import native_paths
 
-# Version of this test
-__version__ = "1.0.0"
-
 _ROOT = Path(__file__).resolve().parent.parent
 _WRAPPER = _ROOT / "tests" / "detect_secrets_hook.py"
 _BASELINE = ".secrets.baseline"

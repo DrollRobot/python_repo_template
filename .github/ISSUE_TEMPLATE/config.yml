@@ -1,22 +1,28 @@
+# <template-only>
 # =============================================================================
-# TEMPLATE SETUP NOTES -- remove this block - FIXME
+# TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 # =============================================================================
 # This config.yml is part of a starter repo scaffold.
 #
 # Purpose: Controls the GitHub "New Issue" chooser. Setting
 # blank_issues_enabled: false forces contributors to use one of the issue
 # forms (bug_report.yml, feature_request.yml) rather than opening a blank
-# issue. The contact_links entry points them to your docs site first.
+# issue. The contact_links entry points them to your docs site first; it
+# ships only with the mkdocs feature.
 #
 # To customize:
-#   - Replace the GitHub username in the docs URL with your own.
+#   - The GitHub username and project name in the docs URL are tokens;
+#     scripts/template_sync.py fills them in.
 #   - Update the URL if you host docs somewhere other than GitHub Pages.
 # =============================================================================
+# </template-only>
 
 # .github/ISSUE_TEMPLATE/config.yml
 
 blank_issues_enabled: false
+# <template-only feature="mkdocs">
 contact_links:
   - name: Documentation
     url: https://DrollRobot.github.io/python-repo-template/
     about: Check the docs before opening an issue.
+# </template-only>

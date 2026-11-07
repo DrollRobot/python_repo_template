@@ -61,11 +61,6 @@ from typing import Any, Protocol, cast
 from python_repo_template.config import schema as _schema
 from python_repo_template.config.schema import APP_NAME, CLI_NAME, ConfigError
 
-# Version of this module. It ships to projects generated from this template,
-# so bump on every change to let scripts/compare_to_template.py flag stale
-# copies: patch = bugfix, minor = new behavior, major = breaking change.
-__version__ = "2.2.1"
-
 # The reserved profile key selecting the backend. Whether a default exists is
 # the schema's CREDENTIAL_BACKEND policy; the user can always pick (or, under
 # a schema default, override) the backend here.
