@@ -329,6 +329,7 @@ EXCLUDED_GLOBS = (
     ".secrets.baseline",  # per-project: each repo scans and audits its own
     ".python-version",  # compared indirectly: replayed onto the template side
     "*.code-workspace.FIXME.jsonc",
+    "scripts/template_sync.py",  # the template sync tool, replacing this script
     "tests/test_*.py",
 )
 
