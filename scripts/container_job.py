@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -49,13 +50,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any
-
-import _cli as cli
-
-# Version of this helper script itself. Bump on every change: patch = bugfix,
-# minor = new flag/behavior, major = breaking CLI change.
-__version__ = "1.0.0"
+from typing import Any, NoReturn
 
 ARM = "https://management.azure.com"
 
@@ -112,6 +107,151 @@ class ConfigError(Exception):
 
 class AzureError(Exception):
     """Azure refused a request, or a resource failed to provision."""
+
+
+# region output
+
+# Console output for the run: a section header, aligned facts, commands echoed
+# before they run, and colour where the terminal takes it (never with NO_COLOR,
+# or when output is piped). Kept in this file so the script stands alone.
+
+
+def _enable_windows_ansi() -> None:
+    """Turn on ANSI escape processing in the legacy Windows console.
+
+    Windows Terminal and VS Code handle ANSI already; this is a no-op there.
+    """
+    if sys.platform != "win32":  # also narrows ctypes.windll for type checkers
+        return
+    import ctypes
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            # 0x0004 = ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+    except (OSError, AttributeError):  # fmt: skip
+        pass
+
+
+def _supports_color() -> bool:
+    """Decide whether to emit ANSI colours, enabling VT processing on Windows.
+
+    Returns:
+        True when stdout is a terminal and ``NO_COLOR`` is unset.
+    """
+    if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
+        return False
+    if os.name == "nt":
+        _enable_windows_ansi()
+    return True
+
+
+_COLOR = _supports_color()
+CYAN, GREEN, YELLOW, RED, GRAY, RESET = (
+    (code if _COLOR else "")
+    for code in ("\x1b[36m", "\x1b[32m", "\x1b[33m", "\x1b[31m", "\x1b[90m", "\x1b[0m")
+)
+_assume_yes = False
+
+
+def section(title: str) -> None:
+    """Print a section header.
+
+    Args:
+        title: Section title.
+    """
+    print()
+    print(f"{CYAN}== {title} =={RESET}", flush=True)
+
+
+def info(label: str, value: str) -> None:
+    """Print an aligned ``label: value`` line.
+
+    Args:
+        label: Short field name.
+        value: Field value.
+    """
+    print(f"  {GRAY}{label + ':':<20}{RESET}{value}")
+
+
+def echo(command_text: str) -> None:
+    """Show what is about to run.
+
+    Args:
+        command_text: The step, as a short line.
+    """
+    print(f"  {GRAY}> {command_text}{RESET}", flush=True)
+
+
+def warn(message: str) -> None:
+    """Print a warning line.
+
+    Args:
+        message: Warning text.
+    """
+    print(f"{YELLOW}{message}{RESET}")
+
+
+def success(message: str) -> None:
+    """Print a success line.
+
+    Args:
+        message: Success text.
+    """
+    print(f"{GREEN}{message}{RESET}")
+
+
+def die(message: str) -> NoReturn:
+    """Print an error and exit with status 1.
+
+    Args:
+        message: Error text.
+    """
+    print(f"{RED}ERROR: {message}{RESET}", file=sys.stderr)
+    sys.exit(1)
+
+
+def confirm(prompt: str) -> bool:
+    """Ask a yes/no question; always yes under ``--yes``.
+
+    Args:
+        prompt: Question to display (without the ``[y/n]`` suffix).
+
+    Returns:
+        True for yes, False for no.
+    """
+    if _assume_yes:
+        print(f"{prompt} [y/n] y {GRAY}(auto: --yes){RESET}")
+        return True
+    while True:
+        answer = input(f"{prompt} [y/n] ").strip().lower()
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+        print("  Please answer 'y' or 'n'.")
+
+
+def capture(args: list[str]) -> str:
+    """Run a command and return its stdout; exit the script if it fails.
+
+    stderr streams to the terminal, so the tool's own message shows.
+
+    Args:
+        args: Command and arguments.
+
+    Returns:
+        The command's stdout, stripped.
+    """
+    result = subprocess.run(  # noqa: S603  (fixed argv list, no shell)
+        args, stdout=subprocess.PIPE, encoding="utf-8", errors="replace", check=False
+    )
+    if result.returncode != 0:
+        die(f"{subprocess.list2cmdline(args)} failed (exit {result.returncode})")
+    return (result.stdout or "").strip()
 
 
 # region config
@@ -376,7 +516,7 @@ def _az() -> str:
     """
     found = shutil.which("az")
     if found is None:
-        cli.die("The Azure CLI (az) is not on PATH. Install it and run 'az login'.")
+        die("The Azure CLI (az) is not on PATH. Install it and run 'az login'.")
     return found
 
 
@@ -389,7 +529,7 @@ def azure_token(subscription: str) -> tuple[str, str]:
     Returns:
         ``(token, tenant id)``.
     """
-    output = cli.capture(
+    output = capture(
         [
             _az(),
             "account",
@@ -541,7 +681,7 @@ class GitHub:
         """
         found = shutil.which("gh")
         if found is None:
-            cli.die("The GitHub CLI (gh) is not on PATH. Install it and run 'gh auth login'.")
+            die("The GitHub CLI (gh) is not on PATH. Install it and run 'gh auth login'.")
         return found
 
     def subject_prefix(self) -> str:
@@ -550,7 +690,7 @@ class GitHub:
         Returns:
             The prefix GitHub puts before ``:ref:...`` in its tokens' subject.
         """
-        return cli.capture(
+        return capture(
             [
                 self._gh(),
                 "api",
@@ -566,7 +706,7 @@ class GitHub:
         Returns:
             Variable name to value.
         """
-        output = cli.capture(
+        output = capture(
             [self._gh(), "variable", "list", "--repo", self.repository, "--json", "name,value"]
         )
         return {item["name"]: item["value"] for item in json.loads(output or "[]")}
@@ -578,9 +718,7 @@ class GitHub:
             name: Variable name.
             value: Variable value.
         """
-        cli.capture(
-            [self._gh(), "variable", "set", name, "--repo", self.repository, "--body", value]
-        )
+        capture([self._gh(), "variable", "set", name, "--repo", self.repository, "--body", value])
 
 
 # region plan
@@ -1452,9 +1590,9 @@ def show(plan: Plan) -> None:
         plan: What a run would change and report.
     """
     for note in plan.notes:
-        cli.warn(f"  {note}")
+        warn(f"  {note}")
     if not plan.changes:
-        cli.success("Everything matches the config; nothing to change.")
+        success("Everything matches the config; nothing to change.")
         return
     print(f"\n  Changes ({len(plan.changes)}):")
     for change in plan.changes:
@@ -1470,9 +1608,9 @@ def apply(plan: Plan) -> None:
         plan: The changes to make.
     """
     for change in plan.changes:
-        cli.echo(f"{change.kind} {change.what}")
+        echo(f"{change.kind} {change.what}")
         change.apply()
-    cli.success(f"Made {len(plan.changes)} change(s).")
+    success(f"Made {len(plan.changes)} change(s).")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -1481,6 +1619,7 @@ def main(argv: list[str] | None = None) -> None:
     Args:
         argv: Command-line arguments; ``sys.argv[1:]`` when None.
     """
+    global _assume_yes
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1490,16 +1629,15 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("-y", "--yes", action="store_true", help="Skip the confirmation prompt.")
     args = parser.parse_args(argv)
-    cli.set_assume_yes(args.yes)
+    _assume_yes = args.yes
 
-    cli.section("Container Apps job")
-    cli.info("Script version", __version__)
+    section("Container Apps job")
     try:
         config = load_config(args.config)
     except ConfigError as exc:
-        cli.die(str(exc))
-    cli.info("Config", str(args.config))
-    cli.info("Job", config.job.name)
+        die(str(exc))
+    info("Config", str(args.config))
+    info("Job", config.job.name)
 
     token, tenant = azure_token(config.shared.subscription)
     planner = Planner(config, Arm(token), GitHub(config.repository), tenant)
@@ -1511,14 +1649,14 @@ def main(argv: list[str] | None = None) -> None:
                 print("\n  (dry run -- nothing changed)")
             return
         print()
-        if not cli.confirm(f"Make these {len(plan.changes)} change(s)?"):
+        if not confirm(f"Make these {len(plan.changes)} change(s)?"):
             print("  Aborted; nothing changed.")
             sys.exit(1)
         apply(plan)
     except AzureError as exc:
-        cli.die(str(exc))
+        die(str(exc))
     except subprocess.CalledProcessError as exc:
-        cli.die(f"{exc.cmd} failed (exit {exc.returncode}).")
+        die(f"{exc.cmd} failed (exit {exc.returncode}).")
 
 
 if __name__ == "__main__":
