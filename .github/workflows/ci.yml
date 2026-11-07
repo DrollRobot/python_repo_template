@@ -110,6 +110,10 @@ jobs:
   # The template's own self-check: every tracked file classified in
   # template.toml, markers balanced, features and tokens valid. The tool's
   # tests run in the check matrix above.
+  # Then four projects made from the template (defaults, every feature off,
+  # every feature on, a library) must each pass their own gates. Those tests
+  # are marked live, because they download each project's dependencies, so the
+  # check matrix skips them.
   template:
     runs-on: ubuntu-latest
     steps:
@@ -123,4 +127,7 @@ jobs:
 
       - name: Validate the template
         run: uv run scripts/template_sync.py validate
+
+      - name: Make sample projects and run their gates
+        run: uv run pytest tests/test_template_manifest.py -m live --no-cov
   # </template-only>

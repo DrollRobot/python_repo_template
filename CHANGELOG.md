@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and tests every maintained Python version.
 - CI tests a matrix of Python versions: the pinned one, or every supported one for
   a library.
+- The template's CI makes four projects from the template and runs each one's
+  gates.
 
 ### Changed
 

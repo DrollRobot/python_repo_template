@@ -211,3 +211,6 @@ to resolve once.
   versions. `tests/test_template_manifest.py` fails on any literal left behind.
 - `uv run scripts/template_sync.py validate` checks all of it; the pre-commit hook
   and CI run it too.
+- CI also makes four projects from the template (defaults, every feature off,
+  every feature on, a library) and runs each one's gates. Run the same check
+  locally with `uv run pytest tests/test_template_manifest.py -m live`.

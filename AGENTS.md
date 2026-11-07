@@ -46,6 +46,8 @@ from it and keeps them in sync, as `template.toml` directs.
 - Run `uv run scripts/template_sync.py validate` after changing
   `template.toml` or any marker. The `template-validate` pre-commit hook runs
   it too.
+- Then run `uv run pytest tests/test_template_manifest.py -m live`: it makes
+  sample projects from the template and runs their gates, as CI does.
 <!-- </template-only> -->
 
 ## Code Formatting and Style
