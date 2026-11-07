@@ -2,7 +2,7 @@
 
 <!-- FIXME: point these badges at your own repo, and drop the ones you don't use -->
 [![CI](https://github.com/DrollRobot/python_repo_template/actions/workflows/ci.yml/badge.svg)](https://github.com/DrollRobot/python_repo_template/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.15-blue)](https://www.python.org/)
 <!-- <template-only feature="license_mit"> -->
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 <!-- </template-only> -->

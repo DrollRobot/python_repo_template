@@ -10,7 +10,7 @@ name = "python-repo-template"
 version = "1.16.0"
 description = "" # FIXME add a brief description of the project
 readme = "README.md"
-requires-python = "==3.14.*"
+requires-python = "==3.15.*"
 dependencies = [
     # FIXME add depencencies
     # <template-only feature="config_system">
@@ -134,7 +134,7 @@ extend-ignore = ["ANN401"]  # Any in **kwargs is a legitimate pass-through annot
 convention = "google"
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.15"
 strict = true
 files = [
     "src",

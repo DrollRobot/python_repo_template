@@ -52,7 +52,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          version: "0.11.x"
+          version: "0.13.x"
 
       # <template-only feature="private_repo_deps">
       # FIXME uncomment if using Github app tokens to access private repos
@@ -92,7 +92,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          version: "0.11.x"
+          version: "0.13.x"
 
       - name: Sync detect-secrets
         run: uv sync --locked --only-group secrets

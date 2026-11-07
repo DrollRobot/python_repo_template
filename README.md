@@ -1,7 +1,7 @@
 # python-repo-template
 <!-- FIXME: replace badges below with your own CI/PyPI/coverage links -->
 [![CI](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml/badge.svg)](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.15-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) # FIXME replace with correct license link
 <!-- FIXME: one paragraph describing what this package does and who should use it -->
 My goal with this project is to create a baseline for new python projects with the most commonly used tools and community best practices.
@@ -56,10 +56,10 @@ uv run scripts/template_sync.py new ../my-widget --set github_user=YOUR-GITHUB-U
    license, and which optional features to keep, one license among them (MIT
    unless you decline it).
 
-   The Python version defaults to the newest, 3.14, which the template always
+   The Python version defaults to the newest, 3.15, which the template always
    targets. A version such as `3.13` pins the project to exactly that Python
    (`requires-python = "==3.13.*"`, CI on 3.13 alone). `all-supported` makes a
-   library: it supports every Python version still maintained (3.11 to 3.14 today),
+   library: it supports every Python version still maintained (3.11 to 3.15 today),
    develops and type-checks on the oldest, and CI tests all of them.
    `-y` takes every default without asking; `--feature NAME=false` turns a feature
    off. The target must not exist, or be empty, or be an empty git repository (as

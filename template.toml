@@ -56,29 +56,29 @@ exclude = [
 # requires-python ">=" the oldest supported version, which is also the one it
 # develops and type-checks on, and CI on every supported version. When Python
 # ships a release (or one reaches end of life), move every literal and alias here.
-[tokens."3.14"]
+[tokens."3.15"]
 key = "python"
 aliases = { all-supported = "3.11" }
 
-[tokens."==3.14.*"]
+[tokens."==3.15.*"]
 key = "python"
 format = "=={}.*"
 aliases = { all-supported = ">=3.11" }
 
-[tokens."Requires Python 3.14"]
+[tokens."Requires Python 3.15"]
 key = "python"
 format = "Requires Python {}"
 aliases = { all-supported = "Requires Python 3.11 or newer" }
 
-[tokens."badge/python-3.14-blue"]
+[tokens."badge/python-3.15-blue"]
 key = "python"
 format = "badge/python-{}-blue"
 aliases = { all-supported = "badge/python-3.11%2B-blue" }
 
-[tokens.'python: ["3.14"]']
+[tokens.'python: ["3.15"]']
 key = "python"
 format = 'python: ["{}"]'
-aliases = { all-supported = 'python: ["3.11", "3.12", "3.13", "3.14"]' }
+aliases = { all-supported = 'python: ["3.11", "3.12", "3.13", "3.14", "3.15"]' }
 
 [paths]
 "child/" = ""

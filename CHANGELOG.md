@@ -45,8 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Worktree config files are hard-linked, not copied, where symlinks are
   unavailable (Windows without Developer Mode).
 - Dependabot opens each major update as its own PR, outside the grouped PR.
-- The template pins its Python exactly (`requires-python = "==3.14.*"`), and ruff
+- The template pins its Python exactly (`requires-python = "==3.15.*"`), and ruff
   takes its target version from `requires-python`.
+- The template targets Python 3.15, with uv 0.13, the first uv that installs it.
 
 ### Removed
 

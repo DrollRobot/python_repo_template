@@ -18,7 +18,7 @@ changes in a way that is easy for you to review and merge.
 Thank you for your interest in contributing!
 
 ## Setting up a development environment
-Requires Python 3.14 and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.15 and [uv](https://docs.astral.sh/uv/).
 ```
 git clone https://github.com/FIXME/python-repo-template.git
 cd python-repo-template
