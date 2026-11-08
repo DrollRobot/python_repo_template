@@ -1740,3 +1740,200 @@ def test_update_across_a_version_bump_keeps_the_pinned_version(fxv: Fixture) -> 
     assert code == 0, err
     assert fxv.read("ci.yml") == 'name: ci\nmatrix:\n  python: ["3.12"]\nrun: test -x\n'
     assert fxv.read(".python-version") == "3.12\n"
+
+
+# ---------------------------------------------------------------------------
+# Features with options: one choice among several, or none
+# ---------------------------------------------------------------------------
+
+MANIFEST_OPTIONS = """\
+manifest_format = 3
+exclude = ["template.toml"]
+
+[base]
+managed = ["README.md"]
+
+[features.license]
+description = "the license"
+options = ["license_mit", "license_gnu"]
+seed = ["LICENSE"]
+
+[features.license_mit]
+description = "MIT"
+
+[features.license_gnu]
+description = "GPL"
+"""
+FILES_OPTIONS = {
+    "README.md": (
+        '# demo\n<!-- <template-only feature="license"> -->\nlicensed\n<!-- </template-only> -->\n'
+    ),
+    "LICENSE": (
+        '<template-only feature="license_mit">\nMIT\n</template-only>\n'
+        '<template-only feature="license_gnu">\nGPL\n</template-only>\n'
+    ),
+}
+
+
+@pytest.fixture
+def fxo(tmp_path: Path) -> Fixture:
+    return Fixture(tmp_path, MANIFEST_OPTIONS, FILES_OPTIONS)
+
+
+def options_manifest(text: str = MANIFEST_OPTIONS) -> ts.Manifest:
+    return ts.parse_manifest(text, Path("."), where="t")
+
+
+@pytest.mark.unit
+def test_options_imply_requires_conflicts_and_defaults() -> None:
+    features = options_manifest().features
+    assert features["license_mit"].requires == ("license",)
+    assert features["license_mit"].conflicts == ("license_gnu",)
+    assert features["license_gnu"].conflicts == ("license_mit",)
+    # The first option takes its feature's default; the rest are off.
+    assert (features["license_mit"].default, features["license_gnu"].default) == (True, False)
+    off = options_manifest(
+        MANIFEST_OPTIONS.replace("[features.license]\n", "[features.license]\ndefault = false\n")
+    )
+    assert off.features["license_mit"].default is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ('["license_mit", "license_gnu"]', '["license_mit"]', "list two or more other declared"),
+        ('["license_mit", "license_gnu"]', '["license_mit", "nope"]', "list two or more other"),
+        ('["license_mit", "license_gnu"]', '["license", "license_mit"]', "list two or more other"),
+        ('["license_mit", "license_gnu"]', '["license_mit", "license_mit"]', "list two or more"),
+        ('description = "GPL"\n', 'description = "GPL"\ndefault = false\n', "remove its default"),
+        (
+            'description = "GPL"\n',
+            'description = "GPL"\noptions = ["license_mit", "license"]\n',
+            "so it can't have options",
+        ),
+        ("manifest_format = 3", "manifest_format = 2", "options needs manifest_format = 3"),
+    ],
+)
+def test_parse_manifest_rejects_bad_options(old: str, new: str, message: str) -> None:
+    with pytest.raises(ts.ConfigError, match=message):
+        options_manifest(MANIFEST_OPTIONS.replace(old, new))
+
+
+@pytest.mark.unit
+def test_parse_manifest_rejects_an_option_of_two_features() -> None:
+    text = MANIFEST_OPTIONS + '\n[features.other]\noptions = ["license_gnu", "license_x"]\n'
+    text += "\n[features.license_x]\n"
+    with pytest.raises(ts.ConfigError, match="is an option of both license and other"):
+        options_manifest(text)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("chosen", "on"),
+    [
+        ({}, {"license", "license_mit"}),
+        # Choosing an option turns its feature on, and the first option's default off.
+        ({"license_gnu": True}, {"license", "license_gnu"}),
+        ({"license": False}, set()),
+    ],
+)
+def test_effective_features_with_options(chosen: dict[str, bool], on: set[str]) -> None:
+    enabled, _notes = ts.effective_features(options_manifest(), chosen)
+    assert enabled == on
+
+
+@pytest.mark.unit
+def test_effective_features_refuses_a_feature_on_with_no_option() -> None:
+    with pytest.raises(ts.ConfigError, match="license is on, but none of its options is"):
+        ts.effective_features(options_manifest(), {"license": True, "license_mit": False})
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("answers", "license_text"),
+    [
+        ([""], "MIT\n"),
+        (["2"], "GPL\n"),
+        (["gnu"], "GPL\n"),
+        (["License_GNU"], "GPL\n"),
+        (["bogus", "gnu"], "GPL\n"),  # asked again
+        (["none"], None),
+        (["3"], None),
+    ],
+)
+def test_new_asks_for_one_option_or_none(
+    fxo: Fixture, monkeypatch: pytest.MonkeyPatch, answers: list[str], license_text: str | None
+) -> None:
+    ask = tty(monkeypatch, answers)
+    code, out, err = run("--template", fxo.template, "new", fxo.child)
+    assert code == 0, err
+    assert "license (the license):\n  1. mit   MIT\n  2. gnu   GPL\n  3. none\n" in out
+    assert [c.args[0] for c in ask.call_args_list] == ["license [mit]: "] * len(answers)
+    if license_text is None:
+        assert not fxo.exists("LICENSE")
+        assert fxo.read("README.md") == "# demo\n"
+    else:
+        assert fxo.read("LICENSE") == license_text
+        assert fxo.read("README.md") == "# demo\nlicensed\n"
+    features = tomllib.loads(fxo.read(".template.toml"))["features"]
+    assert features == {
+        "license": license_text is not None,
+        "license_mit": license_text == "MIT\n",
+        "license_gnu": license_text == "GPL\n",
+    }
+
+
+@pytest.mark.integration
+def test_new_defaults_to_none_when_the_feature_is_off_by_default(
+    fxo: Fixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fxo.set_manifest(
+        MANIFEST_OPTIONS.replace("[features.license]\n", "[features.license]\ndefault = false\n")
+    )
+    ask = tty(monkeypatch, [""])
+    code, _out, err = run("--template", fxo.template, "new", fxo.child)
+    assert code == 0, err
+    assert ask.call_args.args[0] == "license [none]: "
+    assert not fxo.exists("LICENSE")
+
+
+@pytest.mark.integration
+def test_new_given_the_feature_on_asks_for_an_option_without_none(
+    fxo: Fixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ask = tty(monkeypatch, ["2"])
+    code, out, err = run("--template", fxo.template, "new", fxo.child, "--feature", "license=true")
+    assert code == 0, err
+    assert ask.call_count == 1
+    assert "none" not in out.split("created")[0]
+    assert fxo.read("LICENSE") == "GPL\n"
+
+
+@pytest.mark.integration
+def test_new_given_an_option_asks_nothing_about_its_feature(
+    fxo: Fixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ask = tty(monkeypatch, [])
+    code, _out, err = run(
+        "--template", fxo.template, "new", fxo.child, "--feature", "license_gnu=true"
+    )
+    assert code == 0, err
+    assert ask.call_count == 0
+    assert fxo.read("LICENSE") == "GPL\n"
+
+
+@pytest.mark.integration
+def test_update_records_a_new_option_off(fxo: Fixture) -> None:
+    code, _out, err = run(
+        "--template", fxo.template, "new", fxo.child, "-y", "--feature", "license_gnu=true"
+    )
+    assert code == 0, err
+    fxo.child_commit()
+    fxo.set_manifest(
+        MANIFEST_OPTIONS.replace('"license_gnu"]', '"license_gnu", "license_apache"]')
+        + "\n[features.license_apache]\n"
+    )
+    code, out, err = fxo.update()  # not a terminal: takes the default
+    assert code == 0, err
+    assert "recorded in .template.toml: license_apache = false" in out

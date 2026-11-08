@@ -49,8 +49,9 @@ git clone https://github.com/DrollRobot/python_repo_template.git
 cd python_repo_template
 uv run scripts/template_sync.py new ../my-widget --set github_user=YOUR-GITHUB-USER
 ```
-   It asks which optional features to keep, one license among them (MIT unless
-   you decline it). Then it asks for each value that `--set` didn't give and the
+   It asks which optional features to keep, and which license to use: MIT
+   (the default), Apache 2.0, GPL 3.0, proprietary, or none, which leaves out the
+   `LICENSE` file. Then it asks for each value that `--set` didn't give and the
    project's files use: the project name (default: the directory's name; any of
    `My Widget`, `my-widget` or `my_widget` gives both the `my_widget` package and
    the `my-widget` distribution), your GitHub user (no default), the Python

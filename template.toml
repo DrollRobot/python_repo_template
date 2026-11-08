@@ -9,7 +9,8 @@
 #   exclude  never leaves the template
 #
 # A [features.x] table ships its files only to projects that keep feature x;
-# `<template-only feature="x">` blocks do the same for parts of a file.
+# `<template-only feature="x">` blocks do the same for parts of a file. A
+# feature with `options` is one choice among them, or none: `new` asks once.
 
 manifest_format = 3
 
@@ -116,7 +117,6 @@ merge = [
 seed = [
   "child/README.md",
   "child/CHANGELOG.md",
-  "child/LICENSE",
   "src/python_repo_template/__init__.py",
   "src/python_repo_template/__main__.py",
   "src/python_repo_template/main.py",
@@ -202,21 +202,21 @@ managed = [
 ]
 merge = ["Dockerfile"]  # projects add system packages and build args
 
-# One license, chosen at `new`: each selects its block of child/LICENSE.
+# One license, chosen at `new`, or none (no LICENSE file). Each option selects
+# its block of child/LICENSE.
+[features.license]
+description = "the project's license"
+options = ["license_mit", "license_apache", "license_gnu", "license_proprietary"]
+seed = ["child/LICENSE"]
+
 [features.license_mit]
 description = "MIT license"
-conflicts = ["license_apache", "license_gnu", "license_proprietary"]
 
 [features.license_apache]
 description = "Apache License 2.0"
-default = false
-conflicts = ["license_gnu", "license_proprietary"]
 
 [features.license_gnu]
 description = "GNU General Public License v3.0"
-default = false
-conflicts = ["license_proprietary"]
 
 [features.license_proprietary]
 description = "proprietary license, all rights reserved"
-default = false

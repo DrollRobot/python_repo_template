@@ -90,8 +90,10 @@ uv run scripts/container_job.py path/to/your.toml
 ```
 <!-- </template-only> -->
 
+<!-- <template-only feature="license"> -->
 ## License
 
+<!-- </template-only> -->
 <!-- <template-only feature="license_mit"> -->
 MIT; see [LICENSE](LICENSE).
 <!-- </template-only> -->

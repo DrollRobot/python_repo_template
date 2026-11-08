@@ -83,8 +83,8 @@ CHILD_CONFIG_PATHS = (CHILD_CONFIG_NAME, f".local/{CHILD_CONFIG_NAME}")
 # rejected in a manifest that declares an older one.
 #   1  exclude, [tokens], [base], [features], <template-only> markers
 #   2  [paths]; negated feature markers, <template-only feature="!name">
-#   3  [tokens] tables (transform, required, format, aliases); [features.x] conflicts;
-#      any-of markers, <template-only feature="a|b">
+#   3  [tokens] tables (transform, required, format, aliases); [features.x] conflicts
+#      and options; any-of markers, <template-only feature="a|b">
 MANIFEST_FORMAT = 3
 STRATEGIES = ("managed", "merge", "seed")
 RULE_KINDS = (*STRATEGIES, "exclude")
@@ -618,6 +618,10 @@ class Feature:
         default: Whether it is on when a child doesn't choose.
         requires: Features that must be on for this one to be.
         conflicts: Features that can't be on together with this one (symmetric).
+        options: Features of which exactly one is on while this one is. Each
+            requires this one and conflicts with the others; the first takes
+            this one's default, the rest default to off. Asked about as one
+            choice among them, or none (this feature off).
     """
 
     name: str
@@ -625,6 +629,7 @@ class Feature:
     default: bool
     requires: tuple[str, ...]
     conflicts: tuple[str, ...] = ()
+    options: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -700,6 +705,10 @@ class Manifest:
             if token.key not in values:
                 values[token.key] = token.unformat(literal) or literal
         return values
+
+    def option_of(self, name: str) -> str | None:
+        """Return the feature whose ``options`` list ``name``, if any."""
+        return next((f.name for f in self.features.values() if name in f.options), None)
 
     def keys_in(self, texts: list[str]) -> set[str]:
         """Return the value keys with a token literal in any of ``texts``."""
@@ -866,25 +875,32 @@ def parse_manifest(text: str, root: Path, *, where: str) -> Manifest:
             rules.append(Rule(pat, kind, None, glob_to_regex(pat)))
 
     features: dict[str, Feature] = {}
+    with_default: set[str] = set()
+    feature_keys = ("description", "default", "requires", "conflicts", "options", *STRATEGIES)
     for name, value in _table(raw.get("features", {}), f"{w}: [features]").items():
         fw = f"{w}: [features.{name}]"
         if not _IDENT_RE.match(name):
             raise ConfigError(f"{fw}: feature names must be identifiers")
         tbl = _table(value, fw)
-        _reject_unknown(tbl, ("description", "default", "requires", "conflicts", *STRATEGIES), fw)
+        _reject_unknown(tbl, feature_keys, fw)
         description = tbl.get("description", "")
         default = tbl.get("default", True)
         if not isinstance(description, str) or not isinstance(default, bool):
             raise ConfigError(f"{fw}: description must be a string and default a boolean")
-        if "conflicts" in tbl and fmt < 3:
-            raise ConfigError(f"{fw}: conflicts needs manifest_format = 3")
+        for key in ("conflicts", "options"):
+            if key in tbl and fmt < 3:
+                raise ConfigError(f"{fw}: {key} needs manifest_format = 3")
+        if "default" in tbl:
+            with_default.add(name)
         requires = tuple(_str_list(tbl.get("requires", []), f"{fw}.requires"))
         conflicts = tuple(_str_list(tbl.get("conflicts", []), f"{fw}.conflicts"))
-        features[name] = Feature(name, description, default, requires, conflicts)
+        options = tuple(_str_list(tbl.get("options", []), f"{fw}.options"))
+        features[name] = Feature(name, description, default, requires, conflicts, options)
         for kind in STRATEGIES:
             for pat in _str_list(tbl.get(kind, []), f"{fw}.{kind}"):
                 rules.append(Rule(pat, kind, name, glob_to_regex(pat)))
 
+    features = _expand_options(features, with_default, w)
     for f in features.values():
         for req in f.requires:
             if req not in features:
@@ -897,6 +913,62 @@ def parse_manifest(text: str, root: Path, *, where: str) -> Manifest:
                 )
     _check_no_cycles(features, w)
     return Manifest(root, fmt, tokens, paths, _symmetric_conflicts(features), tuple(rules))
+
+
+def _expand_options(
+    features: dict[str, Feature], with_default: set[str], where: str
+) -> dict[str, Feature]:
+    """Check each ``options`` list and write out what it implies for its options.
+
+    Each option requires the feature that lists it and conflicts with its
+    other options. The first option takes that feature's default, so a project
+    that keeps it gets the first option; the rest default to off.
+
+    Args:
+        features: The declared features.
+        with_default: The features that declare ``default`` themselves.
+        where: Label for error messages.
+
+    Returns:
+        ``features``, with the options' requires, conflicts and defaults filled in.
+
+    Raises:
+        ConfigError: If an options list is invalid.
+    """
+    owner: dict[str, str] = {}
+    for f in features.values():
+        if not f.options:
+            continue
+        fw = f"{where}: [features.{f.name}]"
+        if (
+            len(f.options) < 2
+            or len(set(f.options)) < len(f.options)
+            or not all(o in features and o != f.name for o in f.options)
+        ):
+            raise ConfigError(f"{fw}.options: list two or more other declared features")
+        for o in f.options:
+            ow = f"{where}: [features.{o}]"
+            if o in owner:
+                raise ConfigError(f"{ow} is an option of both {owner[o]} and {f.name}")
+            if features[o].options:
+                raise ConfigError(f"{ow} is an option of {f.name}, so it can't have options")
+            if o in with_default:
+                raise ConfigError(
+                    f"{ow} is an option of {f.name}, whose default decides; remove its default"
+                )
+            owner[o] = f.name
+    expanded = dict(features)
+    for o, name in owner.items():
+        options = features[name].options
+        expanded[o] = dataclasses.replace(
+            features[o],
+            default=features[name].default if o == options[0] else False,
+            requires=tuple(dict.fromkeys((*features[o].requires, name))),
+            conflicts=tuple(
+                dict.fromkeys((*features[o].conflicts, *(x for x in options if x != o)))
+            ),
+        )
+    return expanded
 
 
 def _symmetric_conflicts(features: dict[str, Feature]) -> dict[str, Feature]:
@@ -989,8 +1061,9 @@ def effective_features(
     """Resolve a child's feature choices into the set of features that are on.
 
     Unchosen features take their defaults, except that a default yields to an
-    explicit choice it conflicts with. Then ``requires`` turns off any feature
-    whose requirement is off.
+    explicit choice it conflicts with, and a feature with ``options`` is on
+    when one of them is chosen. Then ``requires`` turns off any feature whose
+    requirement is off.
 
     Args:
         manifest: The template's manifest.
@@ -1000,10 +1073,14 @@ def effective_features(
         The features that are on, and notes on any that were turned off.
 
     Raises:
-        ConfigError: If two conflicting features are both on.
+        ConfigError: If two conflicting features are both on, or a feature with
+            ``options`` is on with none of them.
     """
     on = {name: f.default for name, f in manifest.features.items()}
     on.update(chosen)
+    for name, f in manifest.features.items():
+        if name not in chosen and any(chosen.get(o) for o in f.options):
+            on[name] = True
     notes: list[str] = []
     for name, f in manifest.features.items():
         winners = [c for c in f.conflicts if chosen.get(c)]
@@ -1026,6 +1103,16 @@ def effective_features(
     if both_on:
         raise ConfigError(
             "conflicting features are both on: " + "; ".join(both_on) + " -- turn one off"
+        )
+    empty = [
+        name
+        for name, f in manifest.features.items()
+        if f.options and on[name] and not any(on[o] for o in f.options)
+    ]
+    if empty:
+        raise ConfigError(
+            "; ".join(f"{name} is on, but none of its options is" for name in empty)
+            + " -- turn one option on, or the feature off"
         )
     return frozenset(n for n, v in on.items() if v), notes
 
@@ -2078,6 +2165,52 @@ def requirements_first(features: dict[str, Feature]) -> list[str]:
     return order
 
 
+def ask_option(
+    manifest: Manifest, name: str, chosen: dict[str, bool], *, allow_none: bool
+) -> str | None:
+    """Ask which of feature ``name``'s options to take, from a numbered list.
+
+    Lists the options not already chosen off, each by its name less a
+    ``<name>_`` prefix, and then ``none`` if allowed. Takes a number, a listed
+    name or an option's full name, and asks again on anything else.
+
+    Args:
+        manifest: The template's manifest.
+        name: A feature with ``options``.
+        chosen: Choices so far.
+        allow_none: Offer ``none``, for no option and ``name`` off.
+
+    Returns:
+        The option taken, or ``None`` for none (or if nothing could be offered).
+    """
+    f = manifest.features[name]
+    entries: list[tuple[str, str | None, str]] = [
+        (o.removeprefix(f"{name}_") or o, o, manifest.features[o].description)
+        for o in f.options
+        if chosen.get(o) is not False
+    ]
+    if allow_none:
+        entries.append(("none", None, ""))
+    if not entries:
+        return None
+    lookup: dict[str, tuple[str, str | None, str]] = {}
+    for n, entry in enumerate(entries, 1):
+        label, option, _ = entry
+        lookup |= {str(n): entry, label.lower(): entry}
+        if option:
+            lookup[option.lower()] = entry
+    default = entries[0] if f.default or not allow_none else entries[-1]
+    width = max(len(label) for label, _, _ in entries)
+    print(f"{name}{f' ({f.description})' if f.description else ''}:")
+    for n, (label, _, description) in enumerate(entries, 1):
+        print(f"  {n}. {label:<{width}}  {description}".rstrip())
+    while True:
+        reply = input(f"{name} [{default[0]}]: ").strip().lower()
+        answer = default if not reply else lookup.get(reply)
+        if answer is not None:
+            return answer[1]
+
+
 def resolve_features(
     manifest: Manifest, given: dict[str, bool], *, yes: bool, intro: str | None = None
 ) -> dict[str, bool]:
@@ -2086,6 +2219,8 @@ def resolve_features(
     Features are asked about in declaration order, except that each comes after
     the features it requires. A feature that conflicts with one already chosen
     on, or requires one chosen off, is not asked about; it is recorded as off.
+    A feature with ``options`` is asked about once, as a choice of one of them
+    or none (:func:`ask_option`); its options are not asked about one by one.
 
     Args:
         manifest: The template's manifest.
@@ -2106,9 +2241,27 @@ def resolve_features(
     answers = {"y": True, "yes": True, "n": False, "no": False}
     for name in pending:
         f = manifest.features[name]
+        if name in chosen:  # an option, taken when its feature was asked about
+            continue
         # Requirements come first, so each is given or already settled.
         if any(chosen.get(c) for c in f.conflicts) or not all(chosen[r] for r in f.requires):
             chosen[name] = False
+            continue
+        owner = manifest.option_of(name)
+        if owner is not None:
+            # Its feature was given as on, with none of its options: ask for one.
+            picked = ask_option(manifest, owner, chosen, allow_none=False)
+            chosen[name] = picked == name
+            if picked:
+                chosen[picked] = True
+            continue
+        if f.options:
+            picked = next((o for o in f.options if chosen.get(o)), None)
+            if picked is None:
+                picked = ask_option(manifest, name, chosen, allow_none=True)
+            chosen[name] = picked is not None
+            if picked:
+                chosen[picked] = True
             continue
         prompt = (
             f"{name}{f' ({f.description})' if f.description else ''} "

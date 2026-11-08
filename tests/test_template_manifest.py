@@ -197,33 +197,42 @@ def test_real_template_new_project_is_clean(real_template: Path, choice: str) ->
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    ("license_feature", "license_keys"),
+    ("license_answer", "license_keys"),
     [
-        ("license_mit", {"copyright_holder", "copyright_year"}),
-        ("license_apache", {"copyright_holder", "copyright_year"}),
-        ("license_gnu", set()),
-        ("license_proprietary", {"copyright_holder", "copyright_year", "company"}),
+        ("mit", {"copyright_holder", "copyright_year"}),
+        ("apache", {"copyright_holder", "copyright_year"}),
+        ("gnu", set()),
+        ("proprietary", {"copyright_holder", "copyright_year", "company"}),
+        ("none", set()),
     ],
 )
 def test_real_template_asks_only_for_the_values_its_license_uses(
     real_template: Path,
     monkeypatch: pytest.MonkeyPatch,
-    license_feature: str,
+    license_answer: str,
     license_keys: set[str],
 ) -> None:
     flags = []
     for name in ts.load_manifest(real_template).features:
-        flags += ["--feature", f"{name}={'true' if name == license_feature else 'false'}"]
-    ask = mock.Mock(return_value="")
+        if not name.startswith("license"):
+            flags += ["--feature", f"{name}=false"]
+    ask = mock.Mock(
+        side_effect=lambda prompt: license_answer if prompt.startswith("license ") else ""
+    )
     monkeypatch.setattr("sys.stdin", mock.Mock(isatty=lambda: True))
     monkeypatch.setattr("builtins.input", ask)
+    project = real_template.parent / f"asks-{license_answer}"
     code, _out, err = run(
-        "--template", real_template, "new", real_template.parent / f"asks-{license_feature}",
+        "--template", real_template, "new", project,
         "--set", "project=my-widget", "--set", "github_user=octo-dev", *flags,
     )  # fmt: skip
     assert code == 0, err
     asked = {c.args[0].split(" ", 1)[0] for c in ask.call_args_list}
-    assert asked == {"python", *license_keys}
+    assert asked == {"license", "python", *license_keys}
+    # No license: no LICENSE file, and no License section in the README.
+    licensed = license_answer != "none"
+    assert (project / "LICENSE").exists() is licensed
+    assert ("## License" in (project / "README.md").read_text()) is licensed
 
 
 @pytest.mark.integration
