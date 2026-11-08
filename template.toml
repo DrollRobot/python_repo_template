@@ -23,20 +23,6 @@ exclude = [
   "CHANGELOG.md",                    # the template's own; projects get child/CHANGELOG.md
   "uv.lock",                         # each project locks its own (uv sync)
   ".secrets.baseline",               # each project scans and audits its own
-  # Dev helpers, until they move to their own repo (.local/dev-tools-plan.md).
-  "scripts/_cli.py",
-  "scripts/complete_worktree.py",
-  "scripts/new_worktree.py",
-  "scripts/remove_worktree.py",
-  "scripts/push_new_tag_to_main.py",
-  "scripts/update_floors.py",
-  "scripts/open_claude_settings.py",
-  "scripts/open_gitignore.py",
-  "tests/test_complete_worktree.py",
-  "tests/test_new_worktree.py",
-  "tests/test_remove_worktree.py",
-  "tests/test_push_new_tag_to_main.py",
-  "tests/test_update_floors.py",
 ]
 
 # `new` runs the bootstrap commands in the project it creates, in order, after

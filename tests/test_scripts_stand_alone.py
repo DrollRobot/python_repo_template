@@ -16,23 +16,8 @@ pytestmark = [pytest.mark.unit, pytest.mark.regression]
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 
-# Scripts allowed to import a sibling module. None in a project.
+# Scripts allowed to import a sibling module. None.
 ALLOWED: frozenset[str] = frozenset()
-# <template-only>
-# The template's dev helpers share _cli.py until they move to a repo of their
-# own (.local/dev-tools-plan.md). None of them ships to projects.
-ALLOWED = frozenset(
-    {
-        "complete_worktree.py",
-        "new_worktree.py",
-        "open_claude_settings.py",
-        "open_gitignore.py",
-        "push_new_tag_to_main.py",
-        "remove_worktree.py",
-        "update_floors.py",
-    }
-)
-# </template-only>
 
 
 def imported_top_level_modules(source: str) -> set[str]:

@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- New worktrees start with links to the main repo's `.local/` files.
 - Dependabot can update Python dependencies in projects with private git
   dependencies. `dependabot.yml` ships a commented-out token registry, and the
   README covers creating the token.
@@ -49,12 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/template_setup/setup_new_project.py`; run `template_sync.py new` from a
   template checkout instead. Existing projects have no `.template.toml`; see "Staying
   in sync" in the README to adopt it.
-- Projects no longer get the template's dev helpers (the worktree, release and
-  editor scripts) or their tests.
 - `container_job.py` and `mark_remote_disposable.py` stand alone, without the
   shared `_cli.py`.
-- Worktree config files are hard-linked, not copied, where symlinks are
-  unavailable (Windows without Developer Mode).
 - Dependabot opens each major update as its own PR, outside the grouped PR.
 - The template pins its Python exactly (`requires-python = "==3.15.*"`), and ruff
   takes its target version from `requires-python`.
@@ -67,6 +62,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The dev helper scripts and their tests: `new_worktree.py`,
+  `complete_worktree.py`, `remove_worktree.py`, `push_new_tag_to_main.py`,
+  `update_floors.py`, `open_claude_settings.py`, `open_gitignore.py`, and the
+  `_cli.py` they shared. They're no longer part of the template; they now run
+  as standalone commands that work in any repo (`new-worktree`,
+  `complete-worktree`, ...), with this release's changes to them: new worktrees
+  start with links to the main repo's `.local/` files, and worktree config files
+  are hard-linked where symlinks are unavailable (Windows without Developer
+  Mode). `AGENTS.WORKTREE.md` and `AGENTS.RELEASING.md` name the commands.
 - `scripts/template_setup/` (the setup scripts and `template_setup.toml`),
   `scripts/compare_to_template.py`, and the `.FIXME` skeleton files, which
   `child/` replaces.

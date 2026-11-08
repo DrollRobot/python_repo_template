@@ -121,5 +121,5 @@ date. Use this format in place of Keep a Changelog's `## [1.2.3] - 2026-01-31`:
 ## Commit any remaining files.
 
 ## Prompt user to finish the process.
-- The user will run push_new_tag_to_main.py to update package version, merge to main,
+- The user will run `push-new-tag-to-main` to update package version, merge to main,
    create tag, and push.
