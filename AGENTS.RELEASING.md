@@ -4,12 +4,6 @@
   perform the prodedure described below. When replying to the user, do not describe
   every step taken, only decisions and further action required.
 
-## Update precommit
-```
-# update precommit dependencies
-uv run pre-commit autoupdate
-```
-
 ## Commit
 - Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
 - Commit all untracked files.
@@ -23,7 +17,8 @@ uv run pre-commit autoupdate
    For any advisory reported, raise that dependency's floor in
    `[project.dependencies]` (or its dependency group) to the fixed version.
 
-2. **Refresh the lockfile** within existing pyproject.toml bounds:
+2. **Refresh the lockfile** within existing pyproject.toml bounds. The
+   pre-commit hooks run from the venv, so this updates them too:
    ```
    uv lock --upgrade
    ```

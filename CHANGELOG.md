@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The template pins its Python exactly (`requires-python = "==3.15.*"`), and ruff
   takes its target version from `requires-python`.
 - The template targets Python 3.15, with uv 0.13, the first uv that installs it.
+- Every pre-commit hook runs from the project's venv, so its version comes from
+  the project's `uv.lock`, not from a `rev:` pin in `.pre-commit-config.yaml`. A
+  new project starts with the newest versions, and keeps them current with
+  `uv lock --upgrade` or Dependabot. `pre-commit-hooks` is a new dev dependency;
+  ruff's hook and `uv run ruff` can no longer disagree on the version.
 
 ### Removed
 
