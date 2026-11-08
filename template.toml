@@ -23,6 +23,8 @@ exclude = [
   "CHANGELOG.md",                    # the template's own; projects get child/CHANGELOG.md
   "uv.lock",                         # each project locks its own (uv sync)
   ".secrets.baseline",               # each project scans and audits its own
+  "mkdocs.yml",                      # the template's own site; projects get child/mkdocs.yml
+  "docs/**",                         # the template's own docs; projects get child/docs/
 ]
 
 # `new` runs the bootstrap commands in the project it creates, in order, after
@@ -132,8 +134,8 @@ seed = [
 [features.mkdocs]
 description = "MkDocs site published to GitHub Pages"
 managed = [".github/workflows/docs.yml"]
-merge = ["mkdocs.yml"]
-seed = ["docs/index.md", "docs/reference/python_repo_template.md"]
+merge = ["child/mkdocs.yml"]
+seed = ["child/docs/index.md", "child/docs/reference/python_repo_template.md"]
 
 [features.config_system]
 description = "per-user config.toml package: schema, config CLI, resolver"

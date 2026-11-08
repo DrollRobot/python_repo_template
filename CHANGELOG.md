@@ -54,6 +54,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The template pins its Python exactly (`requires-python = "==3.15.*"`), and ruff
   takes its target version from `requires-python`.
 - The template targets Python 3.15, with uv 0.13, the first uv that installs it.
+- The template's README holds only its description and its tool and design
+  choices. Its instructions move to a docs site (`docs/`, published to GitHub
+  Pages): getting started, staying in sync, private dependencies, container
+  jobs, and changing the template, plus a new page on how the config system
+  works. Projects get their own docs scaffold from `child/mkdocs.yml` and
+  `child/docs/`, and their private-dependency and container-job comments name
+  the template's doc pages.
 - Every pre-commit hook runs from the project's venv, so its version comes from
   the project's `uv.lock`, not from a `rev:` pin in `.pre-commit-config.yaml`. A
   new project starts with the newest versions, and keeps them current with

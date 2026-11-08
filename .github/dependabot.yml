@@ -27,6 +27,7 @@ version: 2
 
 # <template-only feature="private_repo_deps">
 # FIXME uncomment if the project has private git dependencies
+# (setup steps: docs/private-dependencies.md in the template)
 # registries:
 #   github-private:
 #     type: git

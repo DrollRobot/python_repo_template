@@ -1,7 +1,8 @@
-# FIXME: set site_name, site_description, and repo_url for your project
+# mkdocs.yml -- the template's own docs site. Projects get child/mkdocs.yml.
 site_name: python-repo-template
-site_description: FIXME
-repo_url: https://github.com/DrollRobot/python-repo-template
+site_description: A Python project template whose projects stay in sync with it
+site_url: https://drollrobot.github.io/python_repo_template/
+repo_url: https://github.com/DrollRobot/python_repo_template
 
 theme:
   name: material
@@ -11,10 +12,14 @@ theme:
     - content.code.copy       # copy button on code blocks
     - search.highlight
 
-# FIXME: update nav to match your actual docs pages
 nav:
   - Home: index.md
-  - Reference: reference/python_repo_template.md
+  - Getting started: getting-started.md
+  - Staying in sync: staying-in-sync.md
+  - Config system: config-system.md
+  - Private dependencies: private-dependencies.md
+  - Container job: container-job.md
+  - Changing the template: changing-the-template.md
 
 markdown_extensions:
   - admonition                # !!! note style callouts
@@ -26,12 +31,3 @@ markdown_extensions:
 
 plugins:
   - search
-  - mkdocstrings:
-      default_handler: python
-      handlers:
-        python:
-          paths: [src]
-          options:
-            docstring_style: google
-            show_source: true
-            show_signature_annotations: true

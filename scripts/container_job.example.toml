@@ -10,6 +10,9 @@
 # Every run compares this file with Azure and GitHub and changes what differs,
 # so to change the schedule, arguments or alert email later, edit your copy
 # and run it again.
+#
+# Before the first run, check the package can run unattended: the steps are in
+# docs/container-job.md in the template.
 
 [shared]
 # Resources every job in the environment shares. Each one that doesn't exist
