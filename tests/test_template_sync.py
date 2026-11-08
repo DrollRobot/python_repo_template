@@ -957,6 +957,47 @@ def test_new_prompts_for_features(fx: Fixture, monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.integration
+def test_new_skips_a_feature_whose_requirement_is_declined(
+    fx: Fixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = fx.dir / "other"
+    # docs: no. docs_extra requires docs, so it is never asked.
+    ask = tty(monkeypatch, ["n"])
+    code, _out, err = run(
+        "--template", fx.template, "new", other, "--set", "project=other", "--set", "holder=Jane"
+    )
+    assert code == 0, err
+    assert ask.call_count == 1
+    cfg = tomllib.loads((other / ".template.toml").read_text())
+    assert cfg["features"] == {"docs": False, "docs_extra": False}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("answers", "asked", "chosen"),
+    [
+        # Declining config skips secrets, which requires it, and keyring, which
+        # requires secrets.
+        (["n", ""], ["config", "docs"], {"config": False, "secrets": False, "keyring": False}),
+        (["", "", "", ""], ["config", "secrets", "keyring", "docs"], {}),
+    ],
+)
+def test_resolve_features_asks_requirements_first_and_skips_their_dependents(
+    monkeypatch: pytest.MonkeyPatch, answers: list[str], asked: list[str], chosen: dict[str, bool]
+) -> None:
+    # Declared dependents first, so the order asked in can't be declaration order.
+    text = (
+        'manifest_format = 3\n[features.keyring]\nrequires = ["secrets"]\n'
+        '[features.secrets]\nrequires = ["config"]\n[features.config]\n[features.docs]\n'
+    )
+    manifest = ts.parse_manifest(text, Path("."), where="t")
+    ask = tty(monkeypatch, answers)
+    result = ts.resolve_features(manifest, {}, yes=False)
+    assert [c.args[0].split(" ", 1)[0] for c in ask.call_args_list] == asked
+    assert result == {name: chosen.get(name, True) for name in manifest.features}
+
+
+@pytest.mark.integration
 def test_new_refuses_dirty_template(fx: Fixture) -> None:
     write(fx.template, "ci.yml", "changed\n")
     code, _out, err = run("--template", fx.template, "new", fx.dir / "other", "-y")
@@ -1243,6 +1284,19 @@ def test_update_records_new_feature_off_when_it_conflicts(fx3: Fixture) -> None:
     code, out, err = fx3.update()
     assert code == 0, err
     assert "recorded in .template.toml: license_gnu = false" in out
+
+
+@pytest.mark.integration
+def test_update_records_new_feature_off_when_its_requirement_is_off(fx: Fixture) -> None:
+    code, _out, err = fx.new("--feature", "docs=false")
+    assert code == 0, err
+    fx.child_commit()
+    # The template gains a feature, on by default, that requires docs.
+    fx.set_manifest(MANIFEST + '\n[features.docs_search]\nrequires = ["docs"]\n')
+    code, out, err = fx.update()  # not a terminal: takes the default
+    assert code == 0, err
+    assert "recorded in .template.toml: docs_search = false" in out
+    assert tomllib.loads(fx.read(".template.toml"))["features"]["docs_search"] is False
 
 
 @pytest.mark.integration

@@ -1263,8 +1263,10 @@ def with_feature_choices(text: str, features: dict[str, Feature], choices: dict[
 def record_new_features(manifest: Manifest, cfg: ChildConfig, *, yes: bool) -> ChildConfig:
     """Settle the template features a child's config doesn't mention, and write them into it.
 
-    Asked about when interactive, else their defaults; recorded either way, so
-    the choice `update` applies shows in the child's config and in its diff.
+    Asked about when interactive. A feature not asked about is recorded as it
+    takes effect: its default, unless that conflicts with a feature that is on
+    or requires one that is off. Recorded either way, so the choice `update`
+    applies shows in the child's config and in its diff.
 
     Args:
         manifest: The template's manifest.
@@ -1275,21 +1277,16 @@ def record_new_features(manifest: Manifest, cfg: ChildConfig, *, yes: bool) -> C
         The config, re-read after the write (unchanged if nothing was undecided).
 
     Raises:
-        ConfigError: If the choices can't be written into the file.
+        ConfigError: If the choices can't be written into the file, or two
+            conflicting features are both on.
     """
     undecided = [name for name in manifest.features if name not in cfg.features]
     if not undecided:
         return cfg
     intro = "The template has options this project hasn't chosen yet:"
     chosen = resolve_features(manifest, cfg.features, yes=yes, intro=intro)
-    choices = {
-        name: chosen.get(
-            name,
-            manifest.features[name].default
-            and not any(chosen.get(c) for c in manifest.features[name].conflicts),
-        )
-        for name in undecided
-    }
+    enabled, _ = effective_features(manifest, chosen)
+    choices = {name: chosen.get(name, name in enabled) for name in undecided}
     summary = ", ".join(f"{name} = {'true' if v else 'false'}" for name, v in choices.items())
     path = cfg.root / cfg.config
     text = with_feature_choices(path.read_text("utf-8"), manifest.features, choices)
@@ -2063,13 +2060,32 @@ def resolve_values(
     return values
 
 
+def requirements_first(features: dict[str, Feature]) -> list[str]:
+    """Return the feature names in declaration order, each moved after those it requires.
+
+    ``requires`` has no cycles (:func:`parse_manifest` rejects them), so this ends.
+    """
+    order: list[str] = []
+
+    def visit(name: str) -> None:
+        if name not in order:
+            for requirement in features[name].requires:
+                visit(requirement)
+            order.append(name)
+
+    for name in features:
+        visit(name)
+    return order
+
+
 def resolve_features(
     manifest: Manifest, given: dict[str, bool], *, yes: bool, intro: str | None = None
 ) -> dict[str, bool]:
     """Settle feature choices: those given, else asked for, else (by omission) the default.
 
-    A feature that conflicts with one already chosen on is not asked about; it
-    is recorded as off.
+    Features are asked about in declaration order, except that each comes after
+    the features it requires. A feature that conflicts with one already chosen
+    on, or requires one chosen off, is not asked about; it is recorded as off.
 
     Args:
         manifest: The template's manifest.
@@ -2078,10 +2094,11 @@ def resolve_features(
         intro: A line printed before the first prompt.
 
     Returns:
-        ``given`` plus every answer (and conflict-implied ``False``).
+        ``given`` plus every answer (and the ``False`` implied by a conflict or
+        a declined requirement).
     """
     chosen = dict(given)
-    pending = [name for name in manifest.features if name not in chosen]
+    pending = [name for name in requirements_first(manifest.features) if name not in chosen]
     if yes or not pending or not sys.stdin.isatty():
         return chosen
     if intro:
@@ -2089,7 +2106,8 @@ def resolve_features(
     answers = {"y": True, "yes": True, "n": False, "no": False}
     for name in pending:
         f = manifest.features[name]
-        if any(chosen.get(c) for c in f.conflicts):
+        # Requirements come first, so each is given or already settled.
+        if any(chosen.get(c) for c in f.conflicts) or not all(chosen[r] for r in f.requires):
             chosen[name] = False
             continue
         prompt = (

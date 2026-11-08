@@ -227,6 +227,28 @@ def test_real_template_asks_only_for_the_values_its_license_uses(
 
 
 @pytest.mark.integration
+def test_real_template_skips_features_whose_requirement_is_declined(
+    real_template: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Decline config_system; take the default for everything else.
+    ask = mock.Mock(side_effect=lambda prompt: "n" if prompt.startswith("config_system ") else "")
+    monkeypatch.setattr("sys.stdin", mock.Mock(isatty=lambda: True))
+    monkeypatch.setattr("builtins.input", ask)
+    project = real_template.parent / "no-config"
+    code, _out, err = run(
+        "--template", real_template, "new", project, "--set", "github_user=octo-dev"
+    )
+    assert code == 0, err
+    asked = {c.args[0].split(" ", 1)[0] for c in ask.call_args_list}
+    # secret_storage requires config_system; keyring and keyvault require secret_storage.
+    dependents = {"secret_storage", "keyring", "keyvault"}
+    assert "config_system" in asked
+    assert not asked & dependents
+    features = tomllib.loads((project / ts.CHILD_CONFIG_NAME).read_text())["features"]
+    assert not any(features[name] for name in dependents)
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("python", [None, "3.12", "all-supported"])
 def test_real_template_python_versions(real_template: Path, python: str | None) -> None:
     project = real_template.parent / f"python-{python}"
