@@ -25,6 +25,7 @@ exclude = [
   ".secrets.baseline",               # each project scans and audits its own
   "mkdocs.yml",                      # the template's own site; projects get child/mkdocs.yml
   "docs/**",                         # the template's own docs; projects get child/docs/
+  "LICENSE",                         # the template's own; projects get child/LICENSE
 ]
 
 # `new` runs the bootstrap commands in the project it creates, in order, after

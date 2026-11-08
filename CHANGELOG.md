@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependabot can update Python dependencies in projects with private git
   dependencies. `dependabot.yml` ships a commented-out token registry, and the
   private dependencies doc covers creating the token.
+- The template has its own `LICENSE` (MIT). Projects still get the license they
+  choose at `new`.
 - Optional `container_job` feature, off by default, for packages that run as a
   scheduled Azure Container Apps job: the image build and its workflow, which also
   rebuilds weekly on a fresh base image, and

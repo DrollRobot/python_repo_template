@@ -1,7 +1,7 @@
 # python-repo-template
 [![CI](https://github.com/DrollRobot/python_repo_template/actions/workflows/ci.yml/badge.svg)](https://github.com/DrollRobot/python_repo_template/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.15-blue)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) # FIXME replace with correct license link
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 My goal with this project is to create a baseline for new python projects with the
 most commonly used tools and community best practices.
