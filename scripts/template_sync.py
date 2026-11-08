@@ -49,8 +49,13 @@ A file can land at a different path in a child than it has in the template:
 ``[paths]`` maps a template directory prefix to a child one, so the template
 can keep, say, its own README while its children get a different one.
 
-Exit codes: 0 clean / applied; 1 drift, conflicts, or (``check --strict``)
-pending updates; 2 configuration or usage error.
+``[new]`` lists commands ``new`` runs in the project it creates, after staging
+its files (``bootstrap``: lock dependencies, install hooks, ...), and lines it
+prints at the end (``next_steps``).
+
+Exit codes: 0 clean / applied; 1 drift, conflicts, (``check --strict``)
+pending updates, or a failed ``new`` bootstrap step; 2 configuration or usage
+error.
 """
 
 from __future__ import annotations
@@ -84,7 +89,8 @@ CHILD_CONFIG_PATHS = (CHILD_CONFIG_NAME, f".local/{CHILD_CONFIG_NAME}")
 #   1  exclude, [tokens], [base], [features], <template-only> markers
 #   2  [paths]; negated feature markers, <template-only feature="!name">
 #   3  [tokens] tables (transform, required, format, aliases); [features.x] conflicts
-#      and options; any-of markers, <template-only feature="a|b">
+#      and options; any-of markers, <template-only feature="a|b">; [new] bootstrap
+#      and next_steps
 MANIFEST_FORMAT = 3
 STRATEGIES = ("managed", "merge", "seed")
 RULE_KINDS = (*STRATEGIES, "exclude")
@@ -665,6 +671,25 @@ class Rule:
 
 
 @dataclass(frozen=True)
+class BootstrapStep:
+    """One command in ``[new].bootstrap``, run in a newly created project.
+
+    Attributes:
+        run: The command and its arguments; no shell.
+        stdout: A project-relative file the command's output is written to, or
+            ``None`` to show the output.
+    """
+
+    run: tuple[str, ...]
+    stdout: str | None = None
+
+    def __str__(self) -> str:
+        """The command as it would be typed in a shell."""
+        line = subprocess.list2cmdline(self.run)
+        return f"{line} > {self.stdout}" if self.stdout else line
+
+
+@dataclass(frozen=True)
 class Manifest:
     """A parsed ``template.toml``.
 
@@ -675,6 +700,8 @@ class Manifest:
         paths: Template directory prefix -> child directory prefix, longest first.
         features: Feature name -> feature, in declaration order.
         rules: Every classification rule.
+        bootstrap: Commands ``new`` runs in the project it creates, in order.
+        next_steps: Lines ``new`` prints when it is done.
     """
 
     root: Path
@@ -683,6 +710,8 @@ class Manifest:
     paths: dict[str, str]
     features: dict[str, Feature]
     rules: tuple[Rule, ...]
+    bootstrap: tuple[BootstrapStep, ...] = ()
+    next_steps: tuple[str, ...] = ()
 
     @property
     def value_keys(self) -> list[str]:
@@ -844,9 +873,14 @@ def parse_manifest(text: str, root: Path, *, where: str) -> Manifest:
             f"{w}: manifest_format = {fmt}, but this tool reads formats up to {MANIFEST_FORMAT}; "
             "use the sync tool from the same template checkout"
         )
-    _reject_unknown(raw, ("manifest_format", "tokens", "paths", "exclude", "base", "features"), w)
+    _reject_unknown(
+        raw, ("manifest_format", "tokens", "paths", "exclude", "base", "features", "new"), w
+    )
     if "paths" in raw and fmt < 2:
         raise ConfigError(f"{w}: [paths] needs manifest_format = 2")
+    if "new" in raw and fmt < 3:
+        raise ConfigError(f"{w}: [new] needs manifest_format = 3")
+    bootstrap, next_steps = _parse_new(_table(raw.get("new", {}), f"{w}: [new]"), w)
 
     tokens = {
         literal: _parse_token(literal, value, fmt, w)
@@ -912,7 +946,48 @@ def parse_manifest(text: str, root: Path, *, where: str) -> Manifest:
                     "declared feature"
                 )
     _check_no_cycles(features, w)
-    return Manifest(root, fmt, tokens, paths, _symmetric_conflicts(features), tuple(rules))
+    return Manifest(
+        root,
+        fmt,
+        tokens,
+        paths,
+        _symmetric_conflicts(features),
+        tuple(rules),
+        bootstrap,
+        next_steps,
+    )
+
+
+def _parse_new(
+    new: dict[str, Any], where: str
+) -> tuple[tuple[BootstrapStep, ...], tuple[str, ...]]:
+    """Parse the ``[new]`` table: ``bootstrap`` steps and ``next_steps`` lines."""
+    nw = f"{where}: [new]"
+    _reject_unknown(new, ("bootstrap", "next_steps"), nw)
+    raw_steps = new.get("bootstrap", [])
+    if not isinstance(raw_steps, list):
+        raise ConfigError(f"{nw}.bootstrap: expected a list of tables")
+    steps: list[BootstrapStep] = []
+    for i, raw in enumerate(raw_steps):
+        sw = f"{nw}.bootstrap[{i}]"
+        step = _table(raw, sw)
+        _reject_unknown(step, ("run", "stdout"), sw)
+        run = _str_list(step.get("run"), f"{sw}.run")
+        if not run:
+            raise ConfigError(f"{sw}.run: expected a command and its arguments")
+        stdout = step.get("stdout")
+        stdout_ok = stdout is None or (
+            isinstance(stdout, str)
+            and bool(stdout)
+            and not stdout.startswith("/")
+            and not {"", ".", ".."} & set(stdout.replace("\\", "/").split("/"))
+            and ":" not in stdout
+        )
+        if not stdout_ok:
+            raise ConfigError(f"{sw}.stdout: expected a file path relative to the project")
+        steps.append(BootstrapStep(tuple(run), stdout))
+    next_steps = tuple(_str_list(new.get("next_steps", []), f"{nw}.next_steps"))
+    return tuple(steps), next_steps
 
 
 def _expand_options(
@@ -2339,10 +2414,13 @@ def cmd_new(args: argparse.Namespace, root: Path) -> int:
     """Create a project from the template: write every shipped file, git init, stage.
 
     Features are settled first, so only the values the project's files use are
-    asked for. Nothing is committed: the author identity is the user's.
+    asked for. Then the manifest's ``[new].bootstrap`` commands run in the project
+    (unless ``--no-bootstrap``) and their results are staged too. Nothing is
+    committed: the author identity is the user's.
 
     Returns:
-        :data:`EXIT_OK`.
+        :data:`EXIT_OK`, or :data:`EXIT_DRIFT` when a bootstrap step failed (the
+        project is written; the steps left are printed).
 
     Raises:
         ConfigError: If the target is not empty, the template is dirty (without
@@ -2432,8 +2510,68 @@ def cmd_new(args: argparse.Namespace, root: Path) -> int:
         print("  features on: " + (", ".join(sorted(enabled)) or "(none)"))
     for n in notes + sub_notes:
         print(f"  {n}")
-    print("everything is staged and nothing is committed: review `git status`, then commit")
-    return EXIT_OK
+
+    code = EXIT_OK
+    pending: list[str] = []
+    if manifest.bootstrap and args.no_bootstrap:
+        pending = [str(step) for step in manifest.bootstrap]
+    elif manifest.bootstrap:
+        pending = run_bootstrap(target, manifest.bootstrap)
+        git(target, "add", "-A")
+        if pending:
+            code = EXIT_DRIFT
+    steps = [*pending, *manifest.next_steps]
+    if not steps:
+        print("everything is staged and nothing is committed: review `git status`, then commit")
+        return code
+    print("everything is staged and nothing is committed. Next, in the project:")
+    for step in steps:
+        print(f"  {step}")
+    return code
+
+
+def run_bootstrap(target: Path, steps: Iterable[BootstrapStep]) -> list[str]:
+    """Run ``[new].bootstrap`` in a new project, stopping at the first step that fails.
+
+    Each command is shown before it runs, and its output goes to the terminal
+    (or to its ``stdout`` file). ``VIRTUAL_ENV`` is dropped from the commands'
+    environment: a venv active where the template runs belongs to the template,
+    not to the new project.
+
+    Args:
+        target: The new project's root.
+        steps: The commands, in order.
+
+    Returns:
+        The steps not done, failed one first, as shell lines; empty when all ran.
+    """
+    todo = list(steps)
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    print("bootstrap:")
+    for i, step in enumerate(todo):
+        print(f"  $ {step}", flush=True)
+        exe = shutil.which(step.run[0])
+        if exe is None:
+            print(f"error: {step.run[0]}: not found on PATH", file=sys.stderr)
+            return [str(s) for s in todo[i:]]
+        argv = [exe, *step.run[1:]]
+        out = target / step.stdout if step.stdout else None
+        if out is None:
+            returncode = subprocess.run(  # noqa: S603  (manifest argv, no shell)
+                argv, cwd=target, env=env, check=False
+            ).returncode
+        else:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with out.open("wb") as handle:
+                returncode = subprocess.run(  # noqa: S603  (manifest argv, no shell)
+                    argv, cwd=target, env=env, stdout=handle, check=False
+                ).returncode
+        if returncode != 0:
+            if out is not None:
+                out.unlink(missing_ok=True)  # half a file is worse than none
+            print(f"error: `{step}` failed (exit {returncode})", file=sys.stderr)
+            return [str(s) for s in todo[i:]]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -2518,6 +2656,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--no-submodules", action="store_true", help="skip `git submodule add` (no network)"
+    )
+    p.add_argument(
+        "--no-bootstrap",
+        action="store_true",
+        help=f"skip the commands {MANIFEST_NAME} lists under [new].bootstrap; print them instead",
     )
     p.add_argument(
         "--force", action="store_true", help="proceed despite uncommitted changes in the template"

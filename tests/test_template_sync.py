@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import shutil
 import subprocess
 import sys
@@ -1937,3 +1938,151 @@ def test_update_records_a_new_option_off(fxo: Fixture) -> None:
     code, out, err = fxo.update()  # not a terminal: takes the default
     assert code == 0, err
     assert "recorded in .template.toml: license_apache = false" in out
+
+
+# ---------------------------------------------------------------------------
+# [new] bootstrap: commands `new` runs in the project it creates
+# ---------------------------------------------------------------------------
+
+
+def py(code: str, stdout: str | None = None) -> str:
+    """A [new].bootstrap entry that runs ``code`` with this interpreter."""
+    entry = f"run = [{json.dumps(sys.executable)}, '-c', {json.dumps(code)}]"
+    if stdout:
+        entry += f", stdout = {json.dumps(stdout)}"
+    return f"{{ {entry} }}"
+
+
+def bootstrap_fixture(tmp_path: Path, steps: list[str], next_steps: str = "[]") -> Fixture:
+    """The format-3 fixture with a [new] table of ``steps``."""
+    entries = "".join(f"  {step},\n" for step in steps)
+    new = f"[new]\nbootstrap = [\n{entries}]\nnext_steps = {next_steps}\n"
+    exclude = 'exclude = ["template.toml"]\n'
+    return Fixture(tmp_path, MANIFEST_V3.replace(exclude, f"{exclude}\n{new}"), FILES_V3)
+
+
+def new3(fx: Fixture, *extra: object) -> tuple[int, str, str]:
+    return run(
+        "--template", fx.template, "new", fx.child, "-y", "--set", "github_user=jane", *extra
+    )  # fmt: skip
+
+
+@pytest.mark.unit
+def test_parse_new_table() -> None:
+    text = MANIFEST_V3 + (
+        '\n[new]\nbootstrap = [{ run = ["uv", "sync"] }, '
+        '{ run = ["uv", "run", "scan"], stdout = "out/base line.json" }]\n'
+        'next_steps = ["git commit"]\n'
+    )
+    manifest = ts.parse_manifest(text, Path("."), where="t")
+    assert manifest.bootstrap == (
+        ts.BootstrapStep(("uv", "sync")),
+        ts.BootstrapStep(("uv", "run", "scan"), "out/base line.json"),
+    )
+    assert [str(s) for s in manifest.bootstrap] == ["uv sync", "uv run scan > out/base line.json"]
+    assert manifest.next_steps == ("git commit",)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("new", "message"),
+    [
+        ('bootstrap = { run = ["x"] }', "bootstrap: expected a list of tables"),
+        ("bootstrap = [{ run = [] }]", "run: expected a command"),
+        ("bootstrap = [{ stdout = 'x' }]", "run: expected a list"),
+        ('bootstrap = [{ run = ["x"], shell = true }]', "unknown key(s) shell"),
+        ('bootstrap = [{ run = ["x"], stdout = "/etc/x" }]', "relative to the project"),
+        ('bootstrap = [{ run = ["x"], stdout = "../x" }]', "relative to the project"),
+        ('bootstrap = [{ run = ["x"], stdout = "a/../b" }]', "relative to the project"),
+        ('bootstrap = [{ run = ["x"], stdout = "C:x" }]', "relative to the project"),
+        ('bootstrap = [{ run = ["x"], stdout = "" }]', "relative to the project"),
+        ("next_steps = [1]", "next_steps: expected a list"),
+        ("finally = []", "unknown key(s) finally"),
+    ],
+)
+def test_parse_new_rejects_mistakes(new: str, message: str) -> None:
+    with pytest.raises(ts.ConfigError) as excinfo:
+        ts.parse_manifest(f"manifest_format = 3\n[new]\n{new}\n", Path("."), where="t")
+    assert message in str(excinfo.value)
+
+
+@pytest.mark.unit
+def test_new_table_needs_format_3() -> None:
+    with pytest.raises(ts.ConfigError, match=r"\[new\] needs manifest_format = 3"):
+        ts.parse_manifest("manifest_format = 2\n[new]\n", Path("."), where="t")
+
+
+@pytest.mark.integration
+def test_new_runs_the_bootstrap_in_order_and_stages_its_results(tmp_path: Path) -> None:
+    fx = bootstrap_fixture(
+        tmp_path,
+        [
+            py("open('a.txt', 'w').write('from step 1')"),
+            py("print(open('a.txt').read().upper())", stdout="out/b.txt"),
+        ],
+        next_steps='["git commit"]',
+    )
+    code, out, err = new3(fx)
+    assert code == 0, err
+    assert fx.read("out/b.txt").strip() == "FROM STEP 1"
+    staged = sh(fx.child, "diff", "--cached", "--name-only").split()
+    assert {"a.txt", "out/b.txt", ".template.toml"} <= set(staged)
+    assert sh(fx.child, "rev-list", "--all").strip() == ""
+    assert out.index("bootstrap:") < out.index("Next, in the project:") < out.index("git commit")
+
+
+@pytest.mark.integration
+def test_bootstrap_commands_do_not_see_the_templates_venv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "template-venv"))
+    fx = bootstrap_fixture(
+        tmp_path, [py("import os; print(os.environ.get('VIRTUAL_ENV'))", stdout="venv.txt")]
+    )
+    code, _out, err = new3(fx)
+    assert code == 0, err
+    assert fx.read("venv.txt").strip() == "None"
+
+
+@pytest.mark.integration
+def test_a_failed_bootstrap_step_stops_and_lists_what_is_left(tmp_path: Path) -> None:
+    fx = bootstrap_fixture(
+        tmp_path,
+        [
+            py("open('a.txt', 'w').write('1')"),
+            py("print('half'); raise SystemExit(3)", stdout="half.txt"),
+            py("open('c.txt', 'w').write('3')"),
+        ],
+        next_steps='["git commit"]',
+    )
+    code, out, err = new3(fx)
+    assert code == ts.EXIT_DRIFT
+    assert "failed (exit 3)" in err
+    assert fx.exists("a.txt")
+    assert not fx.exists("half.txt")  # no half-written file
+    assert not fx.exists("c.txt")  # stopped at the failure
+    assert fx.exists(".template.toml")  # the project itself is written
+    left = out[out.index("Next, in the project:") :]
+    assert "SystemExit(3)" in left
+    assert "c.txt" in left
+    assert left.rstrip().endswith("git commit")
+    assert "a.txt" in sh(fx.child, "diff", "--cached", "--name-only").split()
+
+
+@pytest.mark.integration
+def test_a_missing_bootstrap_command_is_reported(tmp_path: Path) -> None:
+    fx = bootstrap_fixture(tmp_path, ['{ run = ["no-such-command-for-template-sync"] }'])
+    code, out, err = new3(fx)
+    assert code == ts.EXIT_DRIFT
+    assert "no-such-command-for-template-sync: not found on PATH" in err
+    assert "no-such-command-for-template-sync" in out[out.index("Next, in the project:") :]
+
+
+@pytest.mark.integration
+def test_no_bootstrap_prints_the_commands_instead(tmp_path: Path) -> None:
+    fx = bootstrap_fixture(tmp_path, [py("open('a.txt', 'w').write('1')")])
+    code, out, err = new3(fx, "--no-bootstrap")
+    assert code == 0, err
+    assert not fx.exists("a.txt")
+    assert "bootstrap:" not in out
+    assert "open('a.txt', 'w')" in out[out.index("Next, in the project:") :]

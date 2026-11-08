@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import re
 import shutil
 import subprocess
@@ -101,7 +102,10 @@ PROJECT_VALUES = (
     "--set", "copyright_holder=Jane Doe", "--set", "copyright_year=2026",
     "--set", "company=Widget Co",
 )  # fmt: skip
-# Tests that need the audited .secrets.baseline a user creates after `new`.
+# Integration tests skip the bootstrap ([new] in template.toml): it needs uv and
+# the network. The live e2e test runs it.
+NO_BOOTSTRAP = "--no-bootstrap"
+# Tests that need the user to audit the .secrets.baseline `new` creates.
 NEEDS_BASELINE = (
     "--deselect",
     "tests/test_secrets_baseline_audited.py::test_baseline_is_fully_audited",
@@ -163,8 +167,9 @@ def test_real_template_validates_without_warnings(real_template: Path) -> None:
 def test_real_template_new_project_is_clean(real_template: Path, choice: str) -> None:
     project = real_template.parent / f"my-widget-{choice}"
     code, _out, err = run(
-        "--template", real_template, "new", project, "-y", *PROJECT_VALUES, *_features(choice)
-    )
+        "--template", real_template, "new", project, NO_BOOTSTRAP, "-y", *PROJECT_VALUES,
+        *_features(choice),
+    )  # fmt: skip
     assert code == 0, err
     cfg = tomllib.loads((project / ts.CHILD_CONFIG_NAME).read_text())
     on = {name for name, value in cfg["features"].items() if value}
@@ -223,7 +228,7 @@ def test_real_template_asks_only_for_the_values_its_license_uses(
     monkeypatch.setattr("builtins.input", ask)
     project = real_template.parent / f"asks-{license_answer}"
     code, _out, err = run(
-        "--template", real_template, "new", project,
+        "--template", real_template, "new", project, NO_BOOTSTRAP,
         "--set", "project=my-widget", "--set", "github_user=octo-dev", *flags,
     )  # fmt: skip
     assert code == 0, err
@@ -245,7 +250,7 @@ def test_real_template_skips_features_whose_requirement_is_declined(
     monkeypatch.setattr("builtins.input", ask)
     project = real_template.parent / "no-config"
     code, _out, err = run(
-        "--template", real_template, "new", project, "--set", "github_user=octo-dev"
+        "--template", real_template, "new", project, NO_BOOTSTRAP, "--set", "github_user=octo-dev"
     )
     assert code == 0, err
     asked = {c.args[0].split(" ", 1)[0] for c in ask.call_args_list}
@@ -263,7 +268,7 @@ def test_real_template_python_versions(real_template: Path, python: str | None) 
     project = real_template.parent / f"python-{python}"
     extra = ("--set", f"python={python}") if python else ()
     code, _out, err = run(
-        "--template", real_template, "new", project, "-y", *PROJECT_VALUES, *extra
+        "--template", real_template, "new", project, NO_BOOTSTRAP, "-y", *PROJECT_VALUES, *extra
     )
     assert code == 0, err
     newest = ts.load_manifest(real_template).placeholder_values()["python"]
@@ -296,18 +301,26 @@ def test_real_template_python_versions(real_template: Path, python: str | None) 
 
 @pytest.mark.e2e
 @pytest.mark.slow
-@pytest.mark.live  # uv sync fetches the project's dependencies
+@pytest.mark.live  # the bootstrap's uv sync fetches the project's dependencies
 @pytest.mark.parametrize("choice", ["defaults", "all-off", "all-on", "library"])
 def test_real_template_new_project_passes_its_gates(
     real_template: Path, choice: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = real_template.parent / f"gates-{choice}"
     extra = ["--set", "python=all-supported"] if choice == "library" else _features(choice)
-    code, _out, err = run(
-        "--template", real_template, "new", project, "-y", *PROJECT_VALUES, *extra
-    )
-    assert code == 0, err
     monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    code, out, err = run("--template", real_template, "new", project, "-y", *PROJECT_VALUES, *extra)
+    assert code == 0, err
+    # The bootstrap ran: version reset, dependencies locked, baseline scanned, hooks
+    # installed, and all of it staged.
+    assert tomllib.loads((project / "pyproject.toml").read_text())["project"]["version"] == "0.1.0"
+    assert "results" in json.loads((project / ".secrets.baseline").read_text())
+    assert {"uv.lock", ".secrets.baseline"} <= set(sh(project, "ls-files").split())
+    assert sh(project, "diff", "--name-only") == ""
+    assert sh(project, "ls-files", "--others", "--exclude-standard") == ""
+    assert (project / ".git" / "hooks" / "pre-commit").is_file()
+    assert (project / ".git" / "hooks" / "pre-push").is_file()
+    assert "detect-secrets audit .secrets.baseline" in out
     uv = shutil.which("uv") or "uv"
     for args in (
         ["sync", "--all-groups", "--all-extras"],

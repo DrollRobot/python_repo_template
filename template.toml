@@ -39,6 +39,25 @@ exclude = [
   "tests/test_update_floors.py",
 ]
 
+# `new` runs the bootstrap commands in the project it creates, in order, after
+# staging its files, then stages the result (`--no-bootstrap` prints them
+# instead). The project starts at 0.1.0, not at the template's version. Its files
+# are staged before the scan because detect-secrets scans only what git tracks.
+[new]
+bootstrap = [
+  { run = ["uv", "version", "0.1.0", "--frozen"] },
+  { run = ["uv", "sync"] },
+  { run = ["git", "add", "-A"] },
+  { run = ["uv", "run", "detect-secrets", "scan"], stdout = ".secrets.baseline" },
+  { run = ["uv", "run", "pre-commit", "install"] },
+  { run = ["uv", "run", "pre-commit", "install", "--hook-type", "pre-push"] },
+]
+next_steps = [
+  "uv run detect-secrets audit .secrets.baseline   # mark each finding real or false",
+  "git grep -n FIXME                               # placeholders left for you",
+  "git commit",
+]
+
 [tokens]
 # One `project` value (any of "My Widget", "my-widget", "my_widget") gives both
 # spellings. The handle has no default: a project never inherits the template's.

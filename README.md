@@ -66,20 +66,23 @@ uv run scripts/template_sync.py new ../my-widget --set github_user=YOUR-GITHUB-U
    `-y` takes every default without asking; `--feature NAME=false` turns a feature
    off. The target must not exist, or be empty, or be an empty git repository (as
    cloning a newly created GitHub repo leaves). It writes the project, runs
-   `git init` on `main`, and stages everything. It commits nothing.
+   `git init` on `main`, and stages everything.
+
+   Then it bootstraps the project, running the commands under `[new]` in
+   `template.toml`: it sets the version to 0.1.0, runs `uv sync` (writing
+   `uv.lock`), scans for secrets into `.secrets.baseline`, installs the
+   pre-commit and pre-push hooks, and stages the result. It commits nothing.
+   `--no-bootstrap` skips this and prints the commands instead; if a command
+   fails, `new` stops there and prints the ones left.
 
 3. **Finish the setup** in the new project:
 ```bash
 cd ../my-widget
-uv version 0.1.0                                 # it starts at the template's version
-uv sync                                          # writes uv.lock
-uv run detect-secrets scan > .secrets.baseline   # then audit every entry:
-uv run detect-secrets audit .secrets.baseline
-uv run pre-commit install
-uv run pre-commit install --hook-type pre-push
+uv run detect-secrets audit .secrets.baseline    # mark each finding real or false
 git grep -n FIXME                                # placeholders left for you to fill in
-git add -A && git commit
+git commit
 ```
+   The pre-commit hooks refuse the commit until every baseline entry is audited.
 
 4. **If you kept mkdocs, enable GitHub Pages for docs:**
    - In the GitHub repo settings, set Pages source to the `gh-pages` branch.

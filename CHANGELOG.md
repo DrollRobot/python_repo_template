@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values the project's files use.
 - A feature in `template.toml` can list `options`: `new` asks for one of them,
   or none, in a single question.
+- `new` bootstraps the project it creates: it sets the version to 0.1.0, runs
+  `uv sync`, scans for secrets into `.secrets.baseline`, installs the pre-commit
+  and pre-push hooks, and stages the result. What's left (auditing the baseline,
+  filling in the FIXMEs, the first commit) it prints. `--no-bootstrap` skips it.
+  The commands are listed in `template.toml`'s new `[new]` table.
 - `new` asks for the project's Python version: the template's own (the newest)
   by default, a pinned version such as `3.13` (exactly that Python, in
   `requires-python` and CI), or `all-supported` for a library, which supports
