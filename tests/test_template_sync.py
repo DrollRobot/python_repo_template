@@ -1027,22 +1027,75 @@ def test_new_rejects_a_value_its_transform_cannot_spell(fx3: Fixture) -> None:
 @pytest.mark.integration
 def test_new_prompts_format_3(fx3: Fixture, monkeypatch: pytest.MonkeyPatch) -> None:
     child = fx3.dir / "widget"
-    # github_user is required: Enter asks again. holder and project take defaults.
-    # license_mit: Enter keeps it, so license_apache is never asked. alpha no, beta yes.
-    ask = tty(monkeypatch, ["", "jane", "", "", "", "n", "y"])
+    # Features first. license_mit: Enter keeps it, so license_apache is never
+    # asked. alpha no, beta yes. Then values: github_user is required, so Enter
+    # asks again; holder and project take defaults.
+    ask = tty(monkeypatch, ["", "n", "y", "", "jane", "", ""])
     code, _out, err = run("--template", fx3.template, "new", child)
     assert code == 0, err
     prompts = [c.args[0] for c in ask.call_args_list]
-    assert prompts[:2] == ["github_user (required): ", "github_user (required): "]
-    assert prompts[4].startswith("license_mit (MIT license) [Y/n]")
+    assert prompts[0].startswith("license_mit (MIT license) [Y/n]")
     assert not [p for p in prompts if p.startswith("license_apache")]
-    assert prompts[5].startswith("alpha [y/N]")
+    assert prompts[1].startswith("alpha [y/N]")
+    assert prompts[3:5] == ["github_user (required): ", "github_user (required): "]
     assert '"scripts"' in (child / "pyproject.toml").read_text()
     cfg = tomllib.loads((child / ".template.toml").read_text())
     assert cfg["values"]["project"] == "widget"
     assert cfg["features"] == {
         "license_mit": True, "license_apache": False, "alpha": False, "beta": True
     }  # fmt: skip
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("answers", "company"),
+    [
+        # Features, then values (company, holder). license_mit kept, alpha and
+        # beta declined: no file names <COMPANY>.
+        (["", "", "", "Jane"], None),
+        # alpha ships a file that names it.
+        (["", "y", "", "Acme", "Jane"], "Acme"),
+        # license_apache's block of LICENSE names it.
+        (["n", "y", "", "", "Acme", "Jane"], "Acme"),
+    ],
+)
+def test_new_asks_only_for_values_its_files_use(
+    fx3: Fixture, monkeypatch: pytest.MonkeyPatch, answers: list[str], company: str | None
+) -> None:
+    holder = '"<HOLDER>" = "holder"\n'
+    manifest = MANIFEST_V3.replace(holder, f'{holder}"<COMPANY>" = "company"\n')
+    apache = "Apache-2.0, <HOLDER>"
+    write(fx3.template, "template.toml", manifest)
+    write(fx3.template, "LICENSE", FILES_V3["LICENSE"].replace(apache, f"{apache}, <COMPANY>"))
+    write(fx3.template, "scripts/alpha.py", "print('<COMPANY>')\n")
+    fx3.template_commit()
+    ask = tty(monkeypatch, answers)
+    code, _out, err = run(
+        "--template", fx3.template, "new", fx3.child,
+        "--set", "github_user=jane", "--set", "project=widget",
+    )  # fmt: skip
+    assert code == 0, err
+    assert ask.call_count == len(answers)
+    asked = [c.args[0] for c in ask.call_args_list]
+    assert any(p.startswith("company") for p in asked) is (company is not None)
+    # An unasked value keeps its placeholder, as Enter at its prompt would.
+    values = tomllib.loads(fx3.read(".template.toml"))["values"]
+    assert values["company"] == (company or "<COMPANY>")
+
+
+@pytest.mark.unit
+def test_resolve_values_asks_for_a_required_key_even_when_unused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = (
+        'manifest_format = 3\n[tokens]\n"Octocat" = { key = "github_user", required = true }\n'
+        '"<HOLDER>" = "holder"\n'
+    )
+    manifest = ts.parse_manifest(text, Path("."), where="t")
+    ask = tty(monkeypatch, ["jane"])
+    values = ts.resolve_values(manifest, {}, Path("widget"), yes=False, ask=set())
+    assert ask.call_args_list == [mock.call("github_user (required): ")]
+    assert values == {"github_user": "jane", "holder": "<HOLDER>"}
 
 
 @pytest.mark.integration

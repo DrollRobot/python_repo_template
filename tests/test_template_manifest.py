@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -192,6 +193,37 @@ def test_real_template_new_project_is_clean(real_template: Path, choice: str) ->
             if line.startswith("ENTRYPOINT")
         )  # fmt: skip
         assert any(f'"{name}"' in entrypoint for name in pyproject["project"]["scripts"])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("license_feature", "license_keys"),
+    [
+        ("license_mit", {"copyright_holder", "copyright_year"}),
+        ("license_apache", {"copyright_holder", "copyright_year"}),
+        ("license_gnu", set()),
+        ("license_proprietary", {"copyright_holder", "copyright_year", "company"}),
+    ],
+)
+def test_real_template_asks_only_for_the_values_its_license_uses(
+    real_template: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    license_feature: str,
+    license_keys: set[str],
+) -> None:
+    flags = []
+    for name in ts.load_manifest(real_template).features:
+        flags += ["--feature", f"{name}={'true' if name == license_feature else 'false'}"]
+    ask = mock.Mock(return_value="")
+    monkeypatch.setattr("sys.stdin", mock.Mock(isatty=lambda: True))
+    monkeypatch.setattr("builtins.input", ask)
+    code, _out, err = run(
+        "--template", real_template, "new", real_template.parent / f"asks-{license_feature}",
+        "--set", "project=my-widget", "--set", "github_user=octo-dev", *flags,
+    )  # fmt: skip
+    assert code == 0, err
+    asked = {c.args[0].split(" ", 1)[0] for c in ask.call_args_list}
+    assert asked == {"python", *license_keys}
 
 
 @pytest.mark.integration

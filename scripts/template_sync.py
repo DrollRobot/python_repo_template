@@ -701,6 +701,10 @@ class Manifest:
                 values[token.key] = token.unformat(literal) or literal
         return values
 
+    def keys_in(self, texts: list[str]) -> set[str]:
+        """Return the value keys with a token literal in any of ``texts``."""
+        return {t.key for literal, t in self.tokens.items() if any(literal in s for s in texts)}
+
     def aliases_of(self, key: str) -> list[str]:
         """Return the alias names the tokens of ``key`` declare, sorted."""
         return sorted({a for t in self.tokens.values() if t.key == key for a in t.aliases})
@@ -2002,21 +2006,28 @@ def parse_assignments(items: list[str], allowed: Iterable[str], flag: str) -> di
 
 
 def resolve_values(
-    manifest: Manifest, given: dict[str, str], target: Path, *, yes: bool
+    manifest: Manifest,
+    given: dict[str, str],
+    target: Path,
+    *,
+    yes: bool,
+    ask: set[str] | None = None,
 ) -> dict[str, str]:
     """Settle token values for a new child: ``--set``, else a prompt, else the default.
 
     The default for ``project`` is the target directory's name; for any other
     key it is the template's own literal, so an unset placeholder stays a
-    visible placeholder rather than being guessed. A ``required`` key has no
-    default: it is prompted for until answered, and without a terminal (or
-    with ``-y``) it must come from ``--set``.
+    visible placeholder rather than being guessed. Only the keys in ``ask``
+    are prompted for; the rest take their defaults. A ``required`` key has no
+    default: it is prompted for until answered, whether in ``ask`` or not, and
+    without a terminal (or with ``-y``) it must come from ``--set``.
 
     Args:
         manifest: The template's manifest.
         given: Values from ``--set``.
         target: The directory being created.
         yes: Never prompt.
+        ask: The keys to prompt for, or ``None`` for every key.
 
     Returns:
         One value per :attr:`Manifest.value_keys`.
@@ -2040,7 +2051,7 @@ def resolve_values(
                 values[key] = input(f"{key} (required): ").strip()
         elif key in required:
             raise ConfigError(f"{key} has no default: pass --set {key}=VALUE")
-        elif interactive:
+        elif interactive and (ask is None or key in ask):
             aliases = manifest.aliases_of(key)
             hint = f" (or {', '.join(aliases)})" if aliases else ""
             values[key] = input(f"{key}{hint} [{defaults[key]}]: ").strip() or defaults[key]
@@ -2129,10 +2140,35 @@ def _add_submodules(root: Path, target: Path) -> list[str]:
     return notes
 
 
+def unsubstituted_texts(
+    root: Path, manifest: Manifest, paths: Iterable[str], enabled: frozenset[str]
+) -> list[str]:
+    """Return what a new child gets from ``paths``, before token substitution.
+
+    Args:
+        root: The template checkout.
+        manifest: The template's manifest.
+        paths: The template paths the child gets.
+        enabled: The child's effective features.
+
+    Returns:
+        One entry per file: its child path, then its text with the child's
+        ``<template-only>`` blocks applied. A binary file gives only its path:
+        tokens are never substituted inside one.
+    """
+    texts = []
+    for path in paths:
+        data = normalise((root / path).read_bytes(), {}, enabled, where=path)
+        text = "" if is_binary(data) else data.decode("utf-8")
+        texts.append(f"{map_path(path, manifest, {})}\n{text}")
+    return texts
+
+
 def cmd_new(args: argparse.Namespace, root: Path) -> int:
     """Create a project from the template: write every shipped file, git init, stage.
 
-    Nothing is committed: the author identity is the user's.
+    Features are settled first, so only the values the project's files use are
+    asked for. Nothing is committed: the author identity is the user's.
 
     Returns:
         :data:`EXIT_OK`.
@@ -2154,8 +2190,6 @@ def cmd_new(args: argparse.Namespace, root: Path) -> int:
     require_clean_template(root, force=args.force)
     head = head_commit(root)
     given = parse_assignments(args.set, manifest.value_keys, "--set")
-    values = resolve_values(manifest, given, target, yes=args.yes)
-    replacements = manifest.replacements(values)
     chosen = resolve_features(manifest, _parse_feature_flags(args.feature, manifest), yes=args.yes)
     enabled, notes = effective_features(manifest, chosen)
 
@@ -2164,11 +2198,15 @@ def cmd_new(args: argparse.Namespace, root: Path) -> int:
     classified = classify(manifest, [t.path for t in tracked if not t.gitlink])
     gitlinks = [t.path for t in tracked if t.gitlink]
     add_submodules = bool(gitlinks) and not args.no_submodules
-    shipped = [
-        (path, map_path(path, manifest, replacements))
+    shipping = [
+        path
         for path, cl in sorted(classified.items())
         if cl.kind != "exclude" and not (cl.feature and cl.feature not in enabled)
     ]
+    used = manifest.keys_in(unsubstituted_texts(root, manifest, shipping, enabled))
+    values = resolve_values(manifest, given, target, yes=args.yes, ask=used)
+    replacements = manifest.replacements(values)
+    shipped = [(path, map_path(path, manifest, replacements)) for path in shipping]
     clashes = path_clashes(shipped)
     if clashes:
         raise ConfigError("\n".join(clashes))

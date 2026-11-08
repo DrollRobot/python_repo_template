@@ -49,12 +49,13 @@ git clone https://github.com/DrollRobot/python_repo_template.git
 cd python_repo_template
 uv run scripts/template_sync.py new ../my-widget --set github_user=YOUR-GITHUB-USER
 ```
-   It asks for whatever `--set` didn't give: the project name (default: the
-   directory's name; any of `My Widget`, `my-widget` or `my_widget` gives both the
-   `my_widget` package and the `my-widget` distribution), your GitHub user (no
-   default), the Python version, the copyright holder, year and company for the
-   license, and which optional features to keep, one license among them (MIT
-   unless you decline it).
+   It asks which optional features to keep, one license among them (MIT unless
+   you decline it). Then it asks for each value that `--set` didn't give and the
+   project's files use: the project name (default: the directory's name; any of
+   `My Widget`, `my-widget` or `my_widget` gives both the `my_widget` package and
+   the `my-widget` distribution), your GitHub user (no default), the Python
+   version, and whatever the chosen license names (the copyright holder and year;
+   for the proprietary license, also the company).
 
    The Python version defaults to the newest, 3.15, which the template always
    targets. A version such as `3.13` pins the project to exactly that Python

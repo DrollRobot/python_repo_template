@@ -23,8 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only `.template.toml`, which pins the template commit it was last synced to.
   Template changes reach projects as updates to managed files, 3-way merges into
   shared ones such as `pyproject.toml`, and new optional features to choose.
-- `new` asks for one license (MIT, Apache 2.0, GPL 3.0 or proprietary) and fills
-  in the copyright holder, year and company.
+- `new` asks for one license (MIT, Apache 2.0, GPL 3.0 or proprietary), then
+  for whichever of the copyright holder, year and company that license names.
+  It asks only for values the project's files use.
 - `new` asks for the project's Python version: the template's own (the newest)
   by default, a pinned version such as `3.13` (exactly that Python, in
   `requires-python` and CI), or `all-supported` for a library, which supports
