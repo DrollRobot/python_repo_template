@@ -177,7 +177,7 @@ managed = [
 ]
 
 [features.private_repo_deps]
-description = "commented-out steps for private git dependencies in CI and Dependabot"
+description = "CI and Dependabot steps for private git dependencies"
 # No files: <template-only feature="private_repo_deps"> blocks in the workflows
 # and dependabot.yml.
 

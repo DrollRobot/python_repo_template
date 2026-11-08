@@ -67,26 +67,27 @@ jobs:
           version: "0.13.x"
 
       # <template-only feature="private_repo_deps">
-      # FIXME uncomment if using Github app tokens to access private repos
-      # (setup steps: docs/private-dependencies.md in the template)
-      # - name: Mint a token for private git deps
-      #   id: app-token
-      #   # Best practice to use specific commit hashes of external dependencies
-      #   # Find major tag commit hashes:
-      #   # gh api repos/actions/create-github-app-token/tags --jq '.[] | "\(.name) \(.commit.sha)"'
-      #   uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-      #   with:
-      #     client-id: ${{ vars.GH_APP_CLIENT_ID }}
-      #     private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-      #     owner: ${{ github.repository_owner }}
-      #     repositories: repo1, repo2
+      - name: Mint a token for private git deps
+        id: app-token
+        if: ${{ vars.GH_APP_CLIENT_ID != '' }}
+        # pin the app token action to a specific commit. list version commits:
+        # git ls-remote --tags https://github.com/actions/create-github-app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: "" #FIXME github owner of private dependencies
+          repositories: private-repo-1, private-repo-2 #FIXME list private dependencies
 
-      # - name: Authenticate git to private deps
-      #   shell: bash
-      #   run: |
-      #     git config --global \
-      #       url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf \
-      #       "https://github.com/"
+      - name: Authenticate git to private deps
+        if: ${{ steps.app-token.outputs.token != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
       # </template-only>
 
       - name: Sync dependencies

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Dependabot can update Python dependencies in projects with private git
   dependencies. `dependabot.yml` ships a commented-out token registry, and the
-  README covers creating the token.
+  private dependencies doc covers creating the token.
 - Optional `container_job` feature, off by default, for packages that run as a
   scheduled Azure Container Apps job: the image build and its workflow, which also
   rebuilds weekly on a fresh base image, and
@@ -60,6 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   works. Projects get their own docs scaffold from `child/mkdocs.yml` and
   `child/docs/`, and their private-dependency and container-job comments name
   the template's doc pages.
+- The private-dependency steps in the workflows ship active instead of
+  commented out, and skip until the repo has the `GH_APP_CLIENT_ID` variable.
+  The token step leaves `owner` empty, so a missing repo list can't widen the
+  token to every repo the App is installed on. Only Dependabot's registry is
+  still uncommented by hand.
 - Every pre-commit hook runs from the project's venv, so its version comes from
   the project's `uv.lock`, not from a `rev:` pin in `.pre-commit-config.yaml`. A
   new project starts with the newest versions, and keeps them current with
