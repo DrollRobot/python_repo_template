@@ -22,10 +22,8 @@ conventions, required checks, and how to run tests.
 - Environment values are are stored in the config system. Package config schema
   is defined in src/name/config/schema.py.
 <!-- </template-only> -->
-<!-- <template-only feature="secret_storage"> -->
 - Secrets are stored only in keyvault or keyring. Never in source, never in
   plain-text on disk.
-<!-- </template-only> -->
 
 <!-- <template-only> -->
 ## Template maintenance
