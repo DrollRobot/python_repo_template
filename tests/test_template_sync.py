@@ -2086,3 +2086,46 @@ def test_no_bootstrap_prints_the_commands_instead(tmp_path: Path) -> None:
     assert not fx.exists("a.txt")
     assert "bootstrap:" not in out
     assert "open('a.txt', 'w')" in out[out.index("Next, in the project:") :]
+
+
+# ---------------------------------------------------------------------------
+# Files the template moves without changing where projects get them
+# ---------------------------------------------------------------------------
+
+
+def move_into_child(fx: Fixture, notes: str) -> None:
+    """Move NOTES.md (merge) and docs/index.md (seed) under child/, and set NOTES.md."""
+    (fx.template / "child" / "docs").mkdir(parents=True, exist_ok=True)
+    sh(fx.template, "mv", "NOTES.md", "child/NOTES.md")
+    sh(fx.template, "mv", "docs/index.md", "child/docs/index.md")
+    write(fx.template, "child/NOTES.md", notes)
+    fx.set_manifest(
+        MANIFEST.replace('"NOTES.md"]', '"child/NOTES.md"]').replace(
+            'seed = ["docs/index.md"]', 'seed = ["child/docs/index.md"]'
+        )
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.regression
+def test_a_moved_file_is_one_file_not_a_removal_and_an_addition(synced: Fixture) -> None:
+    move_into_child(synced, FILES["NOTES.md"])
+    code, out, err = synced.check()
+    assert code == 0, err
+    assert "several template files" not in err
+    assert statuses(out) == {}  # nothing changed where the project gets its files
+
+
+@pytest.mark.integration
+@pytest.mark.regression
+def test_update_merges_a_moved_file_against_its_old_path(synced: Fixture) -> None:
+    synced.edit_child("NOTES.md", "# Notes\n\nline one\n\nline two\n\nline three, mine\n")
+    move_into_child(synced, "# Notes\n\nline one, theirs\n\nline two\n\nline three\n")
+    code, out, err = synced.check()
+    assert code == 0, err
+    assert statuses(out) == {"child/NOTES.md": "merged"}
+    code, _out, err = synced.update()
+    assert code == 0, err
+    merged = "# Notes\n\nline one, theirs\n\nline two\n\nline three, mine\n"
+    assert synced.read("NOTES.md") == merged
+    assert synced.read("docs/index.md") == "# docs\n"

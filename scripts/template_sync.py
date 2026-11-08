@@ -1684,12 +1684,19 @@ def child_file_set(
     head_paths: dict[str, Classified],
     pin_paths: Iterable[str],
     enabled: frozenset[str],
-) -> list[tuple[str, str, str]]:
-    """List ``(template path, child path, strategy)`` for every file the child tracks.
+) -> list[tuple[str, str, str, str | None]]:
+    """List ``(template path, child path, strategy, pin path)`` for every file the child tracks.
 
-    Paths that exist only at the pin (removed from the template since) are
-    classified with the manifest as it was at the pin -- the rules the child
-    received them under; unclassifiable ones are skipped.
+    The pin path is where the file was in the template at the pin, the base of a
+    3-way merge, or ``None`` for a file added since. Paths that exist only at the
+    pin (removed from the template since) are classified with the manifest as it
+    was at the pin -- the rules the child received them under; unclassifiable
+    ones are skipped.
+
+    A file the template moved, so that a path added since lands on the child path
+    a removed one did, is one file and not a removal plus an addition: its pin
+    path is the old path. Moving a file into ``child/`` changes its template path
+    and not its child path.
 
     Args:
         manifest: The template's manifest now.
@@ -1706,16 +1713,33 @@ def child_file_set(
         ConfigError: If two template files land on one child path.
     """
     replacements = manifest.replacements(cfg.values)
-    result = []
-    ordered: list[tuple[str, Classified | None]] = list(head_paths.items())
-    ordered += [(p, classify_one(pin_manifest, p)) for p in pin_paths if p not in head_paths]
-    for path, cl in sorted(ordered, key=lambda pc: pc[0]):
+    at_pin = set(pin_paths)
+
+    def entry(path: str, cl: Classified | None) -> tuple[str, str, str] | None:
         if cl is None or cl.kind == "exclude" or (cl.feature and cl.feature not in enabled):
-            continue
+            return None
         child_path = map_path(path, manifest, replacements)
-        strategy = cfg.overrides.get(path, cfg.overrides.get(child_path, cl.kind))
-        result.append((path, child_path, strategy))
-    clashes = path_clashes((path, child_path) for path, child_path, _strategy in result)
+        return path, child_path, cfg.overrides.get(path, cfg.overrides.get(child_path, cl.kind))
+
+    current = [e for p, cl in head_paths.items() if (e := entry(p, cl))]
+    removed = [
+        e
+        for p in sorted(at_pin - head_paths.keys())
+        if (e := entry(p, classify_one(pin_manifest, p)))
+    ]
+    added = {child_path for path, child_path, _s in current if path not in at_pin}
+    moved_from: dict[str, str] = {}
+    result: list[tuple[str, str, str, str | None]] = []
+    for path, child_path, strategy in removed:
+        if child_path in added and child_path not in moved_from:
+            moved_from[child_path] = path
+        else:
+            result.append((path, child_path, strategy, path))
+    for path, child_path, strategy in current:
+        pin_path = path if path in at_pin else moved_from.get(child_path)
+        result.append((path, child_path, strategy, pin_path))
+    result.sort(key=lambda e: e[0])
+    clashes = path_clashes((path, child_path) for path, child_path, _s, _p in result)
     if clashes:
         raise ConfigError("\n".join(clashes))
     return result
@@ -1792,7 +1816,7 @@ def build_plan(manifest: Manifest, cfg: ChildConfig, *, include_seed: bool) -> S
 
     labels = ("yours", f"template@{pin[:7]}", f"template@{head[:7]}")
     results = []
-    for path, child_path, strategy in child_file_set(
+    for path, child_path, strategy, pin_path in child_file_set(
         manifest, pin_manifest, cfg, head_paths, at_pin, enabled
     ):
         r = FileResult(path, child_path, strategy)
@@ -1804,9 +1828,12 @@ def build_plan(manifest: Manifest, cfg: ChildConfig, *, include_seed: bool) -> S
         if path in head_paths:
             theirs = normalise((root / path).read_bytes(), replacements, enabled, where=path)
             r.executable = path in executable
-        if path in at_pin:
+        if pin_path is not None:
             base = normalise(
-                show_at(root, pin, path), pin_replacements, enabled, where=f"{pin[:7]}:{path}"
+                show_at(root, pin, pin_path),
+                pin_replacements,
+                enabled,
+                where=f"{pin[:7]}:{pin_path}",
             )
         dst = cfg.root / child_path
         if dst.is_file():
