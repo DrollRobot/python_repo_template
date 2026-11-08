@@ -17,7 +17,7 @@ For the template's maintainers.
   rewrite the URL; they name the page instead, as `docs/<page>.md` in the
   template.
 
-## Keeping parts of a file out of projects
+## Keeping parts of a file out of child projects
 
 Wrap anything that must not reach projects in a `<template-only>` block: a
 line holding only the tag in the file's comment syntax (`# <template-only>` ...

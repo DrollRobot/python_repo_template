@@ -1,24 +1,18 @@
 # Staying in sync
 
-A project carries one file from the template: `.template.toml`, which records
-the template commit it was last synced to (its pin), its values, its feature
-choices and any per-file overrides. To keep even that out of the project's
-history, move it to `.local/.template.toml` (`.local/` is gitignored); a fresh
-clone then needs its own copy. Delete it to cut the project loose from the
-template.
+A child project carries one file from the template: `.template.toml`. It
+records the template commit it was last synced to, its values, its feature
+choices and any per-file overrides.
+If you prefer not to have the `.template.toml` in git history, the sync
+script will also find it at `.local/.template.toml`.
 
 ## Bringing in the template's changes
 
-Commit the project's work, then from the template checkout:
-
 ```bash
 git pull
-uv run scripts/template_sync.py check ../my-widget    # what would change; writes nothing
-uv run scripts/template_sync.py update ../my-widget   # apply it, then review and commit
+uv run scripts/template_sync.py check ../my-widget    # shows what would change
+uv run scripts/template_sync.py update ../my-widget   # apply changes
 ```
-
-`update` also asks about features the template has gained, and records the
-answers in `.template.toml`.
 
 ## What each file gets
 
@@ -46,11 +40,3 @@ on. To move it, change `python` in `.template.toml` and run `update`, which
 rewrites the managed files. Then make the same change by hand in the merge
 files that name the version (`pyproject.toml`, `.python-version`, and
 `CONTRIBUTING.md` if you have it), since `update` keeps your copies of those.
-
-## Projects from the old setup scripts
-
-Projects created with the old setup scripts (`scripts/template_setup/`) have no
-`.template.toml`: `check` prints a skeleton to fill in. Pin it to the last
-template commit before the switch to `template_sync.py`. The first `update`
-then replaces the managed files outright, and may leave conflicts in
-`AGENTS.md` and `pyproject.toml` to resolve once.

@@ -46,8 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** making a project no longer means cloning the template and running
   `scripts/template_setup/setup_new_project.py`; run `template_sync.py new` from a
-  template checkout instead. Existing projects have no `.template.toml`; see "Staying
-  in sync" in the README to adopt it.
+  template checkout instead.
 - `container_job.py` and `mark_remote_disposable.py` stand alone, without the
   shared `_cli.py`.
 - Dependabot opens each major update as its own PR, outside the grouped PR.

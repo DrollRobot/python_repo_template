@@ -5,19 +5,16 @@ what depends on the features you keep.
 
 ## 1. Clone the template
 
-Clone it once, beside your projects. `git pull` it later to get its changes.
-
 ```bash
 git clone https://github.com/DrollRobot/python_repo_template.git
 ```
 
 ## 2. Create the project
 
-From the template checkout:
+From the template folder:
 
 ```bash
-cd python_repo_template
-uv run scripts/template_sync.py new ../my-widget --set github_user=YOUR-GITHUB-USER
+uv run scripts/template_sync.py new ../<new repo name>
 ```
 
 It asks which optional features to keep, and which license to use: MIT (the
@@ -84,7 +81,7 @@ pushes to `main`.
 CI and Dependabot need credentials to read them: see
 [Private dependencies](private-dependencies.md).
 
-## If the project runs as a scheduled job
+## If you want to run the project as an Azure Container Job
 
 With `container_job` on, the package runs as a scheduled Azure Container Apps
 job: see [Container job](container-job.md).
