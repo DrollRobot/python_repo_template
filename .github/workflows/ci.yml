@@ -1,5 +1,6 @@
+# <template-only>
 # =============================================================================
-# TEMPLATE SETUP NOTES -- remove this block - FIXME
+# TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 # =============================================================================
 # This ci.yml is part of a starter repo scaffold.
 #
@@ -14,8 +15,9 @@
 #   2. Go to Settings -> Branches -> Add branch protection rule.
 #   3. Set the pattern to: main
 #   4. Enable "Require status checks to pass before merging".
-#   5. Search for and add each matrix "check" status (one per OS:
-#      "check (ubuntu-latest)", "check (windows-latest)").
+#   5. Search for and add each matrix "check" status: "check (ubuntu-latest,
+#      <python>)" and "check (windows-latest, <python>)" for each Python
+#      version in the matrix below, and, in the template repo itself, "template".
 #   6. Optionally enable "Require branches to be up to date before merging".
 #   7. Save the rule.
 #
@@ -25,6 +27,7 @@
 # No customization is required for most projects. If you rename src/ or
 # add test directories, update the mypy and pytest commands accordingly.
 # =============================================================================
+# </template-only>
 
 # .github/workflows/ci.yml
 
@@ -50,7 +53,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        python: ["3.15"]
     runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}  # overrides .python-version for every uv command
     steps:
       - uses: actions/checkout@v7
 
@@ -58,29 +64,31 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          version: "0.11.x"
+          version: "0.13.x"
 
-      # <private-repo-deps>
-      # FIXME uncomment if using Github app tokens to access private repos
-      # - name: Mint a token for private git deps
-      #   id: app-token
-      #   # Best practice to use specific commit hashes of external dependencies
-      #   # Find major tag commit hashes:
-      #   # gh api repos/actions/create-github-app-token/tags --jq '.[] | "\(.name) \(.commit.sha)"'
-      #   uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-      #   with:
-      #     client-id: ${{ vars.GH_APP_CLIENT_ID }}
-      #     private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-      #     owner: ${{ github.repository_owner }}
-      #     repositories: repo1, repo2
+      # <template-only feature="private_repo_deps">
+      - name: Mint a token for private git deps
+        id: app-token
+        if: ${{ vars.GH_APP_CLIENT_ID != '' }}
+        # pin the app token action to a specific commit. list version commits:
+        # git ls-remote --tags https://github.com/actions/create-github-app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: "" #FIXME github owner of private dependencies
+          repositories: private-repo-1, private-repo-2 #FIXME list private dependencies
 
-      # - name: Authenticate git to private deps
-      #   shell: bash
-      #   run: |
-      #     git config --global \
-      #       url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf \
-      #       "https://github.com/"
-      # </private-repo-deps>
+      - name: Authenticate git to private deps
+        if: ${{ steps.app-token.outputs.token != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config --global \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
+      # </template-only>
 
       - name: Sync dependencies
         run: uv sync --locked --all-groups --all-extras
@@ -99,3 +107,29 @@ jobs:
 
       - name: Offline tests
         run: uv run pytest -m "not live"
+
+  # <template-only>
+  # The template's own self-check: every tracked file classified in
+  # template.toml, markers balanced, features and tokens valid. The tool's
+  # tests run in the check matrix above.
+  # Then four projects made from the template (defaults, every feature off,
+  # every feature on, a library) must each pass their own gates. Those tests
+  # are marked live, because they download each project's dependencies, so the
+  # check matrix skips them.
+  template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          version: "0.13.x"
+
+      - name: Validate the template
+        run: uv run scripts/template_sync.py validate
+
+      - name: Make sample projects and run their gates
+        run: uv run pytest tests/test_template_manifest.py -m live --no-cov
+  # </template-only>

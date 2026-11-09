@@ -4,12 +4,6 @@
   perform the prodedure described below. When replying to the user, do not describe
   every step taken, only decisions and further action required.
 
-## Update precommit
-```
-# update precommit dependencies
-uv run pre-commit autoupdate
-```
-
 ## Commit
 - Review before writing commit messages: [AGENTS.COMMITTING.md](AGENTS.COMMITTING.md).
 - Commit all untracked files.
@@ -23,7 +17,8 @@ uv run pre-commit autoupdate
    For any advisory reported, raise that dependency's floor in
    `[project.dependencies]` (or its dependency group) to the fixed version.
 
-2. **Refresh the lockfile** within existing pyproject.toml bounds:
+2. **Refresh the lockfile** within existing pyproject.toml bounds. The
+   pre-commit hooks run from the venv, so this updates them too:
    ```
    uv lock --upgrade
    ```
@@ -69,6 +64,7 @@ uv run pre-commit autoupdate
    Re-run the test suite as described in [AGENTS.TESTING.md](AGENTS.TESTING.md)
    before continuing.
 
+<!-- <template-only feature="mkdocs"> -->
 ## Update docs
 ```
 uv run mkdocs build --strict          # build docs, fail on warnings
@@ -76,6 +72,7 @@ uv run mkdocs build --strict          # build docs, fail on warnings
 - Review all .md files in the root of the docs folder for accuracy or any new
    features that should be added.
 - Don't review or modify files in docs/reference. (built by mkdocs)
+<!-- </template-only> -->
 
 ## Review/Update README.md
 
@@ -124,5 +121,5 @@ date. Use this format in place of Keep a Changelog's `## [1.2.3] - 2026-01-31`:
 ## Commit any remaining files.
 
 ## Prompt user to finish the process.
-- The user will run push_new_tag_to_main.py to update package version, merge to main,
+- The user will run `push-new-tag-to-main` to update package version, merge to main,
    create tag, and push.

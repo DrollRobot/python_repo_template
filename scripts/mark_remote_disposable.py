@@ -60,13 +60,17 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import NoReturn
 
-import _cli as cli
 
-# Version of this helper script itself. Bump on every change so copies in other
-# repos can be compared: patch = bugfix, minor = new flag/behavior, major =
-# breaking CLI change.
-__version__ = "1.0.1"
+def _die(message: str) -> NoReturn:
+    """Print an error and exit with status 1.
+
+    Args:
+        message: Error text.
+    """
+    print(f"ERROR: {message}", file=sys.stderr)
+    sys.exit(1)
 
 
 def main() -> None:
@@ -76,23 +80,21 @@ def main() -> None:
     )
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt.")
     args = parser.parse_args()
-    cli.set_assume_yes(args.yes)
 
-    cli.info("Script version", __version__)
-    print()
-
-    cli.section("Mark remote target disposable")
-    cli.warn(
+    print("\n== Mark remote target disposable ==")
+    print(
         "  This asserts the remote target is safe for destructive_remote tests to "
         "mutate or destroy. There is no 'no' once one has run."
     )
 
     # FIXME 2: identify and print the actual target here so the user confirms
     # the right thing, e.g.:
-    #   cli.info("Target", os.environ["SOME_TARGET_URL"])
-    # then replace the cli.die() below with a cli.step() confirmation and the
-    # marker-writing logic. See REMOTE-DISPOSABILITY SETUP at the top of this file.
-    cli.die(
+    #   print(f"  Target: {os.environ['SOME_TARGET_URL']}")
+    # then replace the _die() below with a confirmation (skipped when args.yes)
+    # and the marker-writing logic. See REMOTE-DISPOSABILITY SETUP at the top of
+    # this file.
+    del args  # read by the confirmation the FIXME above adds
+    _die(
         "mark_remote_disposable.py has not been implemented for this project yet "
         "(see REMOTE-DISPOSABILITY SETUP at the top of this file)."
     )

@@ -1,5 +1,6 @@
+# <template-only>
 # =============================================================================
-# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 # =============================================================================
 # This .pre-commit-config.yaml is part of a starter repo scaffold.
 # pre-commit runs a suite of checks automatically on every
@@ -11,8 +12,9 @@
 #   uv run pre-commit install --hook-type pre-push    # pre-push hooks
 #   uv run pre-commit run --all-files                 # optional: check now
 #
-# To keep hook versions current:
-#   uv run pre-commit autoupdate       # bump all rev: pins to latest
+# Every hook runs from the project's venv (`uv run`), so each tool's version
+# comes from uv.lock, not from a rev: pin here. `uv lock --upgrade`, or the
+# Dependabot uv updates, keep them current; this file names no versions.
 #
 # Commit-time hooks (run on every `git commit`):
 #   pre-commit-hooks  -- trailing whitespace, EOF newline, YAML/TOML syntax,
@@ -39,6 +41,10 @@
 #                     -- fails the commit if any file in the repo contains an
 #                        inline detect-secrets suppression pragma (runs the
 #                        enforcement test against the whole working tree)
+#   template-validate -- (this template repo only) runs
+#                        `uv run scripts/template_sync.py validate`: every
+#                        tracked file classified in template.toml, markers
+#                        balanced, features and tokens valid
 #
 # Pre-push hooks (run once on `git push`, slower whole-repo gates):
 #   uv-lock-check     -- fails if uv.lock is out of sync with pyproject.toml
@@ -50,6 +56,7 @@
 #                        (`-m "not live and not slow and not destructive_local
 #                        and not destructive_remote"`)
 # =============================================================================
+# </template-only>
 
 # .pre-commit-config.yaml
 
@@ -58,28 +65,43 @@
 # uv sync
 # uv run pre-commit install
 # uv run pre-commit install --hook-type pre-push
-# uv run pre-commit autoupdate
-
-default_language_version:
-  python: python3.14
+# Every hook runs through `uv run`: its version is the one in uv.lock.
 
 default_stages: [pre-commit]
 
-ci:
-  autoupdate_schedule: monthly
-
 repos:
-  # Generic hygiene
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+  # Generic hygiene, from the pre-commit-hooks package (a dev dependency)
+  - repo: local
     hooks:
       - id: trailing-whitespace
+        name: trim trailing whitespace
+        entry: uv run trailing-whitespace-fixer
+        language: system
+        types: [text]
       - id: end-of-file-fixer
+        name: fix end of files
+        entry: uv run end-of-file-fixer
+        language: system
+        types: [text]
       - id: check-yaml
+        name: check yaml
+        entry: uv run check-yaml
+        language: system
+        types: [yaml]
       - id: check-toml
+        name: check toml
+        entry: uv run check-toml
+        language: system
+        types: [toml]
       - id: check-added-large-files
+        name: check for added large files
+        entry: uv run check-added-large-files
+        language: system
       - id: mixed-line-ending
-        args: [--fix=lf]  # for cross-platform support
+        name: mixed line ending
+        entry: uv run mixed-line-ending --fix=lf  # for cross-platform support
+        language: system
+        types: [text]
 
   # detect-secrets
   - repo: local
@@ -105,12 +127,20 @@ repos:
         always_run: true
 
   # Ruff: lint + format
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.0
+  - repo: local
     hooks:
       - id: ruff
-        args: [--fix]
+        name: ruff check
+        entry: uv run ruff check --fix --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
       - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
 
   # Mypy type checking
   - repo: local
@@ -139,6 +169,19 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+  # <template-only>
+  # Template self-check: an unclassified file or a broken marker cannot be
+  # committed.
+  - repo: local
+    hooks:
+      - id: template-validate
+        name: template validate
+        entry: uv run scripts/template_sync.py validate
+        language: system
+        pass_filenames: false
+        always_run: true
+  # </template-only>
 
   # Pre-push checks
   - repo: local

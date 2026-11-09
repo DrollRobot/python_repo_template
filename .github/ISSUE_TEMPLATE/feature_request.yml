@@ -1,5 +1,6 @@
+# <template-only>
 # =============================================================================
-# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 # =============================================================================
 # This feature_request.yml is part of a starter repo scaffold.
 #
@@ -9,6 +10,7 @@
 #
 # No customization is required for most projects.
 # =============================================================================
+# </template-only>
 
 # .github/ISSUE_TEMPLATE/feature_request.yml
 

@@ -21,7 +21,7 @@ ARG DEBIAN_RELEASE=trixie
 
 FROM python:${PYTHON_VERSION}-slim-${DEBIAN_RELEASE} AS build
 
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /bin/uv
 
 # uv needs git for git dependencies.
 RUN apt-get update \

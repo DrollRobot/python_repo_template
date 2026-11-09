@@ -4,9 +4,12 @@ Tests are tagged with the marker taxonomy documented in AGENTS.TESTING.md.
 The dependency axis is what gates external resources:
 
 Live tests (marked @pytest.mark.live) require a real external resource --
-network, secrets, a live tenant, or a third-party API -- configured through
-the config system (config.toml + the credential backend; see
-src/python_repo_template/config/). Select on that axis with:
+network, secrets, a live tenant, or a third-party API.
+# <template-only feature="config_system">
+They are configured through the config system (config.toml + the credential
+backend; see src/python_repo_template/config/).
+# </template-only>
+Select on that axis with:
 
     pytest -m "not live"   # offline tests only (the default pre-commit run)
     pytest -m live         # live tests only
@@ -21,8 +24,10 @@ from pathlib import Path
 
 import pytest
 
+# <template-only feature="config_system">
 from python_repo_template.config import Settings, load_settings
 
+# </template-only>
 # ---------------------------------------------------------------------------
 # Destructive-test opt-in gates
 # ---------------------------------------------------------------------------
@@ -158,6 +163,7 @@ def _require_disposable_remote(request: pytest.FixtureRequest) -> None:
         )
 
 
+# <template-only feature="config_system">
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
@@ -176,12 +182,15 @@ def settings() -> Settings:
     return load_settings()
 
 
+# </template-only>
 # ---------------------------------------------------------------------------
 # FIXME: add project-specific fixtures below
 # ---------------------------------------------------------------------------
+# <template-only feature="config_system">
 # Example (secrets resolve through the credential backend automatically):
 #
 # @pytest.fixture(scope="session")
 # def client(settings: Settings) -> MyClient:
 #     """Return a client configured for live tests."""
 #     return MyClient(base_url=settings.api_url, secret=settings.client_secret)
+# </template-only>

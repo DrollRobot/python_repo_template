@@ -1,5 +1,6 @@
+# <template-only>
 # =============================================================================
-# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 # =============================================================================
 # This .editorconfig is part of a starter repo scaffold.
 #
@@ -16,6 +17,7 @@
 #
 # Adjust indent sizes or add per-file-type overrides to match your project.
 # =============================================================================
+# </template-only>
 
 root = true
 

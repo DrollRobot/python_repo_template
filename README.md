@@ -1,157 +1,51 @@
 # python-repo-template
-<!-- FIXME: replace badges below with your own CI/PyPI/coverage links -->
-[![CI](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml/badge.svg)](https://github.com/FIXME/python-repo-template/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) # FIXME replace with correct license link
-<!-- FIXME: one paragraph describing what this package does and who should use it -->
-My goal with this project is to create a baseline for new python projects with the most commonly used tools and community best practices.
+[![CI](https://github.com/DrollRobot/python_repo_template/actions/workflows/ci.yml/badge.svg)](https://github.com/DrollRobot/python_repo_template/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.15-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-It's mostly for personal use. But maybe others will have suggestions? Or find it useful themselves?
+My goal with this project is to create a baseline for new python projects with the
+most commonly used tools and community best practices.
+
+It's mostly for personal use. But maybe others will have suggestions? Or find it
+useful themselves?
 
 # Tool choices
-Based on some personal preference, and what I understand are the most widely used tools in the Python ecosystem.
+Based on personal preference, and what I understand are the most widely used
+tools in the Python ecosystem.
 
-- **uv** for dependency management and virtual environments. Fast. Allows very simple package install directly from Github.
+- **uv** for dependency management and virtual environments. Fast. Allows very simple
+   package install directly from Github.
 - **pre-commit** for git hooks to run checks before commits.
 - **ruff** for linting and formatting. Fast.
 - **mypy** for static type checking.
 - **vulture** for dead code detection.
 - **pytest** for testing.
 - **mkdocs** for documentation. Integrates easily with GitHub Pages for hosting.
-- **keyring** for local credential storage (optional backend). Cross-platform. Allows never keeping secrets in the repo.
+- **keyring** for local credential storage (optional backend). Cross-platform. Allows
+   never keeping secrets in the repo.
 - **Azure Keyvault** for remote secret storage (optional backend).
 - **detect-secrets** for real-time secret scanning. Helps prevent accidental leaks.
 - **GitHub Actions** for CI and docs deployment. Free for public repos, and widely used.
 - **VSCode** for development. Most popular IDE. Lots of documentation. Many extensions.
-- **Claude Code** as the coding agent. Includes baseline settings.
+- **Claude Code** as the coding agent.
+
 
 # Design choices
 Some of the design choices I've made for this project:
 
-- **No .env** To avoid keeping secrets/environment values within the repo, project
-keeps non-secret environment values and user config options in a config.toml in a
-standard OS-specific location. Secrets are kept in a credential backend (keyring or
-keyvault ship as options): the schema's `CREDENTIAL_BACKEND` policy either names a
-default backend, makes the user choose, or disables secret storage outright, and
-the whole secret-storage layer is removable for projects whose config holds no
-secrets.
+- **Configuration system.** An optional feature that allows keeping a project's settings
+  in `config.toml` in the operating system's user config folder, not in the repo.
+  Secrets live in a credential store (the OS keyring or Azure Key Vault). Allows
+  environment variable override, for CI. A config command creates and edits the file.
+  See the [config system](https://drollrobot.github.io/python_repo_template/config-system/)
+  docs.
 
-## Making a new repo from this template
+# Documentation
+https://drollrobot.github.io/python_repo_template/
 
-1. **Clone the repo.** Name the new folder after your project:
-```bash
-git clone https://github.com/DrollRobot/python_repo_template.git YOUR-PROJECT-NAME
-```
-
-2. **Edit `scripts/template_setup.toml`** to determine which features you want to keep.
-
-3. **Run the setup script:**
-```powershell
-uv run scripts/template_setup/setup_new_project.py
-```
-   It validates every field in the config up front — if anything is wrong,
-   nothing runs and every problem is listed at once. It then previews every
-   change, asks for a single confirmation, and applies everything, including
-   dropping any optional features you turned off.
-   Add `--dry-run` to preview only, or `-y`/`--yes` to skip the confirmation
-   (the preview still runs first).
-
-   It also replaces this README with `README.md.FIXME`, a skeleton README for
-   your project, and deletes the `.FIXME` file. Work through the FIXMEs it
-   leaves — including the license badge, which must match the license you
-   chose. Re-running the setup will not touch that README again: the skeleton
-   is gone, so the step reports "already reset" and leaves your version alone.
-
-   This does **not** delete `scripts/template_setup/` — that stays a
-   separate, manual step (`cleanup.py`, or just delete the folder) once
-   you're done with it.
-
-5. **Create the venv and install dev/test dependencies:**
-```powershell
-uv sync
-```
-
-6. **Install and update pre-commit hooks:**
-```powershell
-uv run pre-commit install
-uv run pre-commit install --hook-type pre-push
-uv run pre-commit autoupdate
-```
-
-7. **If you kept mkdocs, enable GitHub Pages for docs:**
-   - In the GitHub repo settings, set Pages source to the `gh-pages` branch.
-   - Then deploy:
-```bash
-uv run mkdocs gh-deploy --force
-```
-   The GitHub Actions workflow in `.github/workflows/docs.yml` will keep the
-   site updated on future pushes to `main`.
-
-8. **Initialize the secrets baseline:**
-```powershell
-uv run detect-secrets scan > .secrets.baseline
-```
-
-9. **If the project has private git dependencies:**
-   1. Create the GitHub App (in the Github account → Settings → Developer settings → GitHub Apps → New):
-       - Permissions → Repository permissions → Contents: Read-only (Metadata: Read is added automatically). Nothing else.
-       - Webhook → uncheck Active (you don't need events).
-       - Where can this be installed → Only on this account.
-   2. Mint a private key — on the App's page, "Generate a private key", download the .pem. Note the Client ID shown at the top.
-   3. Install the App onto the repos it needs to touch.
-       - Org Settings → the App → Install → select repositories.
-   4. Save the credentials in the repo using the private dependencies. The key is saved
-      twice because Dependabot's CI runs can't read the repo's other secrets:
-```bash
-      gh secret set GH_APP_PRIVATE_KEY < path/to/app.private-key.pem
-      gh secret set GH_APP_PRIVATE_KEY --app dependabot < path/to/app.private-key.pem
-      gh variable set GH_APP_CLIENT_ID --body "<app client id>"
-```
-```powershell
-      Get-Content -Raw path\to\app.private-key.pem | gh secret set GH_APP_PRIVATE_KEY
-      Get-Content -Raw path\to\app.private-key.pem | gh secret set GH_APP_PRIVATE_KEY --app dependabot
-      gh variable set GH_APP_CLIENT_ID --body "<app client id>"
-```
-   5. Give Dependabot its own token. Dependabot can't use the App key when it updates
-      `uv.lock`, so it reads the private repos with a fine-grained personal access token
-      (Settings → Developer settings → Personal access tokens → Fine-grained tokens):
-       - Resource owner → the account that owns the private repos.
-       - Repository access → Only select repositories → the private repos the project depends on.
-       - Permissions → Repository permissions → Contents: Read-only. Nothing else.
-       - Expiration → set one, and note when to rotate it.
-
-      Save it in the repo (`gh` prompts for the value):
-```bash
-      gh secret set DEPENDABOT_GIT_TOKEN --app dependabot
-```
-   6. Uncomment the private-repo-deps sections in .github/workflows/ audit.yml, ci.yml,
-      docs.yml and (with `container_job`) image.yml, and both sections in
-      .github/dependabot.yml.
-   7. Update actions/create-github-app-token to latest trusted commit.
-
-10. **If the project runs as a scheduled Azure Container Apps job** (`container_job = true`):
-   1. Check the package can run unattended in a container:
-       - Its settings resolve with no `config.toml`: from defaults, or from environment
-         variables set on the job (`[job.env]` in the config below).
-       - It reads secrets through the job's managed identity: azure-auth with
-         `managed_identity=True`, or the Key Vault backend, whose
-         `DefaultAzureCredential` picks the identity from an `AZURE_CLIENT_ID`
-         variable on the job.
-       - It logs to the console; Log Analytics keeps the output. It needs no log file.
-       - It never prompts or opens a browser.
-       - `<entrypoint> --help` imports every module: it is the image's smoke test.
-   2. Copy `scripts/container_job.example.toml` somewhere outside the repo's tracked
-      files, fill it in, and run the setup with an account that can grant roles:
-```bash
-      uv run scripts/container_job.py path/to/your.toml --dry-run
-      uv run scripts/container_job.py path/to/your.toml
-```
-      It creates whatever is missing (the shared resources, the job's identities and
-      roles, the job, the repo variables, the failed-run alert) and updates whatever
-      differs from the file. To change a setting later, edit the file and run it again.
-   3. The job starts on Microsoft's quickstart image. Each push to `main` then builds
-      the package's image, publishes it, and points the job at it. A scheduled run also
-      rebuilds `main` weekly on a freshly pulled base image; the cron in `image.yml`
-      sets how often.
-
-11. **Write some code!**
+- [Getting started](https://drollrobot.github.io/python_repo_template/getting-started/): create a project from the template.
+- [Staying in sync](https://drollrobot.github.io/python_repo_template/staying-in-sync/): bring the template's later changes into a project.
+- [Config system](https://drollrobot.github.io/python_repo_template/config-system/): how a project's settings and secrets work.
+- [Private dependencies](https://drollrobot.github.io/python_repo_template/private-dependencies/): let CI and Dependabot read private git dependencies.
+- [Container job](https://drollrobot.github.io/python_repo_template/container-job/): run the package as a scheduled Azure Container Apps job.
+- [Changing the template](https://drollrobot.github.io/python_repo_template/changing-the-template/): for the template's maintainers.

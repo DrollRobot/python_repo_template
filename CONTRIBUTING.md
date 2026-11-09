@@ -1,6 +1,7 @@
+<!-- <template-only> -->
 <!--
 =============================================================================
-TEMPLATE SETUP NOTES -- remove this block when you use this template
+TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 =============================================================================
 This CONTRIBUTING.md is part of a starter repo scaffold.
 
@@ -11,12 +12,13 @@ up a dev environment, run checks, follow your code conventions, and submit
 changes in a way that is easy for you to review and merge.
 =============================================================================
 -->
+<!-- </template-only> -->
 
 # Contributing to python-repo-template
 Thank you for your interest in contributing!
 
 ## Setting up a development environment
-Requires Python 3.14+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.15 and [uv](https://docs.astral.sh/uv/).
 ```
 git clone https://github.com/FIXME/python-repo-template.git
 cd python-repo-template
@@ -35,7 +37,9 @@ automatically on every commit.
 <!-- FIXME: update paths and descriptions to match your project layout -->
 - `src/python_repo_template/` -- library source (src layout)
 - `tests/` -- pytest test suite
+<!-- <template-only feature="mkdocs"> -->
 - `docs/` -- MkDocs documentation source
+<!-- </template-only> -->
 
 ### Naming and module conventions
 <!-- FIXME: describe the key architectural patterns your project uses.
@@ -44,6 +48,7 @@ automatically on every commit.
 ### Public API
 Export new public symbols from `src/python_repo_template/__init__.py`.
 
+<!-- <template-only feature="mkdocs"> -->
 ### Docs
 ```shell
 # build HTML
@@ -52,6 +57,7 @@ uv run mkdocs build --strict
 # live preview at http://127.0.0.1:8000
 uv run mkdocs serve
 ```
+<!-- </template-only> -->
 
 ### Type annotations
 All functions must be fully annotated. The package ships a `py.typed` marker,
@@ -62,7 +68,12 @@ so downstream consumers depend on its type information.
 2. Run the checks and tests in [AGENTS.TESTING.md](AGENTS.TESTING.md) and ensure
    they pass clean.
 3. Update `CHANGELOG.md` under `## [Unreleased]`.
+<!-- <template-only feature="mkdocs"> -->
 4. Update docstrings and `docs/` if the public API changed.
+<!-- </template-only> -->
+<!-- <template-only feature="!mkdocs"> -->
+4. Update docstrings if the public API changed.
+<!-- </template-only> -->
 
 ## Reporting issues
 Use the GitHub issue templates for bugs and feature requests.

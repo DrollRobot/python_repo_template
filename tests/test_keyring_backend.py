@@ -22,11 +22,6 @@ import pytest
 from python_repo_template.config import keyring_backend
 from python_repo_template.config.schema import APP_NAME, ConfigError
 
-# Version of this test module. It ships to projects generated from this
-# template, so bump on every change to let scripts/compare_to_template.py
-# flag stale copies.
-__version__ = "2.0.1"
-
 pytestmark = pytest.mark.unit
 
 

@@ -1,5 +1,6 @@
+# <template-only>
 # =============================================================================
-# TEMPLATE SETUP NOTES -- remove this block when you use this template
+# TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 # =============================================================================
 # This bug_report.yml is part of a starter repo scaffold.
 #
@@ -8,10 +9,12 @@
 # more complete and consistent reports.
 #
 # To customize:
-#   - Update the version label to name your package.
+#   - The package name in the version label is the project token;
+#     scripts/template_sync.py fills it in.
 #   - Replace the placeholder text in "Steps to reproduce" with a
 #     relevant example from your own API.
 # =============================================================================
+# </template-only>
 
 # .github/ISSUE_TEMPLATE/bug_report.yml
 
@@ -63,7 +66,7 @@ body:
     id: python-version
     attributes:
       label: Python version
-      placeholder: "3.14"
+      placeholder: "3.15"
     validations:
       required: true
 
