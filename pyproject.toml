@@ -8,11 +8,10 @@ package-data = { python_repo_template = ["py.typed"] }
 [project]
 name = "python-repo-template"
 version = "2.0.0"
-description = "" # FIXME add a brief description of the project
+description = "" # FIXME
 readme = "README.md"
 requires-python = "==3.15.*"
 dependencies = [
-    # FIXME add depencencies
     # <template-only feature="config_system">
     "platformdirs>=4.3,<5",
     "tomlkit>=0.13,<1",
@@ -94,27 +93,23 @@ addopts = [
     "--cov=scripts",
     # </template-only>
     "--cov-report=term-missing",
-    "--cov-fail-under=0", # FIXME: coverage disabled for template. update for your project.
+    "--cov-fail-under=0", # FIXME set coverage goal
     "--strict-markers",
     "--strict-config",
 ]
 xfail_strict = true
 filterwarnings = ["error"]
 markers = [
-    # Scope
     "unit: single function/class in isolation; all dependencies mocked or stubbed",
     "integration: multiple real components wired together across a boundary",
     "e2e: whole application end to end, driven like a real user",
-    # Purpose
     "smoke: fast 'is it fundamentally broken' check",
     "regression: guards against reintroduction of a previously fixed bug",
     "acceptance: verifies behavior against a requirement or user-facing spec",
     "functional: tests behavior/output of a feature without regard to internal structure",
-    # Dependency
     "live: requires a real external resource (network, live tenant, secrets, third-party API)",
     "destructive_local: mutates the host/device; guarded to prevent accidental execution",
     "destructive_remote: mutates a remote/external system; guarded to prevent accidental execution",
-    # Performance
     "slow: long-running",
 ]
 
@@ -151,14 +146,12 @@ mypy_path = [
     # </template-only>
 ]
 
-# AGENTS: ONLY ADD OVERRIDES IF, AFTER RESEARCHING, THERE IS NO TYPES STUB AVAILABLE.
+# AGENTS: ONLY ADD OVERRIDES IF, AFTER RESEARCHING, THERE IS NO TYPE STUB AVAILABLE.
 # [[tool.mypy.overrides]]
 # module = [""]
 # ignore_missing_imports = true
 
 [tool.vulture]
-# tests/ is left out on purpose: a test calling otherwise-unused code would
-# count as a caller and hide it.
 paths = [
     "src",
     # <template-only feature="remote_disposable_scripts|container_job">
@@ -166,17 +159,14 @@ paths = [
     # </template-only>
 ]
 min_confidence = 60
-# Names used in ways vulture cannot see.
 ignore_names = [
     # <template-only feature="config_system">
-    # FIXME: the example Settings fields in config/schema.py. Nothing reads them
-    # until your code does; drop these names when you replace the fields.
-    "tenant_id",
-    "client_id",
+    "tenant_id", #FIXME remove after config schema is updated
+    "client_id", #FIXME remove after config schema is updated
     # </template-only>
     # <template-only feature="secret_storage">
-    "client_secret",
-    "api_key",
-    "_CredentialBackend",  # config/secrets.py: named only in a quoted cast()
+    "client_secret", #FIXME remove after config schema is updated
+    "api_key", #FIXME remove after config schema is updated
+    "_CredentialBackend",
     # </template-only>
 ]
