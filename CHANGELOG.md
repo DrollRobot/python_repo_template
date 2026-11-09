@@ -7,97 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-09 - Template sync
+
 ### Added
 
-- Dependabot can update Python dependencies in projects with private git
-  dependencies. `dependabot.yml` ships a commented-out token registry, and the
-  private dependencies doc covers creating the token.
-- The template has its own `LICENSE` (MIT). Projects still get the license they
-  choose at `new`.
-- Optional `container_job` feature, off by default, for packages that run as a
-  scheduled Azure Container Apps job: the image build and its workflow, which also
-  rebuilds weekly on a fresh base image, and
-  `scripts/container_job.py`, which creates the job and everything it needs from a
-  config file and updates whatever differs on later runs.
-- `scripts/template_sync.py` creates projects from the template (`new`) and keeps
-  them in sync (`check`, `update`), driven by `template.toml`. A project carries
-  only `.template.toml`, which pins the template commit it was last synced to.
-  Template changes reach projects as updates to managed files, 3-way merges into
-  shared ones such as `pyproject.toml`, and new optional features to choose.
-- `new` asks for the license in one question: MIT, Apache 2.0, GPL 3.0,
-  proprietary, or none (no `LICENSE` file). Then it asks for whichever of the
-  copyright holder, year and company that license names. It asks only for
-  values the project's files use.
-- A feature in `template.toml` can list `options`: `new` asks for one of them,
-  or none, in a single question.
-- `new` bootstraps the project it creates: it sets the version to 0.1.0, runs
-  `uv sync`, scans for secrets into `.secrets.baseline`, installs the pre-commit
-  and pre-push hooks, and stages the result. What's left (auditing the baseline,
-  filling in the FIXMEs, the first commit) it prints. `--no-bootstrap` skips it.
-  The commands are listed in `template.toml`'s new `[new]` table.
-- `new` asks for the project's Python version: the template's own (the newest)
-  by default, a pinned version such as `3.13` (exactly that Python, in
-  `requires-python` and CI), or `all-supported` for a library, which supports
-  and tests every maintained Python version.
-- CI tests a matrix of Python versions: the pinned one, or every supported one for
-  a library.
-- The template's CI makes four projects from the template and runs each one's
-  gates.
+- `scripts/template_sync.py`, which creates projects from the template (`new`)
+  and keeps them in sync with it (`check`, `update`), as `template.toml`
+  directs. Template changes reach a project as updates to the files the
+  template owns and as 3-way merges into shared files such as `pyproject.toml`.
+- `new` asks which optional features, license and Python version the project
+  uses, and asks only for the values those choices need. It then bootstraps
+  the project: lockfile, secrets baseline and git hooks.
+- A project's Python version can be the newest (the default), one pinned
+  version, or every supported version for a library. CI tests each version the
+  project supports.
+- An optional `container_job` feature, for packages that run as a scheduled
+  Azure Container Apps job: the image build, a deployment workflow with weekly
+  rebuilds, and a script that creates and updates the job's Azure resources.
+- Dependabot support for private git dependencies.
+- A documentation site for the template, published to GitHub Pages.
+- The template's own `LICENSE` (MIT).
 
 ### Changed
 
-- **Breaking:** making a project no longer means cloning the template and running
-  `scripts/template_setup/setup_new_project.py`; run `template_sync.py new` from a
-  template checkout instead.
-- `container_job.py` and `mark_remote_disposable.py` stand alone, without the
-  shared `_cli.py`.
-- Dependabot opens each major update as its own PR, outside the grouped PR.
-- The template pins its Python exactly (`requires-python = "==3.15.*"`), and ruff
-  takes its target version from `requires-python`.
-- The template targets Python 3.15, with uv 0.13, the first uv that installs it.
-- The template's README holds only its description and its tool and design
-  choices. Its instructions move to a docs site (`docs/`, published to GitHub
-  Pages): getting started, staying in sync, private dependencies, container
-  jobs, and changing the template, plus a new page on how the config system
-  works. Projects get their own docs scaffold from `child/mkdocs.yml` and
-  `child/docs/`, and their private-dependency and container-job comments name
-  the template's doc pages.
-- The private-dependency steps in the workflows ship active instead of
-  commented out, and skip until the repo has the `GH_APP_CLIENT_ID` variable.
-  The token step leaves `owner` empty, so a missing repo list can't widen the
-  token to every repo the App is installed on. Only Dependabot's registry is
-  still uncommented by hand.
-- Every pre-commit hook runs from the project's venv, so its version comes from
-  the project's `uv.lock`, not from a `rev:` pin in `.pre-commit-config.yaml`. A
-  new project starts with the newest versions, and keeps them current with
-  `uv lock --upgrade` or Dependabot. `pre-commit-hooks` is a new dev dependency;
-  ruff's hook and `uv run ruff` can no longer disagree on the version.
+- **Breaking:** a project is created by running `template_sync.py new` from a
+  template checkout, instead of by cloning the template and running its setup
+  scripts.
+- The template targets Python 3.15, with uv 0.13.
+- Pre-commit hooks run from the project's virtual environment, so their
+  versions come from `uv.lock` and update with the other dependencies.
+- Dependabot opens major-version updates as separate PRs.
 
 ### Removed
 
-- The dev helper scripts and their tests: `new_worktree.py`,
-  `complete_worktree.py`, `remove_worktree.py`, `push_new_tag_to_main.py`,
-  `update_floors.py`, `open_claude_settings.py`, `open_gitignore.py`, and the
-  `_cli.py` they shared. They're no longer part of the template; they now run
-  as standalone commands that work in any repo (`new-worktree`,
-  `complete-worktree`, ...), with this release's changes to them: new worktrees
-  start with links to the main repo's `.local/` files, and worktree config files
-  are hard-linked where symlinks are unavailable (Windows without Developer
-  Mode). `AGENTS.WORKTREE.md` and `AGENTS.RELEASING.md` name the commands.
-- `scripts/template_setup/` (the setup scripts and `template_setup.toml`),
-  `scripts/compare_to_template.py`, and the `.FIXME` skeleton files, which
-  `child/` replaces.
-- The `__version__` counters in the config package and the feature scripts: the
-  pin in `.template.toml` replaces them.
+- **Breaking:** the setup scripts (`scripts/template_setup/`) and
+  `scripts/compare_to_template.py`. `template_sync.py` replaces them.
+- **Breaking:** the dev helper scripts (worktree, release and editor helpers).
+  They are now standalone commands that work in any repo.
 
 ### Fixed
 
-- The config tests now pass whatever `CREDENTIAL_BACKEND` a project picks.
+- The config tests pass whatever `CREDENTIAL_BACKEND` a project sets.
 
 ### Security
 
-- Upgraded `certifi` to 2026.10.23, `filelock` to 4.2.8 and `virtualenv` to
-  21.15.5.
+- A missing repo list no longer widens the private-dependency token to every
+  repo the GitHub App is installed on.
+- Upgraded `certifi`, `filelock` and `virtualenv`, and set a `virtualenv`
+  floor, to clear known vulnerabilities.
 
 ## [1.16.0] - 2026-10-12 - Config open and init --force
 
@@ -507,7 +464,8 @@ Initial release: a Python project template scaffold.
   scaffolding for settings and keyring-backed credentials.
 - `AGENTS.md` agent instructions.
 
-[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v1.16.0...HEAD
+[Unreleased]: https://github.com/DrollRobot/python_repo_template/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.16.0...v2.0.0
 [1.16.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/DrollRobot/python_repo_template/compare/v1.13.0...v1.14.0
