@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://drollrobot.github.io/python_repo_template/</loc>
+         <lastmod>2026-11-09</lastmod>
+    </url>
+    <url>
+         <loc>https://drollrobot.github.io/python_repo_template/changing-the-template/</loc>
+         <lastmod>2026-11-09</lastmod>
+    </url>
+    <url>
+         <loc>https://drollrobot.github.io/python_repo_template/config-system/</loc>
+         <lastmod>2026-11-09</lastmod>
+    </url>
+    <url>
+         <loc>https://drollrobot.github.io/python_repo_template/container-job/</loc>
+         <lastmod>2026-11-09</lastmod>
+    </url>
+    <url>
+         <loc>https://drollrobot.github.io/python_repo_template/getting-started/</loc>
+         <lastmod>2026-11-09</lastmod>
+    </url>
+    <url>
+         <loc>https://drollrobot.github.io/python_repo_template/private-dependencies/</loc>
+         <lastmod>2026-11-09</lastmod>
+    </url>
+    <url>
+         <loc>https://drollrobot.github.io/python_repo_template/staying-in-sync/</loc>
+         <lastmod>2026-11-09</lastmod>
+    </url>
+</urlset>
