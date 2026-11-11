@@ -73,6 +73,12 @@ constraint-dependencies = [
     "virtualenv>=21.14.9",  # GHSA-hhxq-47xx-j5xx and 11 more; prune when upstream requires it
 ]
 
+[tool.uv.extra-build-variables]
+# PyYAML has no prebuilt wheel for Python 3.15, so it builds from source, and its
+# optional C extension needs a compiler (MSVC on Windows). Build it as pure Python.
+# Remove once PyYAML publishes a Python 3.15 (cp315) wheel.
+pyyaml = { PYYAML_FORCE_LIBYAML = "0" }
+
 [tool.uv.sources]
 # FIXME add any local/github dependencies here.
 # other-project = { git = "https://github.com/USERNAME/other-project.git", tag = "v1.2.3" }
