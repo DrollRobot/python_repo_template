@@ -313,7 +313,7 @@ def _prompt_backend_choice(table: Any, secrets: Any) -> None:
     names = ", ".join(available)
     while True:
         raw = input(
-            f"{secrets.BACKEND_KEY} — where to store secrets ({names}; empty to skip): "
+            f"{secrets.BACKEND_KEY} - where to store secrets ({names}; empty to skip): "
         ).strip()
         if not raw:
             return
@@ -336,7 +336,7 @@ def _prompt_backend_keys(table: Any, backend: str, already: dict[str, Any], secr
     for key, help_text in secrets.backend_reserved_keys(backend).items():
         if key in already:
             continue
-        value = input(f"{key} — {help_text} (empty to skip): ").strip()
+        value = input(f"{key} - {help_text} (empty to skip): ").strip()
         if value:
             table[key] = value
         else:
@@ -362,7 +362,7 @@ def _prompt_secret_names(table: Any, backend_config: dict[str, Any], secrets: An
             continue
         name_key = secrets.secret_name_key(f.name)
         offered = backend_config.get(name_key) or default_secret_name(f) or f.name
-        print(f"{f.name} — {field_help(f)}")
+        print(f"{f.name} - {field_help(f)}")
         raw = input(
             f"  secret NAME in backend (visible, not the secret) [default: {offered}]: "
         ).strip()
@@ -417,7 +417,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
     for f in fields(Settings):
         if is_secret(f):
             continue
-        label = f"{f.name} — {field_help(f)}"
+        label = f"{f.name} - {field_help(f)}"
         if not is_required(f):
             label += f" [default: {field_default(f)!r}]"
         while True:
@@ -463,7 +463,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
             for f in fields(Settings):
                 if not is_secret(f):
                     continue
-                value = getpass.getpass(f"{f.name} — secret VALUE (hidden, empty to skip): ")
+                value = getpass.getpass(f"{f.name} - secret VALUE (hidden, empty to skip): ")
                 if value:
                     secrets.set_secret(f.name, value, args.profile, backend_config)
                     print(
@@ -736,7 +736,7 @@ def _cmd_set_secret(args: argparse.Namespace) -> int:
     name_key = secrets.secret_name_key(args.key)
     offered = backend_config.get(name_key) or default_secret_name(f) or args.key
     raw = input(
-        f"{args.key} — secret NAME in backend (visible, not the secret) [default: {offered}]: "
+        f"{args.key} - secret NAME in backend (visible, not the secret) [default: {offered}]: "
     ).strip()
     chosen = raw or offered
     if backend_config.get(name_key) != chosen:
@@ -750,7 +750,7 @@ def _cmd_set_secret(args: argparse.Namespace) -> int:
         print(secrets.read_only_notice(backend_config))
         return 0
 
-    value = getpass.getpass(f"{args.key} — secret VALUE (hidden): ")
+    value = getpass.getpass(f"{args.key} - secret VALUE (hidden): ")
     if not value:
         raise ConfigError("Empty value; nothing stored.")
     secrets.set_secret(args.key, value, profile, backend_config)

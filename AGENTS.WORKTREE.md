@@ -6,7 +6,7 @@
 ## Assume
 - You're in a worktree the user already opened, on branch `wt/<slug>`, forked
   from and tracking the remote base (normally `origin/develop`) that is the PR
-  target — i.e. created with `git worktree add -b wt/<slug> origin/<base>`
+  target - i.e. created with `git worktree add -b wt/<slug> origin/<base>`
   after a fetch.
 
 ## Testing

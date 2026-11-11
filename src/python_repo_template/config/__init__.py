@@ -25,13 +25,13 @@ edits it; no hand-editing is required.
 Module map (each module's docstring carries its own removal instructions
 where applicable):
 
-- ``schema.py``  — the ``Settings`` dataclass: single source of truth for
+- ``schema.py``  - the ``Settings`` dataclass: single source of truth for
   option names, types, defaults, secret classification, and help text.
-- ``paths.py``   — config-directory resolution.
-- ``file.py``    — config.toml reading and validation.
-- ``resolve.py`` — the precedence engine behind :func:`load_settings`.
+- ``paths.py``   - config-directory resolution.
+- ``file.py``    - config.toml reading and validation.
+- ``resolve.py`` - the precedence engine behind :func:`load_settings`.
 # <template-only feature="secret_storage">
-- ``secrets.py`` + ``*_backend.py`` — optional secret-storage machinery:
+- ``secrets.py`` + ``*_backend.py`` - optional secret-storage machinery:
   the backend dispatcher and the individual credential backends. Only
   consulted when the schema marks fields ``secret``; deletable as a unit
   when it marks none.

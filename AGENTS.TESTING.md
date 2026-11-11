@@ -18,7 +18,7 @@
 | `regression` | Purpose | Guards against reintroduction of a previously fixed bug. |
 | `acceptance` | Purpose | Verifies behavior against a requirement or user-facing spec. |
 | `functional` | Purpose | Tests behavior/output of a feature without regard to internal structure. |
-| `live` | Dependency | Requires a real external resource — network, live tenant, secrets, third-party API. |
+| `live` | Dependency | Requires a real external resource - network, live tenant, secrets, third-party API. |
 | `destructive_local` | Dependency | Mutates the host/device running pytest. Skipped by default. |
 | `destructive_remote` | Dependency | Mutates a remote/external system. Skipped by default. |
 | `slow` | Performance | Long-running. |

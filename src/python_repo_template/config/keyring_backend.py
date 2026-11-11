@@ -7,8 +7,8 @@ per profile via the keyring *service* (``python_repo_template:<profile>``);
 the *username* slot holds the secret's storage name.
 
 The ``keyring`` package is an optional dependency (the ``keyring`` extra) and
-is imported lazily, so this module is importable — and the rest of the config
-system fully usable — without it installed.
+is imported lazily, so this module is importable - and the rest of the config
+system fully usable - without it installed.
 
 The *username* slot holds the secret's storage name: the schema field name by
 default, or the profile's ``<field>_secret_name`` override (resolved by the

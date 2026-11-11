@@ -190,6 +190,10 @@ seed = [  # each project implements them for its own remote target
   "tests/test_verify_remote_disposable.py",
 ]
 
+[features.ascii_only]
+description = "test that fails on non-ASCII characters in repo files"
+merge = ["tests/test_ascii_only.py"]  # projects add exempt paths
+
 [features.security_policy]
 description = "SECURITY.md"
 merge = ["SECURITY.md"]

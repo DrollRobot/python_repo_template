@@ -3,16 +3,16 @@
 Precedence, highest wins:
 
 1. Explicit overrides passed by calling code (e.g. from CLI flags).
-2. Environment variables: ``<ENV_PREFIX><UPPER_FIELD_NAME>`` — the
+2. Environment variables: ``<ENV_PREFIX><UPPER_FIELD_NAME>`` - the
    CI/headless path; works with zero files and zero secret storage.
-3. Credential backend — secret fields only, and only when a backend is
+3. Credential backend - secret fields only, and only when a backend is
    selected: the profile's ``credential_backend`` key, else the schema's
    ``CREDENTIAL_BACKEND`` default (never under the ``"none"``/``"prompt"``
    policies). Secrets are looked up under the profile's
    ``<field>_secret_name`` from config.toml, written by the config CLI; a
    missing name fails loudly.
 4. config.toml: the selected profile table, then bare top-level keys.
-5. Schema field defaults — non-secret fields only. Secret values never
+5. Schema field defaults - non-secret fields only. Secret values never
    live in source; a schema giving a secret field a default is rejected
    before resolution starts.
 
@@ -478,7 +478,7 @@ def _missing_message(
     """
     env_vars = ", ".join(ENV_PREFIX + name.upper() for name in missing)
     if file_exists:
-        source = f"config file {path} (profile: {profile_name or 'none — top-level keys'})"
+        source = f"config file {path} (profile: {profile_name or 'none - top-level keys'})"
     else:
         source = f"no config file found at {path}"
     message = (

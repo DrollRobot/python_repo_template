@@ -14,12 +14,12 @@ token.
 
 ## 1. Create the GitHub App
 
-In the GitHub account: Settings → Developer settings → GitHub Apps → New.
+In the GitHub account: Settings > Developer settings > GitHub Apps > New.
 
-- Permissions → Repository permissions → Contents: Read-only (Metadata: Read
+- Permissions > Repository permissions > Contents: Read-only (Metadata: Read
   is added automatically). Nothing else.
-- Webhook → uncheck Active (the App needs no events).
-- Where can this be installed → Only on this account.
+- Webhook > uncheck Active (the App needs no events).
+- Where can this be installed > Only on this account.
 
 ## 2. Make a private key
 
@@ -28,7 +28,7 @@ file. Note the Client ID shown at the top of the page.
 
 ## 3. Install the App
 
-Install it onto the private repos it reads: Org Settings → the App → Install →
+Install it onto the private repos it reads: Org Settings > the App > Install >
 select repositories.
 
 ## 4. List the private repos in the workflows
@@ -69,14 +69,14 @@ From the next run on, CI mints a token and reads the private repos.
 
 ## 6. Give Dependabot its own token
 
-Create a fine-grained personal access token: Settings → Developer settings →
-Personal access tokens → Fine-grained tokens.
+Create a fine-grained personal access token: Settings > Developer settings >
+Personal access tokens > Fine-grained tokens.
 
-- Resource owner → the account that owns the private repos.
-- Repository access → Only select repositories → the private repos the project
+- Resource owner > the account that owns the private repos.
+- Repository access > Only select repositories > the private repos the project
   depends on.
-- Permissions → Repository permissions → Contents: Read-only. Nothing else.
-- Expiration → set one, and note when to rotate it.
+- Permissions > Repository permissions > Contents: Read-only. Nothing else.
+- Expiration > set one, and note when to rotate it.
 
 Save it in the project's repo (`gh` prompts for the value):
 

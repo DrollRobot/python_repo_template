@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `new` creates an empty `.local/` folder in the project, for files kept out of git.
+- `new` creates an empty `.local/` folder in the project.
+- A test that checks for non-ascii characters. (optional, controlled by
+  the `ascii_only` setting)
 
 ## [2.0.0] - 2026-11-09 - Template sync
 
@@ -97,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fix. `--force` deletes anyway.
 - `remove_secret_storage.py` also rewrites the config package docstring,
   which described the machinery it had just deleted and pointed at
-  `credential_backend` — a key config.toml rejects once the dispatcher is
+  `credential_backend` - a key config.toml rejects once the dispatcher is
   gone. It prints two more follow-ups: set `CREDENTIAL_BACKEND = "none"`, and
   expect `config/cli.py` coverage to drop because its secret commands can
   never run.
