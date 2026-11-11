@@ -39,7 +39,8 @@ today), develops and type-checks on the oldest, and CI tests all of them.
 `-y` takes every default without asking; `--feature NAME=false` turns a
 feature off. The target must not exist, or be empty, or be an empty git
 repository (as cloning a newly created GitHub repo leaves). It writes the
-project, runs `git init` on `main`, and stages everything.
+project, creates an empty `.local/` folder for files kept out of git, runs
+`git init` on `main`, and stages everything.
 
 Then it bootstraps the project, running the commands under `[new]` in
 `template.toml`: it sets the version to 0.1.0, runs `uv sync` (writing

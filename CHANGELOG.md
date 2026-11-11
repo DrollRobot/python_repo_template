@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `new` creates an empty `.local/` folder in the project, for files kept out of git.
+
 ## [2.0.0] - 2026-11-09 - Template sync
 
 ### Added

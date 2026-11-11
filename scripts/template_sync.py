@@ -10,9 +10,10 @@ acts on a child project given as an argument. Nothing here ships to children:
 a child carries only ``.template.toml`` -- which template it came from, the
 template commit it was last synced to, its token values, feature choices and
 per-file overrides. It is read from the child's root, or failing that from
-``.local/``, which children gitignore, so a child can keep even that out of its
-history. Standard library only, run through uv (the metadata above asks it for
-Python >= 3.14, the version this repo targets); git on PATH.
+``.local/``, which ``new`` creates and children gitignore, so a child can keep
+even that out of its history. Standard library only, run through uv (the
+metadata above asks it for Python >= 3.14, the version this repo targets); git
+on PATH.
 
     uv run scripts/template_sync.py validate            # template self-check
     uv run scripts/template_sync.py new    ../child     # create a project
@@ -78,9 +79,12 @@ from typing import Any
 
 MANIFEST_NAME = "template.toml"
 CHILD_CONFIG_NAME = ".template.toml"
-# Where a child's config is looked for, first match wins. .local/ is gitignored
-# (*.local* in .gitignore), for a child that commits nothing of the sync's own.
-CHILD_CONFIG_PATHS = (CHILD_CONFIG_NAME, f".local/{CHILD_CONFIG_NAME}")
+# A child's folder for files kept out of git: gitignored (*.local* in .gitignore),
+# so a clone lacks it and `new` creates it.
+LOCAL_DIR = ".local"
+# Where a child's config is looked for, first match wins. LOCAL_DIR is for a
+# child that commits nothing of the sync's own.
+CHILD_CONFIG_PATHS = (CHILD_CONFIG_NAME, f"{LOCAL_DIR}/{CHILD_CONFIG_NAME}")
 # manifest_format history. A manifest declares the format of everything it uses,
 # so a tool too old for it stops at the number instead of misreading it. Every
 # older format stays readable: `check` and `update` parse the manifest as it was
@@ -2502,6 +2506,7 @@ def cmd_new(args: argparse.Namespace, root: Path) -> int:
         if path == ".gitmodules" and add_submodules:
             continue  # written after `git submodule add`, which rewrites it
         write(path)
+    (target / LOCAL_DIR).mkdir(mode=0o700, exist_ok=True)  # owner-only where modes apply
 
     git(target, "init", "-q")
     git(target, "symbolic-ref", "HEAD", "refs/heads/main")

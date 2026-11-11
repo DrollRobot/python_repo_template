@@ -870,6 +870,7 @@ def test_new_layout(synced: Fixture) -> None:
         assert fx.exists(rel), rel
     for rel in ("template.toml", "tool/sync.py", "tool", "demo-template.txt", "child"):
         assert not fx.exists(rel), rel
+    assert (fx.child / ".local").is_dir()
     assert fx.read("GUIDE.md") == "# guide\nsee docs\n"
     assert fx.read("ci.yml") == "name: ci\nrun: make\n"
     assert fx.read("Makefile") == "all:\n\techo widget\n"
@@ -1527,7 +1528,6 @@ def test_config_in_local(synced: Fixture) -> None:
     # Untracked in .local/, so the project's history holds nothing of the sync's.
     write(fx.child, ".git/info/exclude", ".local/\n")  # the fixture's .gitignore doesn't
     sh(fx.child, "rm", "-q", "--cached", ".template.toml")
-    (fx.child / ".local").mkdir()
     (fx.child / ".template.toml").rename(fx.child / ".local/.template.toml")
     fx.child_commit("keep the config local")
     fx.add_lint_feature()
