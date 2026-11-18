@@ -11,8 +11,8 @@ in sync with it: the template's later changes reach them through
 - [Config system](config-system.md): how a project's settings and secrets work.
 - [Private dependencies](private-dependencies.md): let CI and Dependabot read
   private git dependencies.
-- [Container job](container-job.md): run the package as a scheduled Azure
-  Container Apps job.
+- [Container job](container-job.md): run the package as one or more scheduled
+  Azure Container Apps jobs.
 - [Changing the template](changing-the-template.md): for the template's
   maintainers.
 

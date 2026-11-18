@@ -63,10 +63,10 @@ uv run pytest -m "not live"                 # offline tests
 
 ## Running as a container job
 
-The package runs as a scheduled Azure Container Apps job. Each push to `main`
-builds the image (`Dockerfile`), publishes it, and points the job at it
-(`.github/workflows/image.yml`); a weekly scheduled run rebuilds `main` on a
-freshly pulled base image.
+The package runs as one or more scheduled Azure Container Apps jobs, which all
+run one image. Each push to `main` builds the image (`Dockerfile`), publishes
+it, and points every job at it (`.github/workflows/image.yml`); a weekly
+scheduled run rebuilds `main` on a freshly pulled base image.
 
 To run unattended, the package must:
 
@@ -79,10 +79,11 @@ To run unattended, the package must:
   open a browser;
 - import every module from `python-repo-template --help`, the image's smoke test.
 
-The job and everything it needs is described by a config file kept outside
+The jobs and everything they need are described by a config file kept outside
 the repository's tracked files (start from `scripts/container_job.example.toml`).
-To create the job, or to change its schedule, arguments or alert later, edit
-that file and run, with an account that can grant roles:
+To create the jobs, to add or drop one, or to change a schedule, arguments or
+the alert email later, edit that file and run, with an account that can grant
+roles:
 
 ```bash
 uv run scripts/container_job.py path/to/your.toml --dry-run

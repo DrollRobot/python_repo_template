@@ -84,8 +84,8 @@ CI and Dependabot need credentials to read them: see
 
 ## If you want to run the project as an Azure Container Job
 
-With `container_job` on, the package runs as a scheduled Azure Container Apps
-job: see [Container job](container-job.md).
+With `container_job` on, the package runs as one or more scheduled Azure
+Container Apps jobs: see [Container job](container-job.md).
 
 ## If the project has settings
 

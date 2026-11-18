@@ -16,6 +16,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pushed commit and reports the result in its exit code. It reads GitHub
   through gh, or signed out for public repositories. `AGENTS.COMMITTING.md`
   tells agents to run it after every push.
+- `container_job`: a repo can run several jobs. They share the repo's one
+  image and differ in schedule, arguments and identity. A job added later
+  starts on the image the others already run.
+- `container_job`: `scripts/container_job.py` removes a job, alert rule or
+  identity that its config file no longer lists. It tags each one it manages
+  with the repo's name (`container-job-repository`), removes only resources
+  with this repo's tag, and stops when a name in the file belongs to another
+  repo's resource.
+
+### Changed
+
+- **Breaking:** the config file of `scripts/container_job.py` has a new
+  layout. Jobs are `[[job]]` tables and the identities they run as are
+  `[[identity]]` tables, each listing the Key Vault secrets it may read. The
+  CI identity moves from `[job].ci_identity` to `[ci].identity`, the secrets
+  from `[key_vault].secrets` to each identity, and the alert rule's name from
+  `[alert].rule` to each job's `alert_rule`.
+- **Breaking:** the image workflow reads the repo variable
+  `CONTAINER_APP_JOBS`, every job's name, in place of `CONTAINER_APP_JOB`.
+  `scripts/container_job.py` sets it.
+
+### Security
+
+- **Breaking:** `container_job`: a repo's registry roles reach its own image
+  alone, so one repo's CI can't replace the image another repo's jobs run.
+  `scripts/container_job.py` grants the jobs' identities `Container Registry
+  Repository Reader` and the CI identity `Container Registry Repository
+  Writer`, each limited to the image named after the GitHub repo, in place of
+  `AcrPull` and `AcrPush` on the whole registry, and removes those. This needs
+  the registry's role assignment mode to be "RBAC Registry + ABAC Repository
+  Permissions": a registry the script creates is in it, and the script stops
+  at an existing registry that is not and prints the command that switches it.
+- `container_job`: the image workflow points the jobs at the image by its hash
+  (digest), not by an image tag, which can be moved to another image later.
 
 ## [2.0.0] - 2026-11-09 - Template sync
 

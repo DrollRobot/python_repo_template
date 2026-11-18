@@ -8,19 +8,22 @@
 #   uv run scripts/container_job.py path/to/your.toml
 #
 # Every run compares this file with Azure and GitHub and changes what differs,
-# so to change the schedule, arguments or alert email later, edit your copy
-# and run it again.
+# so to add or drop a job, or change a schedule, arguments or the alert email
+# later, edit your copy and run it again.
 #
 # Before the first run, check the package can run unattended: the steps are in
 # docs/container-job.md in the template.
 
 [shared]
-# Resources every job in the environment shares. Each one that doesn't exist
-# is created; existing ones are never changed.
+# Resources every job in the environment shares, this repo's and other repos'.
+# Each one that doesn't exist is created; existing ones are never changed.
 subscription = "00000000-0000-0000-0000-000000000000"
 location = "eastus2"
 resource_group = "rg-container-jobs"
-# Globally unique, lowercase letters and digits only.
+# Globally unique, lowercase letters and digits only. Each repo's roles in it
+# reach that repo's image alone, which needs the registry's role assignment
+# mode to be "RBAC Registry + ABAC Repository Permissions": a new registry is
+# created in it, and the script stops at an existing one that is not.
 registry = "acrexamplejobs"
 log_workspace = "log-container-jobs"
 # The environment runs on this network's subnet, so a Key Vault firewall can
@@ -31,42 +34,71 @@ subnet = "snet-cae"
 subnet_address_prefix = "10.200.0.0/25"
 environment = "cae-container-jobs"
 
-[job]
-name = "job-example"
-# Runs the job and reads its secrets.
-identity = "id-example-job"
+[ci]
 # What the image workflow signs in as, from the repo's main branch only.
-ci_identity = "id-example-ci"
+identity = "id-example-ci"
+
+# Optional: the Key Vault the identities read secrets from. It must be in the
+# shared subscription.
+[key_vault]
+name = "kv-example"
+resource_group = "rg-example"
+
+# One [[identity]] table per identity the jobs run as. Each gets read access to
+# exactly the secrets it lists; leave `secrets` out when the file has no
+# [key_vault]. Give every job its own identity, unless jobs need the very same
+# access: those can name the same one.
+[[identity]]
+name = "id-example-daily"
+secrets = ["example-secret-name"]
+
+[[identity]]
+name = "id-example-weekly"
+secrets = ["example-secret-name", "example-report-secret-name"]
+
+# One [[job]] table per scheduled job. Every job runs the repo's one image, so
+# a job's args decide what its runs do.
+[[job]]
+name = "job-example-daily"
+# The [[identity]] it runs as and reads its secrets with.
+identity = "id-example-daily"
 # Cron, evaluated in UTC: this one runs every 2 hours from 11:00 to 21:00 UTC,
 # Monday to Friday.
 schedule = "0 11-21/2 * * 1-5"
-# Arguments to the image's entrypoint, such as the package's flag for signing
-# in with the job's managed identity. Log Analytics keeps the console output.
-args = ["--log-level", "DEBUG"]
+# Arguments to the image's entrypoint, such as the subcommand this job runs
+# and the package's flag for signing in with the job's managed identity. Log
+# Analytics keeps the console output.
+args = ["daily", "--log-level", "DEBUG"]
 cpu = 0.25
 memory = "0.5Gi"
 # Seconds before a run is stopped.
 timeout = 600
+# The alert rule that fires when one of this job's runs fails or times out.
+alert_rule = "alert-job-example-daily-failed"
 
-# Optional: environment variables for the container, such as the config
+# Optional: environment variables for this job's container, such as the config
 # system's <APP>_<OPTION> overrides, or AZURE_CLIENT_ID for code that signs in
 # with DefaultAzureCredential. Never put secrets here; they belong in Key Vault.
 [job.env]
 # EXAMPLE_OPTION = "value"
 
-# Optional: the Key Vault the job reads secrets from. It must be in the shared
-# subscription. The job's identity gets read access to exactly these secrets.
-[key_vault]
-name = "kv-example"
-resource_group = "rg-example"
-secrets = ["example-secret-name"]
+[[job]]
+name = "job-example-weekly"
+identity = "id-example-weekly"
+# 12:00 UTC every Monday.
+schedule = "0 12 * * 1"
+args = ["weekly"]
+cpu = 0.5
+memory = "1Gi"
+timeout = 1800
+alert_rule = "alert-job-example-weekly-failed"
 
 [alert]
-# Who hears about failed or timed-out runs.
+# Who hears about failed or timed-out runs of any of the jobs.
 email = "alerts@example.com"
 action_group = "ag-example-alerts"
-rule = "alert-job-example-failed"
 
 [github]
-# The repo whose image workflow publishes this job's image.
+# The repo whose image workflow publishes the jobs' image. Each job, alert rule
+# and identity above is tagged with it, so a run never touches another repo's.
 repository = "owner/name"

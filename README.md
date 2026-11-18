@@ -47,5 +47,5 @@ https://drollrobot.github.io/python_repo_template/
 - [Staying in sync](https://drollrobot.github.io/python_repo_template/staying-in-sync/): bring the template's later changes into a project.
 - [Config system](https://drollrobot.github.io/python_repo_template/config-system/): how a project's settings and secrets work.
 - [Private dependencies](https://drollrobot.github.io/python_repo_template/private-dependencies/): let CI and Dependabot read private git dependencies.
-- [Container job](https://drollrobot.github.io/python_repo_template/container-job/): run the package as a scheduled Azure Container Apps job.
+- [Container job](https://drollrobot.github.io/python_repo_template/container-job/): run the package as one or more scheduled Azure Container Apps jobs.
 - [Changing the template](https://drollrobot.github.io/python_repo_template/changing-the-template/): for the template's maintainers.

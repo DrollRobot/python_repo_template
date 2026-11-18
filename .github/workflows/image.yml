@@ -109,7 +109,8 @@ jobs:
         run: |
           az acr login --name "$REGISTRY"
           repository="$REGISTRY.azurecr.io/${{ github.event.repository.name }}"
-          # A rebuild keeps the release's version and commit tags on the release build.
+          # The image tags are for people looking an image up. A rebuild keeps the
+          # release's version and commit image tags on the release build.
           if [ "$GITHUB_EVENT_NAME" = schedule ]; then
             tags="$GITHUB_SHA-$(date -u +%Y%m%d)"
           else
@@ -119,17 +120,33 @@ jobs:
             docker tag "$IMAGE" "$repository:$tag"
             docker push "$repository:$tag"
           done
-          echo "deploy_tag=${tags##* }" >> "$GITHUB_OUTPUT"
+          # The hash (digest) of the image this run built, tested and pushed, as
+          # Docker recorded it. The jobs are pointed at the hash: an image tag can
+          # be moved to another image later, a hash can't.
+          pushed=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" \
+            | grep -F -m 1 "$repository@sha256:" || true)
+          if [ -z "$pushed" ]; then
+            echo "::error::Docker recorded no hash for the image pushed to $repository."
+            exit 1
+          fi
+          echo "image=$pushed" >> "$GITHUB_OUTPUT"
 
-      - name: Point the job at the new image
+      - name: Point the jobs at the new image
         if: env.PUBLISH == 'true'
         env:
-          REGISTRY: ${{ vars.ACR_NAME }}
-          JOB: ${{ vars.CONTAINER_APP_JOB }}
+          # Every job's name, space-separated; scripts/container_job.py sets it.
+          JOBS: ${{ vars.CONTAINER_APP_JOBS }}
           RESOURCE_GROUP: ${{ vars.CONTAINER_APP_RESOURCE_GROUP }}
-          TAG: ${{ steps.push.outputs.deploy_tag }}
+          # registry/name@sha256:hash
+          PUSHED_IMAGE: ${{ steps.push.outputs.image }}
         run: |
+          if [ -z "$JOBS" ]; then
+            echo "::error::The CONTAINER_APP_JOBS repo variable is empty. Run scripts/container_job.py to set it."
+            exit 1
+          fi
           az extension add --name containerapp --upgrade --only-show-errors
-          az containerapp job update --name "$JOB" --resource-group "$RESOURCE_GROUP" \
-            --image "$REGISTRY.azurecr.io/${{ github.event.repository.name }}:$TAG" \
-            --only-show-errors --query properties.template.containers[0].image -o tsv
+          for job in $JOBS; do
+            az containerapp job update --name "$job" --resource-group "$RESOURCE_GROUP" \
+              --image "$PUSHED_IMAGE" \
+              --only-show-errors --query properties.template.containers[0].image -o tsv
+          done

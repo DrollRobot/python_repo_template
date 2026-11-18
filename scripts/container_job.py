@@ -1,11 +1,11 @@
-"""Create or update an Azure Container Apps job, and everything it needs, from a config file.
+"""Create or update a repo's Azure Container Apps jobs, and all they need, from a config file.
 
-The config file is the whole description of the job: the shared resources it runs on,
-its identities and their roles, its schedule and arguments, the Key Vault secrets it
-reads, the GitHub repo variables its image workflow uses, and its failed-run alert. To
-change something later, edit the file and run this script again. Each run compares the
-file with Azure and GitHub, lists every difference, and asks once before changing
-anything. ``--dry-run`` lists the differences and stops.
+The config file is the whole description of the repo's jobs: the shared resources they
+run on, the identities they run as and the Key Vault secrets each may read, each job's
+schedule and arguments, the GitHub repo variables the image workflow uses, and the
+failed-run alerts. To change something later, edit the file and run this script again.
+Each run compares the file with Azure and GitHub, lists every difference, and asks once
+before changing anything. ``--dry-run`` lists the differences and stops.
 
 What it manages, in order:
 
@@ -13,15 +13,32 @@ What it manages, in order:
    workspace, virtual network and subnet, Container Apps environment): created when
    missing. Existing ones are never changed, since some of their settings can't change
    in place; differences that matter are reported.
-2. The job's identity: AcrPull on the registry, Key Vault Secrets User on exactly the
-   listed secrets, and the vault's network rule for the environment's subnet.
-3. The job: schedule, arguments, environment variables, CPU, memory, timeout. A new
-   job starts on Microsoft's public quickstart image; after that the image is never
-   touched, since the release workflow (``.github/workflows/image.yml``) owns it.
-4. The CI identity the image workflow signs in as: AcrPush, rights to update the job,
-   and a federated credential trusting the repo's ``main`` branch.
+2. The identities the jobs run as: the right to pull the repo's image and no other, Key
+   Vault Secrets User on exactly the secrets listed for each, and the vault's network
+   rule for the environment's subnet.
+3. The jobs: schedule, arguments, environment variables, CPU, memory, timeout. Every job
+   runs the repo's one image. A new job starts on the image the repo's other jobs run,
+   or on Microsoft's public quickstart image when there is none yet; after that the
+   image is never touched, since the release workflow (``.github/workflows/image.yml``)
+   owns it.
+4. The CI identity the image workflow signs in as: the right to push the repo's image
+   and no other, rights to update the jobs, and a federated credential trusting the
+   repo's ``main`` branch.
 5. The repo variables the image workflow reads.
-6. The failed-run alert and the email it goes to.
+6. The failed-run alerts, one per job, and the email they go to.
+7. Jobs, alert rules and identities the file no longer lists: removed.
+
+The resource group is shared with other repos' jobs, so every job, alert rule and
+identity this script manages carries the tag ``container-job-repository``, set to the
+repo's name. Only resources with this repo's tag are ever removed, and a run stops when
+a name in the file belongs to another repo's resource.
+
+The registry is shared with other repos too, so every registry role granted here is
+limited to the repo's own image name, which is the GitHub repo's name. One repo's CI
+then can't replace the image another repo's jobs run. Azure calls an image name a
+repository, and limits a role to one only in a registry whose role assignment mode is
+"RBAC Registry + ABAC Repository Permissions". A registry created here is in that mode,
+and a run stops at an existing registry that is not.
 
 It signs in through the Azure CLI (``az login``) and the GitHub CLI (``gh auth
 login``). Granting roles needs Owner or User Access Administrator rights. See
@@ -38,6 +55,7 @@ import argparse
 import functools
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -47,7 +65,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from collections.abc import Callable
+from collections import Counter
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, NoReturn
@@ -57,7 +76,7 @@ ARM = "https://management.azure.com"
 # ARM API versions, one per resource type this script touches.
 API_PROVIDERS = "2021-04-01"
 API_RESOURCE_GROUPS = "2021-04-01"
-API_REGISTRIES = "2023-07-01"
+API_REGISTRIES = "2025-11-01"
 API_WORKSPACES = "2023-09-01"
 API_WORKSPACE_KEYS = "2020-08-01"
 API_NETWORK = "2024-01-01"
@@ -85,8 +104,25 @@ GITHUB_ISSUER = "https://token.actions.githubusercontent.com"
 FEDERATED_AUDIENCE = "api://AzureADTokenExchange"
 FEDERATED_CREDENTIAL = "github-main"
 
+# The tag on every job, alert rule and identity this script manages; its value is the
+# repo whose config owns the resource. Lowercase: Azure ignores case in tag names.
+REPOSITORY_TAG = "container-job-repository"
+
+# The registry's role assignment mode in which a role can be limited to one image name.
+REGISTRY_MODE = "AbacRepositoryPermissions"
+# What a role assignment's condition tests: the image name an action is on. Azure calls
+# an image name a repository.
+IMAGE_NAME_ATTRIBUTE = "@Request[Microsoft.ContainerRegistry/registries/repositories:name]"
+CONDITION_VERSION = "2.0"
+
+# The registry roles that a condition can limit to one image name.
+ROLE_IMAGE_READER = "Container Registry Repository Reader"
+ROLE_IMAGE_WRITER = "Container Registry Repository Writer"
+# The roles of a registry in the other mode, which cover every image in it. A registry
+# in REGISTRY_MODE ignores them, and assignments left from before are removed.
 ROLE_ACR_PULL = "AcrPull"
 ROLE_ACR_PUSH = "AcrPush"
+SUPERSEDED_ROLE = "the registry ignores this role; the one limited to the image name replaces it"
 ROLE_SECRETS_USER = "Key Vault Secrets User"
 ROLE_IDENTITY_OPERATOR = "Managed Identity Operator"
 ROLE_JOBS_CONTRIBUTOR = "Container Apps Jobs Contributor"
@@ -274,36 +310,42 @@ class Shared:
 
 
 @dataclass(frozen=True)
+class Identity:
+    """An identity jobs run as, and the secrets it may read; see the example config."""
+
+    name: str
+    secrets: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Job:
-    """The job and its two identities; see the example config."""
+    """One scheduled job; see the example config."""
 
     name: str
     identity: str
-    ci_identity: str
     schedule: str
     args: tuple[str, ...]
     env: tuple[tuple[str, str], ...]
     cpu: float
     memory: str
     timeout: int
+    alert_rule: str
 
 
 @dataclass(frozen=True)
 class KeyVault:
-    """The vault the job reads secrets from, and which secrets; see the example config."""
+    """The vault the identities read secrets from; see the example config."""
 
     name: str
     resource_group: str
-    secrets: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class Alert:
-    """The failed-run alert; see the example config."""
+    """Who hears about failed runs; see the example config."""
 
     email: str
     action_group: str
-    rule: str
 
 
 @dataclass(frozen=True)
@@ -311,7 +353,9 @@ class Config:
     """A parsed and validated config file."""
 
     shared: Shared
-    job: Job
+    ci_identity: str
+    identities: tuple[Identity, ...]
+    jobs: tuple[Job, ...]
     key_vault: KeyVault | None
     alert: Alert
     repository: str
@@ -333,6 +377,28 @@ def _table(raw: dict[str, Any], name: str) -> dict[str, Any]:
     value = raw.get(name)
     if not isinstance(value, dict):
         raise ConfigError(f"[{name}] is missing or is not a table.")
+    return value
+
+
+def _tables(raw: dict[str, Any], name: str) -> list[dict[str, Any]]:
+    """Return the required array of TOML tables *name*.
+
+    Args:
+        raw: The parsed document.
+        name: Array name.
+
+    Returns:
+        The tables, in file order; at least one.
+
+    Raises:
+        ConfigError: If the file has no ``[[name]]`` table, or *name* is not an array of
+            tables.
+    """
+    value = raw.get(name)
+    if not isinstance(value, list) or not value or not all(isinstance(t, dict) for t in value):
+        raise ConfigError(
+            f"The file needs at least one [[{name}]] table, written with double brackets."
+        )
     return value
 
 
@@ -396,6 +462,127 @@ def _str_list(table: dict[str, Any], key: str, name: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _load_identity(table: dict[str, Any], label: str, *, has_vault: bool) -> Identity:
+    """Read one ``[[identity]]`` table.
+
+    Args:
+        table: The table.
+        label: The table's name and position, for messages.
+        has_vault: Whether the file has a ``[key_vault]`` table. With one, the identity
+            must list its secrets; without one, it must not.
+
+    Returns:
+        The identity.
+
+    Raises:
+        ConfigError: If a setting is missing, unknown or of the wrong type, or the table
+            lists secrets when the file has no ``[key_vault]``.
+    """
+    if not has_vault and "secrets" in table:
+        raise ConfigError(f"[{label}] lists secrets, but the file has no [key_vault].")
+    _check_keys(table, label, {"name", "secrets"} if has_vault else {"name"}, set())
+    return Identity(
+        name=_str(table, "name", label),
+        secrets=_str_list(table, "secrets", label) if has_vault else (),
+    )
+
+
+def _load_job(table: dict[str, Any], label: str) -> Job:
+    """Read one ``[[job]]`` table.
+
+    Args:
+        table: The table.
+        label: The table's name and position, for messages.
+
+    Returns:
+        The job.
+
+    Raises:
+        ConfigError: If a setting is missing, unknown or of the wrong type.
+    """
+    _check_keys(
+        table,
+        label,
+        {"name", "identity", "schedule", "args", "cpu", "memory", "timeout", "alert_rule"},
+        {"env"},
+    )
+    cpu = table["cpu"]
+    if isinstance(cpu, bool) or not isinstance(cpu, int | float) or cpu <= 0:
+        raise ConfigError(f"[{label}].cpu must be a positive number of cores, such as 0.25.")
+    timeout = table["timeout"]
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+        raise ConfigError(f"[{label}].timeout must be a positive whole number of seconds.")
+    env_raw = table.get("env", {})
+    if not isinstance(env_raw, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in env_raw.items()
+    ):
+        raise ConfigError(f"[{label}].env must be a table of string values.")
+    return Job(
+        name=_str(table, "name", label),
+        identity=_str(table, "identity", label),
+        schedule=_str(table, "schedule", label),
+        args=_str_list(table, "args", label),
+        env=tuple(sorted(env_raw.items())),
+        cpu=float(cpu),
+        memory=_str(table, "memory", label),
+        timeout=timeout,
+        alert_rule=_str(table, "alert_rule", label),
+    )
+
+
+def _repeated(names: Iterable[str]) -> list[str]:
+    """Return the names that appear more than once, ignoring case as Azure does.
+
+    Args:
+        names: Resource names.
+
+    Returns:
+        The repeated names, lowercased and sorted.
+    """
+    counts = Counter(name.lower() for name in names)
+    return sorted(name for name, count in counts.items() if count > 1)
+
+
+def _check_references(
+    ci_identity: str, identities: tuple[Identity, ...], jobs: tuple[Job, ...]
+) -> None:
+    """Fail loudly when the jobs and identities don't fit together.
+
+    Args:
+        ci_identity: The CI identity's name.
+        identities: Every ``[[identity]]`` table.
+        jobs: Every ``[[job]]`` table.
+
+    Raises:
+        ConfigError: If two tables share a job name, alert rule or identity name, a job
+            runs as an identity no table defines, no job runs as an identity, or the CI
+            identity is also a job's identity.
+    """
+    for what, names in (
+        ("[[job]] table has the name", [job.name for job in jobs]),
+        ("[[job]] table has the alert_rule", [job.alert_rule for job in jobs]),
+        ("[[identity]] table has the name", [identity.name for identity in identities]),
+    ):
+        repeated = _repeated(names)
+        if repeated:
+            raise ConfigError(f"More than one {what} {', '.join(repeated)}.")
+    defined = {identity.name.lower() for identity in identities}
+    for job in jobs:
+        if job.identity.lower() not in defined:
+            raise ConfigError(
+                f"Job {job.name} runs as {job.identity}, which no [[identity]] table defines."
+            )
+    used = {job.identity.lower() for job in jobs}
+    unused = sorted(identity.name for identity in identities if identity.name.lower() not in used)
+    if unused:
+        raise ConfigError(f"No job runs as the identity {', '.join(unused)}.")
+    if ci_identity.lower() in defined:
+        raise ConfigError(
+            f"[ci].identity {ci_identity} is also a job's identity; the image workflow needs "
+            "an identity of its own."
+        )
+
+
 def load_config(path: Path) -> Config:
     """Read and validate the config file at *path*.
 
@@ -406,8 +593,8 @@ def load_config(path: Path) -> Config:
         The parsed config.
 
     Raises:
-        ConfigError: If the file is missing or malformed, or a setting is missing,
-            unknown, or of the wrong type.
+        ConfigError: If the file is missing or malformed, a setting is missing, unknown,
+            or of the wrong type, or the jobs and identities don't fit together.
     """
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -416,68 +603,61 @@ def load_config(path: Path) -> Config:
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
 
-    _check_keys(raw, "the top level", {"shared", "job", "alert", "github"}, {"key_vault"})
+    _check_keys(
+        raw, "the top level", {"shared", "ci", "identity", "job", "alert", "github"}, {"key_vault"}
+    )
 
     shared_t = _table(raw, "shared")
     shared_keys = {f.name for f in fields(Shared)}
     _check_keys(shared_t, "shared", shared_keys, set())
     shared = Shared(**{key: _str(shared_t, key, "shared") for key in shared_keys})
 
-    job_t = _table(raw, "job")
-    _check_keys(
-        job_t,
-        "job",
-        {"name", "identity", "ci_identity", "schedule", "args", "cpu", "memory", "timeout"},
-        {"env"},
-    )
-    cpu = job_t["cpu"]
-    if isinstance(cpu, bool) or not isinstance(cpu, int | float) or cpu <= 0:
-        raise ConfigError("[job].cpu must be a positive number of cores, such as 0.25.")
-    timeout = job_t["timeout"]
-    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
-        raise ConfigError("[job].timeout must be a positive whole number of seconds.")
-    env_raw = job_t.get("env", {})
-    if not isinstance(env_raw, dict) or not all(
-        isinstance(key, str) and isinstance(value, str) for key, value in env_raw.items()
-    ):
-        raise ConfigError("[job].env must be a table of string values.")
-    job = Job(
-        name=_str(job_t, "name", "job"),
-        identity=_str(job_t, "identity", "job"),
-        ci_identity=_str(job_t, "ci_identity", "job"),
-        schedule=_str(job_t, "schedule", "job"),
-        args=_str_list(job_t, "args", "job"),
-        env=tuple(sorted(env_raw.items())),
-        cpu=float(cpu),
-        memory=_str(job_t, "memory", "job"),
-        timeout=timeout,
-    )
+    ci_t = _table(raw, "ci")
+    _check_keys(ci_t, "ci", {"identity"}, set())
+    ci_identity = _str(ci_t, "identity", "ci")
 
     key_vault = None
     if "key_vault" in raw:
         vault_t = _table(raw, "key_vault")
-        _check_keys(vault_t, "key_vault", {"name", "resource_group", "secrets"}, set())
+        _check_keys(vault_t, "key_vault", {"name", "resource_group"}, set())
         key_vault = KeyVault(
             name=_str(vault_t, "name", "key_vault"),
             resource_group=_str(vault_t, "resource_group", "key_vault"),
-            secrets=_str_list(vault_t, "secrets", "key_vault"),
         )
 
+    identities = tuple(
+        _load_identity(table, f"identity {number}", has_vault=key_vault is not None)
+        for number, table in enumerate(_tables(raw, "identity"), start=1)
+    )
+    jobs = tuple(
+        _load_job(table, f"job {number}")
+        for number, table in enumerate(_tables(raw, "job"), start=1)
+    )
+    _check_references(ci_identity, identities, jobs)
+
     alert_t = _table(raw, "alert")
-    _check_keys(alert_t, "alert", {"email", "action_group", "rule"}, set())
+    _check_keys(alert_t, "alert", {"email", "action_group"}, set())
     alert = Alert(
         email=_str(alert_t, "email", "alert"),
         action_group=_str(alert_t, "action_group", "alert"),
-        rule=_str(alert_t, "rule", "alert"),
     )
 
     github_t = _table(raw, "github")
     _check_keys(github_t, "github", {"repository"}, set())
     repository = _str(github_t, "repository", "github")
-    if repository.count("/") != 1:
+    # The name becomes the image name, written into role assignment conditions.
+    if not re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", repository):
         raise ConfigError("[github].repository must be owner/name.")
 
-    return Config(shared=shared, job=job, key_vault=key_vault, alert=alert, repository=repository)
+    return Config(
+        shared=shared,
+        ci_identity=ci_identity,
+        identities=identities,
+        jobs=jobs,
+        key_vault=key_vault,
+        alert=alert,
+        repository=repository,
+    )
 
 
 # region clients
@@ -575,7 +755,19 @@ class Arm:
             The status code and the decoded JSON body (None when empty).
         """
         separator = "&" if "?" in path else "?"
-        url = f"{ARM}{path}{separator}api-version={api_version}"
+        return self._send(method, f"{ARM}{path}{separator}api-version={api_version}", body)
+
+    def _send(self, method: str, url: str, body: Any = None) -> tuple[int, Any]:
+        """Send one request, with the bearer token, to a full ARM URL.
+
+        Args:
+            method: HTTP method.
+            url: Full URL, with its ``api-version``.
+            body: JSON-serializable body, or None.
+
+        Returns:
+            The status code and the decoded JSON body (None when empty).
+        """
         headers = {"Authorization": f"Bearer {self._token}", "Content-Type": "application/json"}
         data = None if body is None else json.dumps(body).encode("utf-8")
         status, raw = self._transport(method, url, headers, data)
@@ -617,6 +809,33 @@ class Arm:
         if status == 404:
             return None
         return self._ok("GET", path, status, decoded)
+
+    def list_all(self, path: str, api_version: str) -> list[dict[str, Any]]:
+        """Read every resource in a collection, following its pages.
+
+        Args:
+            path: The collection's path, such as a resource group's jobs.
+            api_version: API version.
+
+        Returns:
+            The resources; none when the collection's resource group doesn't exist.
+
+        Raises:
+            AzureError: If a page fails, or links to a next page outside Azure Resource
+                Manager, which must never be sent the token.
+        """
+        found: list[dict[str, Any]] = []
+        status, decoded = self.request("GET", path, api_version)
+        while status != 404:
+            page = self._ok("GET", path, status, decoded) or {}
+            found.extend(page.get("value") or [])
+            next_link = page.get("nextLink")
+            if not next_link:
+                break
+            if not str(next_link).startswith(f"{ARM}/"):
+                raise AzureError(f"GET {path} linked to a next page outside {ARM}: {next_link}")
+            status, decoded = self._send("GET", str(next_link))
+        return found
 
     def send(self, method: str, path: str, api_version: str, body: Any = None) -> Any:
         """Send a write request and return its result.
@@ -742,6 +961,17 @@ class Plan:
     notes: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class Grant:
+    """One role assignment an identity should hold."""
+
+    role: str
+    scope: str
+    label: str
+    # Limits the role to part of what is under the scope; None for all of it.
+    condition: str | None = None
+
+
 def _same(left: str | None, right: str | None) -> bool:
     """Compare two resource ids or names, ignoring case as Azure does.
 
@@ -753,6 +983,63 @@ def _same(left: str | None, right: str | None) -> bool:
         Whether they name the same thing.
     """
     return (left or "").lower() == (right or "").lower()
+
+
+def _same_condition(left: str | None, right: str | None) -> bool:
+    """Compare two role assignment conditions, ignoring how they are spaced.
+
+    Args:
+        left: One condition, or None for no condition.
+        right: The other.
+
+    Returns:
+        Whether they say the same thing.
+    """
+    return "".join((left or "").split()) == "".join((right or "").split())
+
+
+def _under(scope: str, parent: str) -> bool:
+    """Return whether a role assignment's scope is a resource or something below it.
+
+    Args:
+        scope: The assignment's scope.
+        parent: The resource's id.
+
+    Returns:
+        Whether *scope* is *parent* or a resource id below it.
+    """
+    scope, parent = scope.lower(), parent.lower()
+    return scope == parent or scope.startswith(f"{parent}/")
+
+
+def _tag(resource: dict[str, Any] | None, name: str) -> str | None:
+    """Return the value of tag *name* on a resource, ignoring case in the tag's name.
+
+    Args:
+        resource: A resource as Azure returns it, or None.
+        name: Tag name.
+
+    Returns:
+        The tag's value, or None when the resource doesn't carry the tag.
+    """
+    for key, value in ((resource or {}).get("tags") or {}).items():
+        if key.lower() == name.lower():
+            return str(value)
+    return None
+
+
+def _image(job: dict[str, Any] | None) -> str | None:
+    """Return the image a job's container runs.
+
+    Args:
+        job: A job resource, or None.
+
+    Returns:
+        The image, or None when there is no job or it names no image.
+    """
+    template = ((job or {}).get("properties") or {}).get("template") or {}
+    image = (template.get("containers") or [{}])[0].get("image")
+    return None if image is None else str(image)
 
 
 class Planner:
@@ -782,7 +1069,9 @@ class Planner:
         self.tenant = tenant
         self.sleep = sleep
         self.plan = Plan()
-        self._role_ids: dict[str, str] = {}
+        self._roles: dict[str, dict[str, Any]] = {}
+        # The image workflow names the image after the GitHub repo.
+        self.image_name = config.repository.split("/", 1)[1]
         shared = config.shared
         self.sub_id = f"/subscriptions/{shared.subscription}"
         self.rg_id = f"{self.sub_id}/resourceGroups/{shared.resource_group}"
@@ -798,14 +1087,9 @@ class Planner:
         self.environment_id = (
             f"{self.rg_id}/providers/Microsoft.App/managedEnvironments/{shared.environment}"
         )
-        self.job_id = f"{self.rg_id}/providers/Microsoft.App/jobs/{config.job.name}"
-        self.identity_id = self._identity_path(config.job.identity)
-        self.ci_identity_id = self._identity_path(config.job.ci_identity)
+        self.ci_identity_id = self._identity_path(config.ci_identity)
         self.action_group_id = (
             f"{self.rg_id}/providers/Microsoft.Insights/actionGroups/{config.alert.action_group}"
-        )
-        self.alert_id = (
-            f"{self.rg_id}/providers/Microsoft.Insights/scheduledQueryRules/{config.alert.rule}"
         )
         vault = config.key_vault
         self.vault_id = "" if vault is None else self._vault_path(vault)
@@ -835,6 +1119,28 @@ class Planner:
         """
         return f"{self.rg_id}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{name}"
 
+    def _job_path(self, name: str) -> str:
+        """Return the resource id of job *name*.
+
+        Args:
+            name: Job name.
+
+        Returns:
+            Its resource id.
+        """
+        return f"{self.rg_id}/providers/Microsoft.App/jobs/{name}"
+
+    def _alert_path(self, rule: str) -> str:
+        """Return the resource id of alert rule *rule*.
+
+        Args:
+            rule: Alert rule name.
+
+        Returns:
+            Its resource id.
+        """
+        return f"{self.rg_id}/providers/Microsoft.Insights/scheduledQueryRules/{rule}"
+
     def _add(self, kind: str, what: str, apply: Callable[[], None], detail: str = "") -> None:
         """Record one change.
 
@@ -845,6 +1151,63 @@ class Planner:
             detail: Extra line for the listing, such as old and new values.
         """
         self.plan.changes.append(Change(kind, what, apply, detail))
+
+    # -- this repo's tag, which marks the resources its config owns
+
+    def _tags(self, current: dict[str, Any] | None) -> dict[str, str]:
+        """Return a resource's tags with this repo's tag set, keeping its other tags.
+
+        Args:
+            current: The resource as Azure returns it, or None when it doesn't exist.
+
+        Returns:
+            The tags to write.
+        """
+        kept = {
+            str(key): str(value)
+            for key, value in ((current or {}).get("tags") or {}).items()
+            if key.lower() != REPOSITORY_TAG
+        }
+        return {**kept, REPOSITORY_TAG: self.config.repository}
+
+    def _is_tagged(self, resource: dict[str, Any], what: str) -> bool:
+        """Return whether an existing resource carries this repo's tag.
+
+        Args:
+            resource: The resource as Azure returns it.
+            what: The resource's kind and name, for the message.
+
+        Returns:
+            True when it carries this repo's tag, False when it carries no repo's.
+
+        Raises:
+            AzureError: If it carries another repo's tag: that repo's config owns it.
+        """
+        owner = _tag(resource, REPOSITORY_TAG)
+        if owner is None:
+            return False
+        if not _same(owner, self.config.repository):
+            raise AzureError(
+                f"{what} belongs to the repo {owner} (its {REPOSITORY_TAG} tag), not "
+                f"{self.config.repository}. Pick another name for this repo's."
+            )
+        return True
+
+    def _tagged(self, collection: str, api_version: str) -> list[str]:
+        """Return the names of the resources of one type that carry this repo's tag.
+
+        Args:
+            collection: Resource type, such as ``Microsoft.App/jobs``.
+            api_version: The type's API version.
+
+        Returns:
+            The names of this repo's resources of that type in the resource group.
+        """
+        return [
+            str(resource["id"]).rsplit("/", 1)[-1]
+            for resource in self.arm.list_all(f"{self.rg_id}/providers/{collection}", api_version)
+            if _same(_tag(resource, REPOSITORY_TAG), self.config.repository)
+        ]
 
     # -- lookups made at apply time, once the resources they read exist
 
@@ -876,16 +1239,16 @@ class Planner:
             raise AzureError(f"{identity_id} does not exist.")
         return str(identity["properties"]["clientId"])
 
-    def _role_definition(self, role: str) -> str:
-        """Return the resource id of built-in role *role*.
+    def _role(self, role: str) -> dict[str, Any]:
+        """Return built-in role *role* as Azure defines it.
 
         Args:
-            role: Role name, such as ``AcrPull``.
+            role: Role name, such as ``Key Vault Secrets User``.
 
         Returns:
-            The role definition's id.
+            The role definition.
         """
-        if role not in self._role_ids:
+        if role not in self._roles:
             query = urllib.parse.quote(f"roleName eq '{role}'")
             found = self.arm.get(
                 f"{self.sub_id}/providers/Microsoft.Authorization/roleDefinitions?$filter={query}",
@@ -894,23 +1257,67 @@ class Planner:
             values = (found or {}).get("value", [])
             if len(values) != 1:
                 raise AzureError(f"Found {len(values)} role definitions named {role!r}.")
-            self._role_ids[role] = str(values[0]["id"])
-        return self._role_ids[role]
+            self._roles[role] = values[0]
+        return self._roles[role]
 
-    # -- the six parts
+    def _role_definition(self, role: str) -> str:
+        """Return the resource id of built-in role *role*.
+
+        Args:
+            role: Role name.
+
+        Returns:
+            The role definition's id.
+        """
+        return str(self._role(role)["id"])
+
+    def _image_grant(self, role: str) -> Grant:
+        """Return the grant of a registry role, limited to this repo's image name.
+
+        The condition reads "the action is none of the role's, or it is on this image
+        name". It lists every action the role grants, read from the role's definition:
+        an action it left out would stay allowed on every image in the registry.
+
+        Args:
+            role: ``ROLE_IMAGE_READER`` or ``ROLE_IMAGE_WRITER``.
+
+        Returns:
+            The grant, on the registry.
+
+        Raises:
+            AzureError: If the role grants anything a condition can't limit.
+        """
+        permissions = (self._role(role).get("properties") or {}).get("permissions") or []
+        actions = sorted({str(a) for p in permissions for a in p.get("dataActions") or []})
+        unlimited = sorted({str(a) for p in permissions for a in p.get("actions") or []})
+        if not actions or unlimited:
+            raise AzureError(
+                f"The role {role!r} can't be limited to one image name: it grants "
+                f"{', '.join(unlimited) or 'no data actions'}."
+            )
+        others = " AND ".join(f"!(ActionMatches{{'{action}'}})" for action in actions)
+        return Grant(
+            role,
+            self.registry_id,
+            f"image {self.image_name} in registry {self.config.shared.registry}",
+            f"(({others}) OR ({IMAGE_NAME_ATTRIBUTE} StringEqualsIgnoreCase '{self.image_name}'))",
+        )
+
+    # -- the seven parts
 
     def plan_all(self) -> Plan:
-        """Compare everything, in the order it must be created.
+        """Compare everything, in the order it must be created, then removed.
 
         Returns:
             The plan.
         """
         self.plan_shared()
-        self.plan_job_identity()
-        self.plan_job()
+        self.plan_identities()
+        self.plan_jobs()
         self.plan_ci_identity()
         self.plan_repo_variables()
-        self.plan_alert()
+        self.plan_alerts()
+        self.plan_removals()
         return self.plan
 
     def _create_and_wait(self, path: str, api_version: str, body: dict[str, Any]) -> None:
@@ -948,20 +1355,26 @@ class Planner:
                 ),
             )
 
-        if self.arm.get(self.registry_id, API_REGISTRIES) is None:
+        registry = self.arm.get(self.registry_id, API_REGISTRIES)
+        if registry is None:
             self._add(
                 "create",
-                f"registry {shared.registry} (Basic, admin user off)",
+                f"registry {shared.registry} (Basic, admin user off, rights per image name)",
                 lambda: self._create_and_wait(
                     self.registry_id,
                     API_REGISTRIES,
                     {
                         "location": location,
                         "sku": {"name": "Basic"},
-                        "properties": {"adminUserEnabled": False},
+                        "properties": {
+                            "adminUserEnabled": False,
+                            "roleAssignmentMode": REGISTRY_MODE,
+                        },
                     },
                 ),
             )
+        else:
+            self._check_registry_mode(registry)
 
         if self.arm.get(self.workspace_id, API_WORKSPACES) is None:
             self._add(
@@ -1037,6 +1450,30 @@ class Planner:
                     f"{shared.subnet}; an environment can't move, so it is left as it is."
                 )
 
+    def _check_registry_mode(self, registry: dict[str, Any]) -> None:
+        """Stop the run at a registry that can't limit a role to one image name.
+
+        Switching the mode changes the roles every repo that uses the registry needs,
+        so it is left to the person running this.
+
+        Args:
+            registry: The registry as Azure returns it.
+
+        Raises:
+            AzureError: If the registry is in another role assignment mode.
+        """
+        mode = (registry.get("properties") or {}).get("roleAssignmentMode")
+        if _same(mode, REGISTRY_MODE):
+            return
+        shared = self.config.shared
+        raise AzureError(
+            f"Registry {shared.registry} can't limit a role to one image name: its role "
+            f"assignment mode is {mode or 'not set'}, not {REGISTRY_MODE}. Switch it, then "
+            "run this script in every repo that uses the registry:\n"
+            f"    az acr update --name {shared.registry} --resource-group "
+            f"{shared.resource_group} --role-assignment-mode rbac-abac"
+        )
+
     def _note_subnet(self, subnet: dict[str, Any]) -> None:
         """Report what an existing subnet lacks that the environment and vault need.
 
@@ -1107,7 +1544,7 @@ class Planner:
         )
 
     def _plan_identity(self, identity_id: str, name: str) -> bool:
-        """Plan creating a user-assigned identity if it is missing.
+        """Plan creating a user-assigned identity, or tagging one that has no repo's tag.
 
         Args:
             identity_id: Its resource id.
@@ -1116,16 +1553,17 @@ class Planner:
         Returns:
             Whether it already exists.
         """
-        if self.arm.get(identity_id, API_IDENTITIES) is not None:
-            return True
-        self._add(
-            "create",
-            f"managed identity {name}",
-            lambda: self.arm.send(
-                "PUT", identity_id, API_IDENTITIES, {"location": self.config.shared.location}
-            ),
-        )
-        return False
+        current = self.arm.get(identity_id, API_IDENTITIES)
+        body = {"location": self.config.shared.location, "tags": self._tags(current)}
+        put = functools.partial(self.arm.send, "PUT", identity_id, API_IDENTITIES, body)
+        if current is None:
+            self._add("create", f"managed identity {name}", put)
+            return False
+        if not self._is_tagged(current, f"Managed identity {name}"):
+            self._add(
+                "update", f"managed identity {name} (tag)", put, f"adds the {REPOSITORY_TAG} tag"
+            )
+        return True
 
     def _assignments(self, principal: str) -> list[dict[str, Any]]:
         """Return every role assignment held by *principal* in the subscription.
@@ -1146,94 +1584,116 @@ class Planner:
     def _plan_roles(
         self,
         identity_id: str,
+        name: str,
         exists: bool,
-        desired: list[tuple[str, str, str]],
-        managed_prefixes: tuple[tuple[str, str], ...] = (),
+        desired: list[Grant],
+        managed: list[tuple[str, str, str]],
     ) -> None:
         """Plan the role assignments one identity should hold.
 
         Args:
             identity_id: The identity's resource id.
+            name: The identity's name, for the listing.
             exists: Whether the identity exists yet.
-            desired: ``(role, scope, label)`` for each assignment it should hold.
-            managed_prefixes: ``(role, scope prefix)`` pairs this script owns
-                completely: an assignment of that role under that prefix that is not
-                in *desired* is removed.
+            desired: Each assignment it should hold.
+            managed: ``(role, resource id, reason)`` for each role this script owns
+                completely on a resource: an assignment of that role on the resource or
+                below it that is not in *desired* is removed, and the listing gives the
+                reason.
         """
         held: list[dict[str, Any]] = []
         if exists:
             held = self._assignments(self._principal(identity_id))
 
-        def holds(role: str, scope: str) -> bool:
-            role_id = self._role_definition(role)
-            return any(
-                _same(a.get("roleDefinitionId"), role_id) and _same(a.get("scope"), scope)
-                for a in held
+        for grant in desired:
+            role_id = self._role_definition(grant.role)
+            current = next(
+                (
+                    a
+                    for a in held
+                    if _same(a.get("roleDefinitionId"), role_id)
+                    and _same(a.get("scope"), grant.scope)
+                ),
+                None,
             )
+            what = f"role {grant.role} on {grant.label} for {name}"
+            if current is None:
+                self._add("create", what, functools.partial(self._assign, identity_id, grant))
+            elif grant.condition is not None and not _same_condition(
+                current.get("condition"), grant.condition
+            ):
+                # An identity can hold a role on a scope once, so the assignment it
+                # holds is rewritten in place.
+                self._add(
+                    "update",
+                    f"{what} (condition)",
+                    functools.partial(self._assign, identity_id, grant, str(current["id"])),
+                    "it holds the role there with another condition, or with none",
+                )
 
-        for role, scope, label in desired:
-            if exists and holds(role, scope):
-                continue
-            self._add(
-                "create",
-                f"role {role} on {label}",
-                functools.partial(self._assign, identity_id, role, scope),
-            )
-
-        for role, prefix in managed_prefixes:
+        for role, resource_id, reason in managed:
             role_id = self._role_definition(role)
-            wanted = {scope.lower() for r, scope, _ in desired if r == role}
+            wanted = {grant.scope.lower() for grant in desired if grant.role == role}
             for assignment in held:
                 scope = str(assignment.get("scope", ""))
                 if (
                     _same(assignment.get("roleDefinitionId"), role_id)
-                    and scope.lower().startswith(prefix.lower())
+                    and _under(scope, resource_id)
                     and scope.lower() not in wanted
                 ):
                     self._add(
                         "remove",
-                        f"role {role} on {scope.rsplit('/', 1)[-1]}",
+                        f"role {role} on {scope.rsplit('/', 1)[-1]} for {name}",
                         functools.partial(
                             self.arm.send, "DELETE", str(assignment["id"]), API_ROLES
                         ),
-                        "no longer listed in the config",
+                        reason,
                     )
 
-    def _assign(self, identity_id: str, role: str, scope: str) -> None:
-        """Grant *role* on *scope* to an identity.
+    def _assign(self, identity_id: str, grant: Grant, assignment_id: str | None = None) -> None:
+        """Grant a role to an identity, or rewrite the assignment it already holds.
 
         Args:
             identity_id: The identity's resource id.
-            role: Role name.
-            scope: Resource id the role applies to.
+            grant: The role, the scope it applies to, and its condition.
+            assignment_id: The resource id of the assignment to rewrite; None makes one.
         """
-        self.arm.send(
-            "PUT",
-            f"{scope}/providers/Microsoft.Authorization/roleAssignments/{uuid.uuid4()}",
-            API_ROLES,
-            {
-                "properties": {
-                    "roleDefinitionId": self._role_definition(role),
-                    "principalId": self._principal(identity_id),
-                    "principalType": "ServicePrincipal",
-                }
-            },
+        properties: dict[str, Any] = {
+            "roleDefinitionId": self._role_definition(grant.role),
+            "principalId": self._principal(identity_id),
+            "principalType": "ServicePrincipal",
+        }
+        if grant.condition is not None:
+            properties["condition"] = grant.condition
+            properties["conditionVersion"] = CONDITION_VERSION
+        path = assignment_id or (
+            f"{grant.scope}/providers/Microsoft.Authorization/roleAssignments/{uuid.uuid4()}"
         )
+        self.arm.send("PUT", path, API_ROLES, {"properties": properties})
 
-    def plan_job_identity(self) -> None:
-        """Plan the job identity, its roles, and the vault's network rule."""
-        job = self.config.job
-        exists = self._plan_identity(self.identity_id, job.identity)
-        desired = [(ROLE_ACR_PULL, self.registry_id, f"registry {self.config.shared.registry}")]
-        managed: tuple[tuple[str, str], ...] = ()
+    def plan_identities(self) -> None:
+        """Plan each identity the jobs run as, its roles, and the vault's network rule."""
         vault = self.config.key_vault
-        if vault is not None:
-            desired += [
-                (ROLE_SECRETS_USER, f"{self.vault_id}/secrets/{secret}", f"secret {secret}")
-                for secret in vault.secrets
-            ]
-            managed = ((ROLE_SECRETS_USER, f"{self.vault_id}/secrets/"),)
-        self._plan_roles(self.identity_id, exists, desired, managed)
+        for identity in self.config.identities:
+            identity_id = self._identity_path(identity.name)
+            exists = self._plan_identity(identity_id, identity.name)
+            desired = [self._image_grant(ROLE_IMAGE_READER)]
+            managed = [(ROLE_ACR_PULL, self.registry_id, SUPERSEDED_ROLE)]
+            if vault is not None:
+                desired += [
+                    Grant(
+                        ROLE_SECRETS_USER, f"{self.vault_id}/secrets/{secret}", f"secret {secret}"
+                    )
+                    for secret in identity.secrets
+                ]
+                managed.append(
+                    (
+                        ROLE_SECRETS_USER,
+                        f"{self.vault_id}/secrets",
+                        "no longer listed in the config",
+                    )
+                )
+            self._plan_roles(identity_id, identity.name, exists, desired, managed)
         if vault is not None:
             self._plan_vault_rule(vault)
 
@@ -1271,16 +1731,19 @@ class Planner:
             "its firewall denies by default; existing rules are kept",
         )
 
-    def _job_body(self, image: str) -> dict[str, Any]:
-        """Return the job as the config describes it, running *image*.
+    def _job_body(self, job: Job, image: str, current: dict[str, Any] | None) -> dict[str, Any]:
+        """Return a job as the config describes it, running *image*.
 
         Args:
+            job: The job's settings.
             image: The container image.
+            current: The job as Azure returns it, whose other tags are kept, or None when
+                it doesn't exist.
 
         Returns:
             The job resource body.
         """
-        job = self.config.job
+        identity_id = self._identity_path(job.identity)
         container: dict[str, Any] = {
             "name": job.name,
             "image": image,
@@ -1291,9 +1754,10 @@ class Planner:
             container["env"] = [{"name": name, "value": value} for name, value in job.env]
         return {
             "location": self.config.shared.location,
+            "tags": self._tags(current),
             "identity": {
                 "type": "UserAssigned",
-                "userAssignedIdentities": {self.identity_id: {}},
+                "userAssignedIdentities": {identity_id: {}},
             },
             "properties": {
                 "environmentId": self.environment_id,
@@ -1310,7 +1774,7 @@ class Planner:
                     "registries": [
                         {
                             "server": f"{self.config.shared.registry}.azurecr.io",
-                            "identity": self.identity_id,
+                            "identity": identity_id,
                         }
                     ],
                 },
@@ -1353,27 +1817,58 @@ class Planner:
                 for r in registries
             ),
             "identities": sorted(key.lower() for key in identities),
+            "tag": (_tag(job, REPOSITORY_TAG) or "").lower(),
         }
 
-    def plan_job(self) -> None:
-        """Plan the job: create it on the quickstart image, or update what differs."""
-        job = self.config.job
-        current = self.arm.get(self.job_id, API_CONTAINER_APPS)
+    def plan_jobs(self) -> None:
+        """Plan every job: create the missing ones, and update what differs in the rest.
+
+        The repo's jobs all run one image, so a new job starts on the image the others
+        already run, and on the quickstart image only when no job has been released yet.
+        """
+        jobs = self.config.jobs
+        current = {
+            job.name: self.arm.get(self._job_path(job.name), API_CONTAINER_APPS) for job in jobs
+        }
+        images = (_image(current[job.name]) for job in jobs)
+        released = next(
+            (image for image in images if image and image != QUICKSTART_IMAGE), QUICKSTART_IMAGE
+        )
+        for job in jobs:
+            self._plan_job(job, current[job.name], released)
+
+    def _plan_job(self, job: Job, current: dict[str, Any] | None, released: str) -> None:
+        """Plan one job: create it, or update what differs and keep its image.
+
+        Args:
+            job: The job's settings.
+            current: The job as Azure returns it, or None when it doesn't exist.
+            released: The image a new job starts on.
+
+        Raises:
+            AzureError: If a job of that name belongs to another repo.
+        """
+        job_id = self._job_path(job.name)
         if current is None:
+            starts_on = (
+                "the quickstart image until the first release"
+                if released == QUICKSTART_IMAGE
+                else f"image {released}"
+            )
             self._add(
                 "create",
-                f"job {job.name} (schedule {job.schedule}, quickstart image until the first "
-                "release)",
-                lambda: self._create_and_wait(
-                    self.job_id, API_CONTAINER_APPS, self._job_body(QUICKSTART_IMAGE)
+                f"job {job.name} (schedule {job.schedule}, {starts_on})",
+                functools.partial(
+                    self._create_and_wait,
+                    job_id,
+                    API_CONTAINER_APPS,
+                    self._job_body(job, released, None),
                 ),
             )
             return
-        containers = ((current.get("properties") or {}).get("template") or {}).get(
-            "containers"
-        ) or [{}]
-        image = str(containers[0].get("image", QUICKSTART_IMAGE))
-        wanted = self._job_body(image)
+        self._is_tagged(current, f"Job {job.name}")
+        image = _image(current) or QUICKSTART_IMAGE
+        wanted = self._job_body(job, image, current)
         have, want = self._job_settings(current), self._job_settings(wanted)
         differences = [key for key in want if have.get(key) != want[key]]
         if differences:
@@ -1381,27 +1876,39 @@ class Planner:
             self._add(
                 "update",
                 f"job {job.name} ({', '.join(differences)})",
-                lambda: self._create_and_wait(self.job_id, API_CONTAINER_APPS, wanted),
+                functools.partial(self._create_and_wait, job_id, API_CONTAINER_APPS, wanted),
                 f"{detail}; image kept: {image}",
             )
 
     def plan_ci_identity(self) -> None:
         """Plan the CI identity, its roles, and its federated credential."""
-        job = self.config.job
-        exists = self._plan_identity(self.ci_identity_id, job.ci_identity)
+        name = self.config.ci_identity
+        exists = self._plan_identity(self.ci_identity_id, name)
         self._plan_roles(
             self.ci_identity_id,
+            name,
             exists,
             [
-                (ROLE_ACR_PUSH, self.registry_id, f"registry {self.config.shared.registry}"),
-                (ROLE_JOBS_CONTRIBUTOR, self.job_id, f"job {job.name}"),
-                (
+                self._image_grant(ROLE_IMAGE_WRITER),
+                *(
+                    Grant(ROLE_JOBS_CONTRIBUTOR, self._job_path(job.name), f"job {job.name}")
+                    for job in self.config.jobs
+                ),
+                Grant(
                     ROLE_JOBS_CONTRIBUTOR,
                     self.environment_id,
                     f"environment {self.config.shared.environment}",
                 ),
-                (ROLE_IDENTITY_OPERATOR, self.identity_id, f"identity {job.identity}"),
+                *(
+                    Grant(
+                        ROLE_IDENTITY_OPERATOR,
+                        self._identity_path(identity.name),
+                        f"identity {identity.name}",
+                    )
+                    for identity in self.config.identities
+                ),
             ],
+            [(ROLE_ACR_PUSH, self.registry_id, SUPERSEDED_ROLE)],
         )
         subject = f"{self.github.subject_prefix()}:ref:refs/heads/main"
         credential_path = (
@@ -1424,7 +1931,7 @@ class Planner:
         ):
             self._add(
                 "create" if current is None else "update",
-                f"federated credential {FEDERATED_CREDENTIAL} on {job.ci_identity}",
+                f"federated credential {FEDERATED_CREDENTIAL} on {name}",
                 lambda: self.arm.send("PUT", credential_path, API_IDENTITIES, body),
                 f"trusts {subject}",
             )
@@ -1444,7 +1951,8 @@ class Planner:
             "AZURE_CLIENT_ID": ci_client_id,
             "AZURE_SUBSCRIPTION_ID": shared.subscription,
             "AZURE_TENANT_ID": self.tenant,
-            "CONTAINER_APP_JOB": self.config.job.name,
+            # Every job's name, space-separated: the workflow points each at the image.
+            "CONTAINER_APP_JOBS": " ".join(job.name for job in self.config.jobs),
             "CONTAINER_APP_RESOURCE_GROUP": shared.resource_group,
         }
 
@@ -1475,18 +1983,23 @@ class Planner:
         client_id = self._client_id(self.ci_identity_id)
         self.github.set_variable(name, self.desired_variables(client_id)[name])
 
-    def _alert_body(self) -> dict[str, Any]:
-        """Return the failed-run alert rule as the config describes it.
+    def _alert_body(self, job: Job, current: dict[str, Any] | None) -> dict[str, Any]:
+        """Return one job's failed-run alert rule as the config describes it.
+
+        Args:
+            job: The job the rule watches.
+            current: The rule as Azure returns it, whose other tags are kept, or None
+                when it doesn't exist.
 
         Returns:
             The scheduled query rule body.
         """
-        job = self.config.job.name
         return {
             "location": self.config.shared.location,
+            "tags": self._tags(current),
             "properties": {
-                "displayName": self.config.alert.rule,
-                "description": f"A {job} execution failed or timed out.",
+                "displayName": job.alert_rule,
+                "description": f"A {job.name} execution failed or timed out.",
                 "severity": 1,
                 "enabled": True,
                 "evaluationFrequency": "PT5M",
@@ -1496,7 +2009,7 @@ class Planner:
                     "allOf": [
                         {
                             "query": (
-                                f"ContainerAppSystemLogs_CL | where JobName_s == '{job}' "
+                                f"ContainerAppSystemLogs_CL | where JobName_s == '{job.name}' "
                                 "| where Reason_s in ('BackoffLimitExceeded', 'DeadlineExceeded')"
                             ),
                             "timeAggregation": "Count",
@@ -1515,8 +2028,8 @@ class Planner:
             },
         }
 
-    def plan_alert(self) -> None:
-        """Plan the action group's email receiver and the failed-run alert rule."""
+    def plan_alerts(self) -> None:
+        """Plan the action group's email receiver and each job's failed-run alert rule."""
         alert = self.config.alert
         group = self.arm.get(self.action_group_id, API_ACTION_GROUPS)
         emails = sorted(
@@ -1545,14 +2058,20 @@ class Planner:
                 "" if group is None else f"was {', '.join(emails) or 'no email'}",
             )
 
-        rule = self.arm.get(self.alert_id, API_SCHEDULED_QUERIES)
-        wanted = self._alert_body()
-        if rule is None or not self._same_alert(rule, wanted):
-            self._add(
-                "create" if rule is None else "update",
-                f"alert {alert.rule} on failed {self.config.job.name} runs",
-                lambda: self.arm.send("PUT", self.alert_id, API_SCHEDULED_QUERIES, wanted),
-            )
+        for job in self.config.jobs:
+            alert_id = self._alert_path(job.alert_rule)
+            rule = self.arm.get(alert_id, API_SCHEDULED_QUERIES)
+            if rule is not None:
+                self._is_tagged(rule, f"Alert {job.alert_rule}")
+            wanted = self._alert_body(job, rule)
+            if rule is None or not self._same_alert(rule, wanted):
+                self._add(
+                    "create" if rule is None else "update",
+                    f"alert {job.alert_rule} on failed {job.name} runs",
+                    functools.partial(
+                        self.arm.send, "PUT", alert_id, API_SCHEDULED_QUERIES, wanted
+                    ),
+                )
 
     @staticmethod
     def _same_alert(have: dict[str, Any], want: dict[str, Any]) -> bool:
@@ -1575,9 +2094,69 @@ class Planner:
                 criteria.get("query"),
                 sorted(str(s).lower() for s in properties.get("scopes") or []),
                 sorted(str(g).lower() for g in groups),
+                (_tag(rule, REPOSITORY_TAG) or "").lower(),
             )
 
         return parts(have) == parts(want)
+
+    def plan_removals(self) -> None:
+        """Plan removing what carries this repo's tag but the config no longer lists.
+
+        Alert rules go first, then jobs, then identities, so nothing is removed while a
+        resource that uses it remains.
+        """
+        config = self.config
+        detail = "carries this repo's tag, but is not in the config"
+
+        rules = {job.alert_rule.lower() for job in config.jobs}
+        for name in self._tagged("Microsoft.Insights/scheduledQueryRules", API_SCHEDULED_QUERIES):
+            if name.lower() not in rules:
+                self._add(
+                    "remove",
+                    f"alert {name}",
+                    functools.partial(
+                        self.arm.send, "DELETE", self._alert_path(name), API_SCHEDULED_QUERIES
+                    ),
+                    detail,
+                )
+
+        jobs = {job.name.lower() for job in config.jobs}
+        for name in self._tagged("Microsoft.App/jobs", API_CONTAINER_APPS):
+            if name.lower() not in jobs:
+                self._add(
+                    "remove",
+                    f"job {name}",
+                    functools.partial(
+                        self.arm.send, "DELETE", self._job_path(name), API_CONTAINER_APPS
+                    ),
+                    detail,
+                )
+
+        identities = {identity.name.lower() for identity in config.identities}
+        identities.add(config.ci_identity.lower())
+        for name in self._tagged(
+            "Microsoft.ManagedIdentity/userAssignedIdentities", API_IDENTITIES
+        ):
+            if name.lower() not in identities:
+                self._add(
+                    "remove",
+                    f"managed identity {name}, and every role it holds",
+                    functools.partial(self._remove_identity, self._identity_path(name)),
+                    detail,
+                )
+
+    def _remove_identity(self, identity_id: str) -> None:
+        """Delete an identity, and first every role assignment it holds.
+
+        Deleting only the identity would leave its role assignments behind, naming a
+        principal that no longer exists.
+
+        Args:
+            identity_id: The identity's resource id.
+        """
+        for assignment in self._assignments(self._principal(identity_id)):
+            self.arm.send("DELETE", str(assignment["id"]), API_ROLES)
+        self.arm.send("DELETE", identity_id, API_IDENTITIES)
 
 
 # region main
@@ -1623,7 +2202,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("config", type=Path, help="The job's TOML config file.")
+    parser.add_argument("config", type=Path, help="The TOML config file for the repo's jobs.")
     parser.add_argument(
         "--dry-run", action="store_true", help="List the differences without changing anything."
     )
@@ -1631,13 +2210,14 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     _assume_yes = args.yes
 
-    section("Container Apps job")
+    section("Container Apps jobs")
     try:
         config = load_config(args.config)
     except ConfigError as exc:
         die(str(exc))
     info("Config", str(args.config))
-    info("Job", config.job.name)
+    info("Repository", config.repository)
+    info("Jobs", ", ".join(job.name for job in config.jobs))
 
     token, tenant = azure_token(config.shared.subscription)
     planner = Planner(config, Arm(token), GitHub(config.repository), tenant)
