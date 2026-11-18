@@ -112,6 +112,9 @@ managed = [
   "tests/test_secrets_baseline_audited.py",
   "tests/test_secrets_guards_under_hook_env.py",
   "tests/test_scripts_stand_alone.py",
+  "scripts/wait_for_ci.py",
+  "tests/test_wait_for_ci.py",
+  "tests/test_live_wait_for_ci.py",
 ]
 merge = [
   "AGENTS.md",                       # Package Purpose and project rules

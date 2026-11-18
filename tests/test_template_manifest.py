@@ -112,7 +112,6 @@ NEEDS_BASELINE = (
     "--deselect",
     "tests/test_secrets_guards_under_hook_env.py::test_secrets_guards_pass_under_a_hook_environment",
 )
-SCRIPT_FEATURES = ("remote_disposable_scripts", "container_job")
 # A Python version literal (3.10 .. 3.19) that isn't part of a longer version.
 PYTHON_VERSION = re.compile(r"(?<![\d.])3\.1\d(?!\d)")
 
@@ -189,9 +188,8 @@ def test_real_template_new_project_is_clean(real_template: Path, choice: str) ->
 
     pyproject = tomllib.loads((project / "pyproject.toml").read_text())
     assert pyproject["project"]["name"] == "my-widget"
-    has_scripts = bool(on & set(SCRIPT_FEATURES))
-    assert ("scripts" in pyproject["tool"]["vulture"]["paths"]) is has_scripts
-    assert (project / "scripts").is_dir() is has_scripts
+    assert "scripts" in pyproject["tool"]["vulture"]["paths"]  # wait_for_ci.py ships to all
+    assert (project / "scripts").is_dir()
     if "container_job" in on:
         entrypoint = next(
             line for line in (project / "Dockerfile").read_text().splitlines()

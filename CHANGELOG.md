@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `new` creates an empty `.local/` folder in the project.
 - A test that checks for non-ascii characters. (optional, controlled by
   the `ascii_only` setting)
+- `scripts/wait_for_ci.py`, which waits for every GitHub Actions job on a
+  pushed commit and reports the result in its exit code. It reads GitHub
+  through gh, or signed out for public repositories. `AGENTS.COMMITTING.md`
+  tells agents to run it after every push.
 
 ## [2.0.0] - 2026-11-09 - Template sync
 

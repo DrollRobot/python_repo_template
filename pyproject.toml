@@ -95,9 +95,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 addopts = [
     "--cov=python_repo_template",
-    # <template-only feature="remote_disposable_scripts|container_job">
     "--cov=scripts",
-    # </template-only>
     "--cov-report=term-missing",
     "--cov-fail-under=0", # FIXME set coverage goal
     "--strict-markers",
@@ -142,14 +140,10 @@ strict = true
 files = [
     "src",
     "tests",
-    # <template-only feature="remote_disposable_scripts|container_job">
     "scripts",
-    # </template-only>
 ]
 mypy_path = [
-    # <template-only feature="remote_disposable_scripts|container_job">
     "scripts",
-    # </template-only>
 ]
 
 # AGENTS: ONLY ADD OVERRIDES IF, AFTER RESEARCHING, THERE IS NO TYPE STUB AVAILABLE.
@@ -160,9 +154,7 @@ mypy_path = [
 [tool.vulture]
 paths = [
     "src",
-    # <template-only feature="remote_disposable_scripts|container_job">
     "scripts",
-    # </template-only>
 ]
 min_confidence = 60
 ignore_names = [
