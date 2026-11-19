@@ -77,9 +77,9 @@ constraint-dependencies = [
 ]
 
 [tool.uv.extra-build-variables]
-# PyYAML has no prebuilt wheel for Python 3.15, so it builds from source, and its
-# optional C extension needs a compiler (MSVC on Windows). Build it as pure Python.
-# Remove once PyYAML publishes a Python 3.15 (cp315) wheel.
+# PyYAML has no prebuilt cp315 wheel, so on that Python it builds from source, and
+# its optional C extension needs a compiler (MSVC on Windows). Build it as pure Python.
+# Remove once PyYAML publishes a cp315 wheel.
 pyyaml = { PYYAML_FORCE_LIBYAML = "0" }
 
 [tool.uv.sources]
