@@ -112,8 +112,8 @@ NEEDS_BASELINE = (
     "--deselect",
     "tests/test_secrets_guards_under_hook_env.py::test_secrets_guards_pass_under_a_hook_environment",
 )
-# A Python version literal (3.10 .. 3.19) that isn't part of a longer version.
-PYTHON_VERSION = re.compile(r"(?<![\d.])3\.1\d(?!\d)")
+# A Python version literal (3.10 .. 3.19), with its patch release if it has one.
+PYTHON_VERSION = re.compile(r"(?<![\d.])3\.1\d(?:\.\d+)?(?!\d)")
 
 
 def _features(choice: str) -> list[str]:
@@ -261,7 +261,7 @@ def test_real_template_skips_features_whose_requirement_is_declined(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("python", [None, "3.12", "all-supported"])
+@pytest.mark.parametrize("python", [None, "3.12.16", "all-supported"])
 def test_real_template_python_versions(real_template: Path, python: str | None) -> None:
     project = real_template.parent / f"python-{python}"
     extra = ("--set", f"python={python}") if python else ()
@@ -269,32 +269,50 @@ def test_real_template_python_versions(real_template: Path, python: str | None) 
         "--template", real_template, "new", project, NO_BOOTSTRAP, "-y", *PROJECT_VALUES, *extra
     )
     assert code == 0, err
-    newest = ts.load_manifest(real_template).placeholder_values()["python"]
-    supported = ts.load_manifest(real_template).tokens[newest].aliases["all-supported"]
+    manifest = ts.load_manifest(real_template)
+    newest = manifest.placeholder_values()["python"]
     if python == "all-supported":
-        dev, requires, badge = supported, f">={supported}", f"python-{supported}%2B-blue"
-        matrix = [f"3.{minor}" for minor in range(int(supported[2:]), int(newest[2:]) + 1)]
+        dev = manifest.tokens[newest].aliases["all-supported"]
+        requires, badge = f">={dev}", f"python-{dev}%2B-blue"
+        listed = manifest.tokens[f'python: ["{newest}"]'].aliases["all-supported"]
+        matrix = json.loads(listed.removeprefix("python: "))
     else:
         dev = python or newest
-        requires, badge, matrix = f"=={dev}.*", f"python-{dev}-blue", [dev]
+        requires, badge, matrix = f"~={dev}", f"python-{dev}-blue", [dev]
     pyproject = tomllib.loads((project / "pyproject.toml").read_text())
     assert pyproject["project"]["requires-python"] == requires
-    assert pyproject["tool"]["mypy"]["python_version"] == dev
+    assert pyproject["tool"]["mypy"]["python_version"] == dev.rsplit(".", 1)[0]
     assert (project / ".python-version").read_text() == f"{dev}\n"
     assert (
         f"python: {matrix}".replace("'", '"') in (project / ".github/workflows/ci.yml").read_text()
     )
     assert badge in (project / "README.md").read_text()
     # Any other version the project names is a spelling the manifest doesn't
-    # tokenise, left at the template's own version.
+    # tokenise, left at the template's own version. A tested version may also
+    # appear without its patch release, where a tool accepts only MAJOR.MINOR.
+    allowed = set(matrix) | {version.rsplit(".", 1)[0] for version in matrix}
     stray: dict[str, set[str]] = {}
     for path in project.rglob("*"):
         relative = path.relative_to(project)
         if path.is_file() and ".git" not in relative.parts:
             for version in PYTHON_VERSION.findall(path.read_text("utf-8", "replace")):
-                if version not in matrix:
+                if version not in allowed:
                     stray.setdefault(version, set()).add(relative.as_posix())
     assert stray == {}
+
+
+@pytest.mark.integration
+def test_real_template_refuses_a_python_version_without_its_patch_release(
+    real_template: Path,
+) -> None:
+    project = real_template.parent / "python-no-patch"
+    code, _out, err = run(
+        "--template", real_template, "new", project, NO_BOOTSTRAP, "-y", *PROJECT_VALUES,
+        "--set", "python=3.12",
+    )  # fmt: skip
+    assert code == 2
+    assert "python: '3.12' is not a MAJOR.MINOR.PATCH version" in err
+    assert not project.exists()
 
 
 @pytest.mark.e2e

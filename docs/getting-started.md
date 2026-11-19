@@ -30,10 +30,11 @@ project's files use:
 - whatever the chosen license names: the copyright holder and year, and for
   the proprietary license, also the company.
 
-The Python version defaults to the newest, 3.15, which the template always
-targets. A version such as `3.13` pins the project to exactly that Python
-(`requires-python = "==3.13.*"`, CI on 3.13 alone). `all-supported` makes a
-library: it supports every Python version still maintained (3.11 to 3.15
+The Python version defaults to the newest, 3.15.2, which the template always
+targets. Give it with its patch release: a version such as `3.13.18` pins the
+project to that Python (`requires-python = "~=3.13.18"`, CI on 3.13.18 alone),
+and a version without a patch release is refused. `all-supported` makes a
+library: it supports every Python version still maintained (3.11.18 to 3.15.2
 today), develops and type-checks on the oldest, and CI tests all of them.
 
 `-y` takes every default without asking; `--feature NAME=false` turns a

@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.14"
+# requires-python = ">=3.14.10"
 # dependencies = []
 # ///
 """Create projects from this template and keep them in sync with it.
@@ -12,8 +12,7 @@ template commit it was last synced to, its token values, feature choices and
 per-file overrides. It is read from the child's root, or failing that from
 ``.local/``, which ``new`` creates and children gitignore, so a child can keep
 even that out of its history. Standard library only, run through uv (the
-metadata above asks it for Python >= 3.14, the version this repo targets); git
-on PATH.
+metadata above asks it for Python 3.14.10 or newer); git on PATH.
 
     uv run scripts/template_sync.py validate            # template self-check
     uv run scripts/template_sync.py new    ../child     # create a project
@@ -39,8 +38,9 @@ into a child: ``<template-only>`` blocks are stripped (always; or, when tagged
 ``feature="!x"``, only when it took it; ``feature="x|y"`` keeps the block when
 any listed term holds), and each ``[tokens]`` literal is replaced by the
 child's value, in contents and paths. A token may derive its replacement from
-the value (``transform = "snake"``, ``"kebab"`` or ``"upper"``), so one value
-feeds several spellings; may place it in surrounding text (``format``); may map
+the value (``transform = "snake"``, ``"kebab"``, ``"upper"`` or
+``"major_minor"``), so one value feeds several spellings; may place it in
+surrounding text (``format``); may map
 named values to fixed text (``aliases``); and may be ``required``, so ``new``
 never falls back to the template's own literal. A marker is a line holding
 nothing but the tag and the file's comment syntax, e.g. ``# <template-only>``
@@ -501,34 +501,51 @@ def path_clashes(pairs: Iterable[tuple[str, str]]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 # Each transform's result must match its pattern: a name usable as a Python
-# package (snake), a distribution or command name (kebab), or an environment
-# variable prefix (upper).
+# package (snake), a distribution or command name (kebab), an environment
+# variable prefix (upper), or a version without its patch release, for tools
+# that accept only MAJOR.MINOR (major_minor).
 _TRANSFORM_CHECKS = {
     "snake": re.compile(r"^[a-z][a-z0-9_]*$"),
     "kebab": re.compile(r"^[a-z][a-z0-9-]*$"),
     "upper": re.compile(r"^[A-Z][A-Z0-9_]*$"),
+    "major_minor": re.compile(r"^\d+\.\d+$"),
 }
 TRANSFORMS = tuple(_TRANSFORM_CHECKS)
+
+#: The only value ``major_minor`` takes: MAJOR.MINOR.PATCH, e.g. ``3.15.2``.
+_FULL_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 def transform_value(value: str, transform: str | None) -> str:
     """Derive one spelling of a value: ``My Widget`` -> ``my_widget``, ``my-widget``, ``MY_WIDGET``.
 
     Spaces, hyphens and underscores all separate words, so any of the three
-    spellings (or a free-form name) yields the same results.
+    spellings (or a free-form name) yields the same results. ``major_minor``
+    takes a version instead: ``3.15.2`` -> ``3.15``.
 
     Args:
         value: The child's value, as typed.
-        transform: ``snake``, ``kebab``, ``upper``, or ``None`` for the value as-is.
+        transform: ``snake``, ``kebab``, ``upper``, ``major_minor``, or ``None``
+            for the value as-is.
 
     Returns:
         The derived spelling.
 
     Raises:
-        ValueError: If the derived spelling is not a valid name of its kind.
+        ValueError: If the derived spelling is not a valid name of its kind, or
+            ``major_minor`` is given anything but a MAJOR.MINOR.PATCH version.
+            Old patch releases are not supported Pythons, so a version without
+            one is refused rather than guessed.
     """
     if transform is None:
         return value
+    if transform == "major_minor":
+        if not _FULL_VERSION_RE.match(value):
+            raise ValueError(
+                f"{value!r} is not a MAJOR.MINOR.PATCH version; give the patch release "
+                "too, e.g. 3.15.2"
+            )
+        return value.rsplit(".", 1)[0]
     words = [w for w in re.split(r"[\s_-]+", value.strip()) if w]
     derived = ("-" if transform == "kebab" else "_").join(words).lower()
     if transform == "upper":

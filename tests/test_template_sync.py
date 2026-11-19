@@ -500,10 +500,19 @@ def test_substitute() -> None:
         ("my_widget", "kebab", "my-widget"),
         ("  spaced  out ", "kebab", "spaced-out"),
         ("As Typed", None, "As Typed"),
+        ("3.15.2", "major_minor", "3.15"),
+        ("3.11.18", "major_minor", "3.11"),
     ],
 )
 def test_transform_value(value: str, transform: str | None, expected: str) -> None:
     assert ts.transform_value(value, transform) == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("value", ["3.15", "3", "", " 3.15.2", "3.15.2 ", "v3.15.2", "3.15.2.1"])
+def test_major_minor_refuses_a_value_without_exactly_a_patch_release(value: str) -> None:
+    with pytest.raises(ValueError, match=r"is not a MAJOR\.MINOR\.PATCH version"):
+        ts.transform_value(value, "major_minor")
 
 
 @pytest.mark.unit

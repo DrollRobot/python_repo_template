@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** the image workflow reads the repo variable
   `CONTAINER_APP_JOBS`, every job's name, in place of `CONTAINER_APP_JOB`.
   `scripts/container_job.py` sets it.
+- **Breaking:** Python versions carry their patch release. The `python` value
+  is a full version (`3.13.18`), and a pinned project gets
+  `requires-python = "~=3.13.18"`. A project whose `python` has no patch
+  release fails to sync until it names one. The template moves to 3.15.2, and
+  libraries (`all-supported`) to 3.11.18 and newer.
 - CI installs the newest uv that meets `required-version` in `pyproject.toml`,
   in place of a pinned 0.13.x.
 
