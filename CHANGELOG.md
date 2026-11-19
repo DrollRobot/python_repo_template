@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   libraries (`all-supported`) to 3.11.18 and newer.
 - CI installs the newest uv that meets `required-version` in `pyproject.toml`,
   in place of a pinned 0.13.x.
+- `tests/test_unwanted_strings.py` scans only the files git would commit.
+- ruff gives `.local/tests` the same exemptions as `tests`.
 
 ### Fixed
 
