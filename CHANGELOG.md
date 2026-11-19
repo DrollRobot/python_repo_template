@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** the image workflow reads the repo variable
   `CONTAINER_APP_JOBS`, every job's name, in place of `CONTAINER_APP_JOB`.
   `scripts/container_job.py` sets it.
+- CI installs the newest uv that meets `required-version` in `pyproject.toml`,
+  in place of a pinned 0.13.x.
 
 ### Security
 

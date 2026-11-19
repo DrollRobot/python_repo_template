@@ -68,6 +68,9 @@ dev = [
 ]
 
 [tool.uv]
+# Oldest uv that can install the Python versions CI tests. CI installs the
+# newest uv that meets it; local uv refuses to run if older.
+required-version = ">=0.13.7"
 constraint-dependencies = [
     "cryptography>=50.0.0",  # GHSA-g6cj-pr64-35w5; prune when upstream requires it
     "virtualenv>=21.14.9",  # GHSA-hhxq-47xx-j5xx and 11 more; prune when upstream requires it

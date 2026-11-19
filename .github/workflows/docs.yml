@@ -43,7 +43,6 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          version: "0.13.x"
 
       # <template-only feature="private_repo_deps">
       - name: Mint a token for private git deps
