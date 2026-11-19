@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI installs the newest uv that meets `required-version` in `pyproject.toml`,
   in place of a pinned 0.13.x.
 
+### Fixed
+
+- `update` no longer overwrites a project's private git dependency settings
+  in its workflows and `dependabot.yml`.
+
 ### Security
 
 - **Breaking:** `container_job`: a repo's registry roles reach its own image
