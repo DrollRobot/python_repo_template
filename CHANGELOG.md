@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at an existing registry that is not and prints the command that switches it.
 - `container_job`: the image workflow points the jobs at the image by its hash
   (digest), not by an image tag, which can be moved to another image later.
+- `AGENTS.RELEASING.md` tells agents never to keep a vulnerable dependency to
+  keep support for an older Python.
 
 ## [2.0.0] - 2026-11-09 - Template sync
 
