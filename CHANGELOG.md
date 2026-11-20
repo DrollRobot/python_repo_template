@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `update` no longer overwrites a project's private git dependency settings
   in its workflows and `dependabot.yml`.
+- `.gitignore` ignores env files again (`*.env*`), except `.env.example`.
+  They often hold secrets.
 
 ### Security
 
