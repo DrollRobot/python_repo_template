@@ -57,44 +57,35 @@ next_steps = [
 "<COPYRIGHT YEAR>" = "copyright_year"
 "<COMPANY>" = "company"
 
-# The Python version, always with its patch release: old patch releases are not
-# supported Pythons. A project pins one: `python = "3.13.18"` gives it
-# requires-python "~=3.13.18" (3.13.18 or a later 3.13) and CI on 3.13.18 alone;
-# `new` offers the template's own, always the newest. Where a tool accepts only
-# MAJOR.MINOR (mypy), `major_minor` gives "3.13". `python = "all-supported"`
-# makes a library: requires-python ">=" the oldest supported version, which is
-# also the one it develops and type-checks on, and CI on every supported
-# version. When Python ships a release or a patch release (or one reaches end of
-# life), move every literal and alias here. The full version comes first: it is
-# the template's own value.
-[tokens."3.15.2"]
-key = "python"
-aliases = { all-supported = "3.11.18" }
-
+# The Python version. A project pins one: `python = "3.13"` gives it
+# requires-python "==3.13.*" and CI on 3.13 alone; `new` offers the template's
+# own, always the newest. `python = "all-supported"` makes a library:
+# requires-python ">=" the oldest supported version, which is also the one it
+# develops and type-checks on, and CI on every supported version. When Python
+# ships a release (or one reaches end of life), move every literal and alias here.
 [tokens."3.15"]
 key = "python"
-transform = "major_minor"
 aliases = { all-supported = "3.11" }
 
-[tokens."~=3.15.2"]
+[tokens."==3.15.*"]
 key = "python"
-format = "~={}"
-aliases = { all-supported = ">=3.11.18" }
+format = "=={}.*"
+aliases = { all-supported = ">=3.11" }
 
-[tokens."Requires Python 3.15.2"]
+[tokens."Requires Python 3.15"]
 key = "python"
 format = "Requires Python {}"
-aliases = { all-supported = "Requires Python 3.11.18 or newer" }
+aliases = { all-supported = "Requires Python 3.11 or newer" }
 
-[tokens."badge/python-3.15.2-blue"]
+[tokens."badge/python-3.15-blue"]
 key = "python"
 format = "badge/python-{}-blue"
-aliases = { all-supported = "badge/python-3.11.18%2B-blue" }
+aliases = { all-supported = "badge/python-3.11%2B-blue" }
 
-[tokens.'python: ["3.15.2"]']
+[tokens.'python: ["3.15"]']
 key = "python"
 format = 'python: ["{}"]'
-aliases = { all-supported = 'python: ["3.11.18", "3.12.16", "3.13.18", "3.14.10", "3.15.2"]' }
+aliases = { all-supported = 'python: ["3.11", "3.12", "3.13", "3.14", "3.15"]' }
 
 [paths]
 "child/" = ""

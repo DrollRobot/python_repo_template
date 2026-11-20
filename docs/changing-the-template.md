@@ -27,13 +27,10 @@ line holding only the tag in the file's comment syntax (`# <template-only>` ...
 ## Moving to a new Python release
 
 When Python ships a release (in October, when the oldest version also reaches
-end of life) or a patch release, move the version tokens in `template.toml` and
-their literals in the files together: `.python-version`, `pyproject.toml`, the
-CI matrix, the badges and `CONTRIBUTING.md`. Every literal holds the full
-version, such as 3.15.2, except where a tool accepts only MAJOR.MINOR; the
-`major_minor` transform derives that one. The `all-supported` aliases list the
-latest patch release of each maintained version.
-`tests/test_template_manifest.py` fails on any literal left behind.
+end of life), move the version tokens in `template.toml` and their literals in
+the files together: `.python-version`, `pyproject.toml`, the CI matrix, the
+badges and `CONTRIBUTING.md`. The `all-supported` aliases list the maintained
+versions. `tests/test_template_manifest.py` fails on any literal left behind.
 
 ## Checking your changes
 
