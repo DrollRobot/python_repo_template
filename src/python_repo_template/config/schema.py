@@ -19,7 +19,10 @@ Field conventions -- declare every field with :func:`option` or
 - ``option(...)``: a non-secret. ``default_value`` is the value used when
   no layer provides one; omit it to make the option required.
 - ``secret(...)``: a secret. Secret values never appear in source, so
-  secret fields cannot have defaults and are always required.
+  secret fields cannot have default values, and are required unless
+  declared ``required=False``. An optional secret is annotated
+  ``str | None`` and is ``None`` when no layer provides it, for example
+  ``webhook_token: str | None = secret(help="...", required=False)``.
   ``default_secret_name`` is the backend storage NAME the config CLI
   offers at init and writes to config.toml as ``<field>_secret_name``;
   runtime reads the name from config.toml only.
@@ -115,18 +118,23 @@ def secret(
     *,
     help: str,
     default_secret_name: str | None = None,
+    required: bool = True,
 ) -> Any:
     """Declare a secret settings field.
 
     Secret values never appear in source: the field cannot take a default
-    and is always required. Values come from the credential backend, or an
-    environment variable at runtime.
+    value. Values come from the credential backend, or an environment
+    variable at runtime. A required secret missing from every layer is a
+    configuration error; an optional one (``required=False``) is ``None``.
 
     Args:
         help: Description used in prompts and generated comments.
         default_secret_name: Backend storage NAME (a name, not a value) the
             config CLI offers at init and writes to config.toml as
             ``<field>_secret_name``. Omit to offer the field name.
+        required: False declares an optional secret. Annotate the field
+            ``str | None``. Its default, None, means "not set"; it is not a
+            value in source.
 
     Returns:
         A dataclass field for the settings schema (``repr=False`` so the
@@ -142,6 +150,9 @@ def secret(
                 f"default_secret_name must be a non-empty string, got {default_secret_name!r}."
             )
         metadata["default_secret_name"] = default_secret_name
+    if not required:
+        metadata["optional"] = True
+        return field(default=None, repr=False, kw_only=True, metadata=metadata)
     return field(repr=False, kw_only=True, metadata=metadata)
 
 
@@ -182,6 +193,19 @@ def is_secret(f: Field[Any]) -> bool:
         from config.toml.
     """
     return bool(f.metadata.get("secret", False))
+
+
+def is_optional_secret(f: Field[Any]) -> bool:
+    """Return True if *f* is a secret declared with ``secret(required=False)``.
+
+    Args:
+        f: A dataclass field of the settings schema.
+
+    Returns:
+        True when the field is a secret that resolves to None, rather than
+        failing, when no layer provides it.
+    """
+    return is_secret(f) and bool(f.metadata.get("optional", False))
 
 
 def field_help(f: Field[Any]) -> str:

@@ -23,7 +23,11 @@ import pytest
 from python_repo_template.config import schema, secrets
 from python_repo_template.config.resolve import resolve_settings
 from python_repo_template.config.schema import APP_NAME, CLI_NAME, ENV_PREFIX, ConfigError
-from tests._config_test_object import SecretTestObject, pin_prompt_policy
+from tests._config_test_object import (
+    OptionalSecretTestObject,
+    SecretTestObject,
+    pin_prompt_policy,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -211,6 +215,24 @@ def test_dispatch_missing_storage_name_is_actionable(monkeypatch: pytest.MonkeyP
     _install_fake_backend(monkeypatch, get=lambda key, service, config: "v")
     with pytest.raises(ConfigError, match="'token_secret_name' is not set"):
         secrets.get_secret("token", None, {"credential_backend": "fake"})
+
+
+def test_optional_secret_without_storage_name_is_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An optional secret with no storage name is None; the backend is never asked."""
+
+    def explode(key: str, service: str, config: dict[str, Any]) -> str:
+        raise AssertionError("the backend must not be asked for an unnamed optional secret")
+
+    _install_fake_backend(monkeypatch, get=explode)
+    config = {"credential_backend": "fake"}
+    assert secrets.get_secret("extra", None, config, optional=True) is None
+
+
+def test_optional_secret_with_storage_name_reads_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = {"kv-extra": "s"}
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: store.get(key))
+    config = {"credential_backend": "fake", "extra_secret_name": "kv-extra"}
+    assert secrets.get_secret("extra", None, config, optional=True) == "s"
 
 
 def test_reserved_config_passes_secret_name_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -410,3 +432,23 @@ def test_resolver_accepts_backend_declared_keys_in_config(
     )
     settings: SecretTestObject = resolve_settings(SecretTestObject, config_path=config_path)
     assert settings.token == "https://x.invalid/"  # noqa: S105
+
+
+@pytest.mark.integration
+def test_resolver_optional_secret_unnamed_is_none_and_named_reads_backend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Backend configured: an unnamed optional secret is None, a named one is read."""
+    store = {"token": "tok", "kv-extra": "from-backend"}
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: store.get(key))
+    config_path = tmp_path / "config.toml"
+    base = 'name = "n"\ncredential_backend = "fake"\ntoken_secret_name = "token"\n'
+    config_path.write_text(base, encoding="utf-8")
+    settings: OptionalSecretTestObject = resolve_settings(
+        OptionalSecretTestObject, config_path=config_path
+    )
+    assert settings.extra is None
+
+    config_path.write_text(base + 'extra_secret_name = "kv-extra"\n', encoding="utf-8")
+    settings = resolve_settings(OptionalSecretTestObject, config_path=config_path)
+    assert settings.extra == "from-backend"

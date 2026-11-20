@@ -14,16 +14,23 @@ marker.
 from __future__ import annotations
 
 import os
+import typing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from python_repo_template.config.resolve import PROFILE_ENV, resolve_settings
+from python_repo_template.config import resolve
+from python_repo_template.config.resolve import (
+    PROFILE_ENV,
+    resolve_settings,
+    resolve_with_sources,
+)
 from python_repo_template.config.schema import CLI_NAME, ENV_PREFIX, ConfigError
 from tests._config_test_object import (
     ConfigTestObject,
+    OptionalSecretTestObject,
     SecretTestObject,
     block_secrets_module,
     pin_prompt_policy,
@@ -162,6 +169,115 @@ def test_non_secret_with_default_secret_name_is_rejected(config_path: Path) -> N
 
     with pytest.raises(ConfigError, match="is not secret"):
         resolve_settings(BadSchema, config_path=config_path)
+
+
+def test_optional_secret_with_value_default_is_rejected(config_path: Path) -> None:
+    """An optional secret's only legal default is None; the value is never echoed."""
+
+    @dataclass(frozen=True)
+    class BadSchema:
+        token: str | None = field(
+            default="oops-value",
+            repr=False,
+            metadata={"secret": True, "optional": True, "help": "h"},
+        )
+
+    with pytest.raises(ConfigError, match="secret value in source") as excinfo:
+        resolve_settings(BadSchema, config_path=config_path)
+    assert "oops-value" not in str(excinfo.value)
+
+
+def test_optional_secret_without_default_is_rejected(config_path: Path) -> None:
+    @dataclass(frozen=True)
+    class BadSchema:
+        token: str | None = field(
+            repr=False, metadata={"secret": True, "optional": True, "help": "h"}
+        )
+
+    with pytest.raises(ConfigError, match="must have the default None"):
+        resolve_settings(BadSchema, config_path=config_path)
+
+
+def test_optional_secret_must_be_annotated_optional_str(config_path: Path) -> None:
+    @dataclass(frozen=True)
+    class BadSchema:
+        token: str = field(
+            default=None,  # type: ignore[assignment]
+            repr=False,
+            metadata={"secret": True, "optional": True, "help": "h"},
+        )
+
+    with pytest.raises(ConfigError, match=r"must be annotated 'str \| None'"):
+        resolve_settings(BadSchema, config_path=config_path)
+
+
+@pytest.mark.parametrize(
+    ("tp", "expected"),
+    [
+        (str | None, True),
+        # The old spelling is the point: older Pythons build it as a distinct type.
+        (typing.Optional[str], True),  # noqa: UP045
+        (str, False),
+        (int | None, False),
+        (str | int | None, False),
+    ],
+)
+def test_is_optional_str(tp: Any, expected: bool) -> None:
+    assert resolve._is_optional_str(tp) is expected
+
+
+# --- optional secrets ----------------------------------------------------------------
+
+
+@requires_secret_storage
+def test_optional_secret_missing_everywhere_is_none(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    """An optional secret no layer provides is None, with no error."""
+    monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
+    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
+    settings, sources, _ = resolve_with_sources(OptionalSecretTestObject, config_path=config_path)
+    assert settings.extra is None
+    assert sources["extra"] == "not set"
+
+
+@requires_secret_storage
+def test_optional_secret_resolves_from_env(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
+    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
+    monkeypatch.setenv(ENV_PREFIX + "EXTRA", "from-env")
+    settings, sources, _ = resolve_with_sources(OptionalSecretTestObject, config_path=config_path)
+    assert settings.extra == "from-env"
+    assert sources["extra"] == f"env:{ENV_PREFIX}EXTRA"
+
+
+@requires_secret_storage
+def test_optional_secret_override_is_type_checked_as_str(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
+    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
+    settings: OptionalSecretTestObject = resolve_settings(
+        OptionalSecretTestObject, config_path=config_path, overrides={"extra": "ovr"}
+    )
+    assert settings.extra == "ovr"
+    with pytest.raises(ConfigError, match="'extra' in overrides"):
+        resolve_settings(OptionalSecretTestObject, config_path=config_path, overrides={"extra": 1})
+
+
+@requires_secret_storage
+def test_missing_required_secret_still_fails_beside_optional_one(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    """Only the required secret is reported missing; the optional one is not."""
+    monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
+    with pytest.raises(ConfigError) as excinfo:
+        resolve_settings(OptionalSecretTestObject, config_path=config_path)
+    message = str(excinfo.value)
+    assert "Missing required configuration value(s): token." in message
+    assert ENV_PREFIX + "EXTRA" not in message
 
 
 # --- optional secret machinery -------------------------------------------------------

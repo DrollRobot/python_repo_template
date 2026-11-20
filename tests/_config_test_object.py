@@ -5,7 +5,7 @@ conventions (see src/python_repo_template/config/schema.py). Tests run it
 against these fixed test objects instead of the real ``Settings`` so they stay
 green when a downstream repo replaces the FIXME example fields.
 
-Two objects, so the generic tests never depend on secret storage:
+Three objects, so the generic tests never depend on secret storage:
 
 - :class:`ConfigTestObject` -- every supported field type, no secret field.
   The generic resolution / validation / coercion / CLI tests use it, so they
@@ -13,6 +13,8 @@ Two objects, so the generic tests never depend on secret storage:
   the secret-storage machinery.
 - :class:`SecretTestObject` -- the same fields plus a required secret, for the
   tests that genuinely exercise secrets.
+- :class:`OptionalSecretTestObject` -- :class:`SecretTestObject` plus an
+  optional secret, for the tests of ``secret(required=False)``.
 
 Also hosts :data:`requires_secret_storage`, the skip marker for tests that
 need the machinery present; :func:`block_secrets_module`, which simulates
@@ -65,6 +67,27 @@ class SecretTestObject:
 
     name: str = field(metadata={"help": "Required plain string"})
     token: str = field(repr=False, metadata={"secret": True, "help": "Required secret"})
+    count: int = field(default=3, metadata={"help": "Defaulted int"})
+    ratio: float = field(default=0.5, metadata={"help": "Defaulted float"})
+    flag: bool = field(default=False, metadata={"help": "Defaulted bool"})
+    tags: list[str] = field(default_factory=list, metadata={"help": "Defaulted list"})
+
+
+@dataclass(frozen=True)
+class OptionalSecretTestObject:
+    """:class:`SecretTestObject`'s fields plus an optional secret, ``extra``.
+
+    ``extra`` comes right after ``token``, so ``init`` asks about the
+    secrets in that order, after the same non-secret values.
+    """
+
+    name: str = field(metadata={"help": "Required plain string"})
+    token: str = field(repr=False, metadata={"secret": True, "help": "Required secret"})
+    extra: str | None = field(
+        default=None,
+        repr=False,
+        metadata={"secret": True, "optional": True, "help": "Optional secret"},
+    )
     count: int = field(default=3, metadata={"help": "Defaulted int"})
     ratio: float = field(default=0.5, metadata={"help": "Defaulted float"})
     flag: bool = field(default=False, metadata={"help": "Defaulted bool"})

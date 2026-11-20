@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `config_system`: optional secrets. `secret(help=..., required=False)`
+  declares a secret annotated `str | None` that is `None`, not an error,
+  when no layer has it. `init` asks whether to set up each one; declining
+  stores neither a name nor a value. `show` prints an unset one as `None`.
 - `new` creates an empty `.local/` folder in the project.
 - A test that checks for non-ascii characters. (optional, controlled by
   the `ascii_only` setting)

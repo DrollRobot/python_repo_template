@@ -10,11 +10,13 @@ Precedence, highest wins:
    ``CREDENTIAL_BACKEND`` default (never under the ``"none"``/``"prompt"``
    policies). Secrets are looked up under the profile's
    ``<field>_secret_name`` from config.toml, written by the config CLI; a
-   missing name fails loudly.
+   missing name fails loudly for a required secret, and leaves an optional
+   one unset.
 4. config.toml: the selected profile table, then bare top-level keys.
 5. Schema field defaults - non-secret fields only. Secret values never
-   live in source; a schema giving a secret field a default is rejected
-   before resolution starts.
+   live in source; a schema giving a secret field a default value is
+   rejected before resolution starts. An optional secret
+   (``secret(required=False)``) that no layer provides is None.
 
 The secret layer is optional: ``secrets.py`` is imported lazily and only
 when the schema marks at least one field ``secret``, so a schema without
@@ -36,6 +38,8 @@ from __future__ import annotations
 
 import importlib
 import os
+import types
+import typing
 from collections.abc import Iterable, Mapping
 from dataclasses import fields
 from pathlib import Path
@@ -49,6 +53,7 @@ from python_repo_template.config.schema import (
     ConfigError,
     Settings,
     default_secret_name,
+    is_optional_secret,
     is_required,
     is_secret,
 )
@@ -138,8 +143,9 @@ def resolve_with_sources(
     Returns:
         ``(instance, sources, profile_name)`` where ``sources`` maps each
         field name to a provenance label (``override``, ``env:<VAR>``, the
-        backend name, ``file:profiles.<name>``, ``file:top-level``, or
-        ``default``) and ``profile_name`` is the active profile, if any.
+        backend name, ``file:profiles.<name>``, ``file:top-level``,
+        ``default``, or ``not set`` for an optional secret no layer
+        provides) and ``profile_name`` is the active profile, if any.
 
     Raises:
         ConfigError: As for :func:`resolve_settings`.
@@ -190,18 +196,24 @@ def _resolve(
     sources: dict[str, str] = {}
     missing: list[str] = []
     for f in fields(schema):
+        optional_secret = is_optional_secret(f)
+        # An optional secret is annotated 'str | None' (checked above): any
+        # value a layer provides is a str, and None only means "not set".
+        tp = str if optional_secret else hints[f.name]
         if f.name in overrides:
-            values[f.name] = _check_type(f.name, overrides[f.name], hints[f.name], "overrides")
+            values[f.name] = _check_type(f.name, overrides[f.name], tp, "overrides")
             sources[f.name] = "override"
             continue
         env_name = ENV_PREFIX + f.name.upper()
         env_raw = os.environ.get(env_name)
         if env_raw is not None:
-            values[f.name] = coerce_string(env_name, env_raw, hints[f.name])
+            values[f.name] = coerce_string(env_name, env_raw, tp)
             sources[f.name] = f"env:{env_name}"
             continue
         if is_secret(f):
-            secret = secrets_module.get_secret(f.name, profile_name, backend_config)
+            secret = secrets_module.get_secret(
+                f.name, profile_name, backend_config, optional=optional_secret
+            )
             if secret is not None:
                 values[f.name] = secret
                 sources[f.name] = secrets_module.backend_name(backend_config)
@@ -209,16 +221,18 @@ def _resolve(
         else:
             if f.name in profile_values:
                 where = f"profile 'profiles.{profile_name}' in {path}"
-                values[f.name] = _check_type(f.name, profile_values[f.name], hints[f.name], where)
+                values[f.name] = _check_type(f.name, profile_values[f.name], tp, where)
                 sources[f.name] = f"file:profiles.{profile_name}"
                 continue
             if f.name in config:
                 where = f"the top level of {path}"
-                values[f.name] = _check_type(f.name, config[f.name], hints[f.name], where)
+                values[f.name] = _check_type(f.name, config[f.name], tp, where)
                 sources[f.name] = "file:top-level"
                 continue
         if is_required(f):
             missing.append(f.name)
+        elif optional_secret:
+            sources[f.name] = "not set"
         else:
             sources[f.name] = "default"
 
@@ -252,16 +266,20 @@ def _validate_schema_secrets(schema: type[Any]) -> None:
     A default on a secret field is a secret value in source, silently used
     whenever the backend lookup misses. ``schema.secret(...)`` cannot
     express one; this guard catches hand-written ``field(...)``
-    declarations that can.
+    declarations that can. The one exception is an optional secret's None,
+    which means "not set": it must be exactly None, on a field annotated
+    ``str | None``.
 
     Args:
         schema: Frozen dataclass defining the options.
 
     Raises:
         ConfigError: When a secret field has a default value or leaves
-            ``repr`` enabled, or a non-secret field declares a
-            ``default_secret_name``.
+            ``repr`` enabled, an optional secret's default is not None or
+            its annotation is not ``str | None``, or a non-secret field
+            declares a ``default_secret_name``.
     """
+    hints = get_type_hints(schema)
     for f in fields(schema):
         if not is_secret(f):
             if default_secret_name(f) is not None:
@@ -270,7 +288,20 @@ def _validate_schema_secrets(schema: type[Any]) -> None:
                     "Storage names apply only to secret fields."
                 )
             continue
-        if not is_required(f):
+        if is_optional_secret(f):
+            # The default's value is never echoed: it may be a real secret.
+            if f.default is not None:
+                raise ConfigError(
+                    f"Optional secret field {f.name!r} must have the default None and no "
+                    "other: any other default is a secret value in source. Declare it with "
+                    "schema.secret(..., required=False)."
+                )
+            if not _is_optional_str(hints[f.name]):
+                raise ConfigError(
+                    f"Optional secret field {f.name!r} must be annotated 'str | None': it is "
+                    "None when no layer provides it."
+                )
+        elif not is_required(f):
             raise ConfigError(
                 f"Secret field {f.name!r} has a default value: a secret value in source. "
                 "Secrets never live in source. Remove the default; declare the field with "
@@ -282,6 +313,24 @@ def _validate_schema_secrets(schema: type[Any]) -> None:
                 f"Secret field {f.name!r} must set repr=False so its value cannot leak "
                 "through repr()/tracebacks. Declare it with schema.secret(...)."
             )
+
+
+def _is_optional_str(tp: Any) -> bool:
+    """Return True if the type annotation *tp* is ``str | None``.
+
+    Accepts both spellings, ``str | None`` and ``Optional[str]``, which older
+    Python versions build as two distinct union types.
+
+    Args:
+        tp: A resolved type annotation.
+
+    Returns:
+        True when *tp* is a union of exactly ``str`` and ``None``.
+    """
+    return get_origin(tp) in (types.UnionType, typing.Union) and set(get_args(tp)) == {
+        str,
+        type(None),
+    }
 
 
 def _secrets_module(secret_fields: Iterable[str]) -> Any:

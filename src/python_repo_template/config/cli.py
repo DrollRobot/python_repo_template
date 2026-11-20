@@ -14,15 +14,18 @@ Command              Behavior
                      backend storage NAME (visible input), then stores
                      secret VALUES via hidden prompts -- writable backends
                      only; read-only backends get the storage names plus a
-                     pointer at where the values live. ``--force`` starts
+                     pointer at where the values live. Each optional secret
+                     is asked about first and skipped entirely on "no".
+                     ``--force`` starts
                      over: the new file replaces the whole existing one
                      (every profile, every comment); secret values already
                      in the backend stay there.
 ``path``             Print the resolved config file path.
 ``open``             Open config.toml in the program the OS associates
                      with the file type.
-``show``             Effective config after full resolution, secrets masked,
-                     with each value's provenance.
+``show``             Effective config after full resolution, secrets masked
+                     (an unset optional secret shows as None), with each
+                     value's provenance.
 ``set KEY VALUE``    Write a non-secret to config.toml (comment-preserving).
                      Also accepts the reserved backend keys
                      (``credential_backend`` and whatever each backend
@@ -79,11 +82,15 @@ from python_repo_template.config.schema import (
     default_secret_name,
     field_default,
     field_help,
+    is_optional_secret,
     is_required,
     is_secret,
 )
 
 _SECRET_MASK = "********"  # noqa: S105  (display placeholder, not a credential)
+
+# Answers accepted by _confirm, mapped to the choice they make.
+_YES_NO = {"y": True, "yes": True, "n": False, "no": False}
 
 
 def _has_secret_fields() -> bool:
@@ -343,7 +350,25 @@ def _prompt_backend_keys(table: Any, backend: str, already: dict[str, Any], secr
             print(f"Skipped {key}; set it later with '{CLI_NAME} set {key} <value>'.")
 
 
-def _prompt_secret_names(table: Any, backend_config: dict[str, Any], secrets: Any) -> None:
+def _confirm(prompt: str) -> bool:
+    """Ask a yes/no question; empty input means no.
+
+    Args:
+        prompt: The question, shown as is.
+
+    Returns:
+        True for yes, False for no or empty input. Anything else asks again.
+    """
+    while True:
+        raw = input(prompt).strip().lower()
+        if not raw:
+            return False
+        if raw in _YES_NO:
+            return _YES_NO[raw]
+        print("Answer y or n.")
+
+
+def _prompt_secret_names(table: Any, backend_config: dict[str, Any], secrets: Any) -> set[str]:
     """Prompt for each secret field's backend storage NAME (visible input).
 
     The name is not the secret, so it is echoed. Empty input keeps the
@@ -352,21 +377,34 @@ def _prompt_secret_names(table: Any, backend_config: dict[str, Any], secrets: An
     written to *table*: runtime resolution reads names from config.toml
     only, never from a fallback.
 
+    Each optional secret is asked about first. Declining skips it entirely:
+    no storage name is written, so it resolves as not set.
+
     Args:
         table: The mutable tomlkit table ``init`` is populating.
         backend_config: Merged reserved-key table for the target profile.
         secrets: The imported secret-machinery module.
+
+    Returns:
+        The names of the optional secrets the user declined.
     """
+    declined: set[str] = set()
     for f in fields(Settings):
         if not is_secret(f):
             continue
+        if not is_optional_secret(f):
+            print(f"{f.name} - {field_help(f)}")
+        elif not _confirm(f"{f.name} - {field_help(f)} (optional). Set it up now? [y/N]: "):
+            print(f"Skipped {f.name}; set it up later with '{CLI_NAME} set-secret {f.name}'.")
+            declined.add(f.name)
+            continue
         name_key = secrets.secret_name_key(f.name)
         offered = backend_config.get(name_key) or default_secret_name(f) or f.name
-        print(f"{f.name} - {field_help(f)}")
         raw = input(
             f"  secret NAME in backend (visible, not the secret) [default: {offered}]: "
         ).strip()
         table[name_key] = raw or offered
+    return declined
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
@@ -380,7 +418,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
     secret's backend storage NAME (visible; always persisted as
     ``<field>_secret_name``) and, on writable backends only,
     each secret VALUE via hidden prompts (empty input skips, with a
-    reminder). Read-only backends get a pointer at where the values live;
+    reminder). An optional secret the user declines to set up gets neither
+    prompt. Read-only backends get a pointer at where the values live;
     the ``"none"`` policy skips secret storage entirely. Refuses to touch an
     already-configured target so a typo cannot silently overwrite a tenant's
     settings.
@@ -430,6 +469,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
             print(f"{f.name} is required.")
 
     secrets = _secrets_module() if _secret_storage_active() else None
+    declined: set[str] = set()
     if _has_secret_fields() and secrets is None:
         print(
             "schema.CREDENTIAL_BACKEND is 'none'; secrets are not stored. "
@@ -445,7 +485,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
             _prompt_backend_keys(table, selected, backend_config, secrets)
         backend_config = _backend_config(document, args.profile, secrets)
         if secrets.backend_name(backend_config) is not None:
-            _prompt_secret_names(table, backend_config, secrets)
+            declined = _prompt_secret_names(table, backend_config, secrets)
     _save_document(path, document)
 
     if secrets is not None:
@@ -461,7 +501,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
             print(secrets.read_only_notice(backend_config))
         else:
             for f in fields(Settings):
-                if not is_secret(f):
+                if not is_secret(f) or f.name in declined:
                     continue
                 value = getpass.getpass(f"{f.name} - secret VALUE (hidden, empty to skip): ")
                 if value:
@@ -533,6 +573,9 @@ def _cmd_open(args: argparse.Namespace) -> int:
 def _cmd_show(args: argparse.Namespace) -> int:
     """Print the effective configuration with provenance, secrets masked.
 
+    An optional secret that no layer provides prints as None: there is no
+    value to mask.
+
     Args:
         args: Parsed CLI arguments (``profile``).
 
@@ -544,7 +587,9 @@ def _cmd_show(args: argparse.Namespace) -> int:
     print(f"profile:     {profile_name or 'none (top-level keys)'}")
     width = max(len(f.name) for f in fields(Settings))
     for f in fields(Settings):
-        value = _SECRET_MASK if is_secret(f) else getattr(settings, f.name)
+        value = getattr(settings, f.name)
+        if is_secret(f) and value is not None:
+            value = _SECRET_MASK
         print(f"  {f.name:<{width}} = {value!r}  <- {sources[f.name]}")
     return 0
 

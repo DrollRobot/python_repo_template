@@ -40,6 +40,7 @@ from python_repo_template.config.paths import CONFIG_DIR_ENV
 from python_repo_template.config.schema import APP_NAME, ENV_PREFIX, ConfigError
 from tests._config_test_object import (
     ConfigTestObject,
+    OptionalSecretTestObject,
     SecretTestObject,
     block_secrets_module,
     pin_prompt_policy,
@@ -83,6 +84,12 @@ def secret_schema(monkeypatch: pytest.MonkeyPatch) -> None:
     so the secret-bearing object wins for those tests only.
     """
     monkeypatch.setattr("python_repo_template.config.cli.Settings", SecretTestObject)
+
+
+@pytest.fixture
+def optional_secret_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install a schema with a required secret, ``token``, and an optional one, ``extra``."""
+    monkeypatch.setattr("python_repo_template.config.cli.Settings", OptionalSecretTestObject)
 
 
 def _install_backend(monkeypatch: pytest.MonkeyPatch, name: str, **functions: Any) -> None:
@@ -975,3 +982,86 @@ def test_saved_config_is_owner_only(config_dir: Path) -> None:
     assert cli.main(["set", "count", "7"]) == 0
     mode = (config_dir / "config.toml").stat().st_mode & 0o777
     assert mode == 0o600
+
+
+# --- optional secrets ----------------------------------------------------------------
+
+
+@requires_secret_storage
+@pytest.mark.integration
+@pytest.mark.usefixtures("optional_secret_schema")
+def test_init_declined_optional_secret_gets_no_name_and_no_value(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # name, count, ratio, flag, tags, backend, token's storage name, then
+    # "set up extra?" left empty, which means no.
+    _feed_input(monkeypatch, ["n", "", "", "", "", "fake", "", ""])
+    _feed_getpass(monkeypatch, ["tok"])  # token's value only; no prompt for extra
+    assert cli.main(["init"]) == 0
+    document = tomlkit.parse(_config_text(config_dir))
+    assert document["token_secret_name"] == "token"  # noqa: S105  (a name, not a secret)
+    assert "extra_secret_name" not in document  # declined: resolves as not set
+    assert fake_backend == {(APP_NAME, "token"): "tok"}
+    assert "Skipped extra; set it up later with" in capsys.readouterr().out
+
+
+@requires_secret_storage
+@pytest.mark.integration
+@pytest.mark.usefixtures("optional_secret_schema")
+def test_init_accepted_optional_secret_gets_name_and_value(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+) -> None:
+    _feed_input(monkeypatch, ["n", "", "", "", "", "fake", "", "y", "kv-extra"])
+    _feed_getpass(monkeypatch, ["tok", "ex"])
+    assert cli.main(["init"]) == 0
+    document = tomlkit.parse(_config_text(config_dir))
+    assert document["extra_secret_name"] == "kv-extra"  # noqa: S105  (a name, not a secret)
+    assert fake_backend == {(APP_NAME, "token"): "tok", (APP_NAME, "kv-extra"): "ex"}
+
+
+@requires_secret_storage
+@pytest.mark.integration
+@pytest.mark.usefixtures("optional_secret_schema")
+def test_init_optional_secret_question_reprompts_on_other_answers(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _feed_input(monkeypatch, ["n", "", "", "", "", "fake", "", "maybe", "NO"])
+    _feed_getpass(monkeypatch, ["tok"])
+    assert cli.main(["init"]) == 0
+    assert "Answer y or n." in capsys.readouterr().out
+    assert "extra_secret_name" not in tomlkit.parse(_config_text(config_dir))
+
+
+@requires_secret_storage
+@pytest.mark.integration
+@pytest.mark.usefixtures("optional_secret_schema")
+def test_show_unset_optional_secret_is_none_and_set_one_is_masked(
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base = 'name = "n"\ncredential_backend = "fake"\ntoken_secret_name = "token"\n'
+    (config_dir / "config.toml").write_text(base, encoding="utf-8")
+    fake_backend[(APP_NAME, "token")] = "tok"
+    assert cli.main(["show"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    extra_line = next(line for line in lines if line.strip().startswith("extra"))
+    assert extra_line.endswith("= None  <- not set")
+
+    (config_dir / "config.toml").write_text(
+        base + 'extra_secret_name = "extra"\n', encoding="utf-8"
+    )
+    fake_backend[(APP_NAME, "extra")] = "extra-sekrit-xyz"
+    assert cli.main(["show"]) == 0
+    out = capsys.readouterr().out
+    assert "extra-sekrit-xyz" not in out
+    extra_line = next(line for line in out.splitlines() if line.strip().startswith("extra"))
+    assert extra_line.endswith("= '********'  <- fake")

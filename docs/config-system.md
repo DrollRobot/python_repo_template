@@ -30,7 +30,15 @@ installs. `my-widget-config path` prints where the file is.
 - `option(help=..., default_value=...)` is a plain setting. Without a
   `default_value`, it is required.
 - `secret(help=...)` is a secret. It has no default, since secret values never
-  appear in source, so it is always required.
+  appear in source, so it is required.
+- `secret(help=..., required=False)` is an optional secret, annotated
+  `str | None`. When no layer has it, it is `None`, not an error. Use it for a
+  key the program can work without, such as one per optional provider.
+
+```python
+api_key: str = secret(help="API key for the service")
+webhook_token: str | None = secret(help="Webhook token, if used", required=False)
+```
 
 Everything else follows from the fields: the config command's prompts, the
 file's validation, the environment variable names, and the tests' fake
@@ -58,7 +66,8 @@ settings.api_url
    runs: it needs no file and no credential store.
 3. The credential store, for secret fields only (see [Secrets](#secrets)).
 4. `config.toml`: the selected profile's table, then the file's top-level keys.
-5. The field's default, for plain settings only.
+5. The field's default, for plain settings only. An optional secret no layer
+   has is `None`.
 
 A required value missing from every layer raises an error that names the fix.
 `load_settings` never creates the file and never falls back silently.
@@ -94,10 +103,10 @@ file, so it never needs editing by hand. It keeps the comments in the file.
 
 | Command | What it does |
 |---|---|
-| `init` | Interactive first-time setup: prompts for each setting from the schema. `--force` starts the file over. |
+| `init` | Interactive first-time setup: prompts for each setting from the schema, and asks whether to set up each optional secret. `--force` starts the file over. |
 | `path` | Print the file's location. |
 | `open` | Open the file in the program the OS associates with it. |
-| `show` | The effective settings, with secrets masked and where each value came from. |
+| `show` | The effective settings, with secrets masked and where each value came from. An unset optional secret shows as `None`. |
 | `set KEY VALUE` | Write a plain setting. |
 | `unset KEY` | Remove a setting, so its default applies again. |
 | `list-profiles` | List the profiles, marking the default. |
@@ -114,7 +123,9 @@ With `secret_storage` on, secret values live in a credential store, never in
 `config.toml` or on the command line, where shell history would keep them.
 The file holds only each secret's storage name (`<field>_secret_name`), which
 is not itself secret. `init` and `set-secret` ask for the name in plain view
-and for the value hidden.
+and for the value hidden. An optional secret with no storage name in the file
+is not set: declining it at `init` leaves the name out, and `set-secret`
+adds it later.
 
 `CREDENTIAL_BACKEND` in `schema.py` sets the policy:
 

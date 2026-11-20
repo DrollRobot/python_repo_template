@@ -24,6 +24,7 @@ from python_repo_template.config.schema import (
     default_secret_name,
     field_default,
     field_help,
+    is_optional_secret,
     is_required,
     is_secret,
     option,
@@ -68,9 +69,14 @@ def test_secret_fields_disable_repr() -> None:
 
 
 def test_secret_fields_never_have_default_values() -> None:
-    """A default on a secret field is a secret value in source; never allowed."""
+    """A default on a secret field is a secret value in source; never allowed.
+
+    The one exception is an optional secret's None, which means "not set".
+    """
     for f in fields(Settings):
-        if is_secret(f):
+        if is_optional_secret(f):
+            assert f.default is None, f"optional secret {f.name!r} has a value in source"
+        elif is_secret(f):
             assert is_required(f), f"secret field {f.name!r} has a value in source"
 
 
@@ -109,6 +115,31 @@ def test_constructors_set_field_conventions() -> None:
     assert field_help(token_field) == "a secret"
 
 
+def test_optional_secret_constructor_defaults_to_none() -> None:
+    @dataclass(frozen=True)
+    class Local:
+        token: str | None = secret(help="an optional secret", required=False)
+
+    (token_field,) = fields(Local)
+    assert is_secret(token_field)
+    assert is_optional_secret(token_field)
+    assert not is_required(token_field)
+    assert token_field.repr is False
+    assert field_default(token_field) is None
+    assert Local().token is None
+
+
+def test_is_optional_secret_is_false_for_required_secrets_and_options() -> None:
+    @dataclass(frozen=True)
+    class Local:
+        token: str = secret(help="a required secret")
+        plain: str = option(help="an option", default_value="v")
+
+    token_field, plain_field = fields(Local)
+    assert not is_optional_secret(token_field)
+    assert not is_optional_secret(plain_field)
+
+
 def test_secret_without_name_defaults_to_field_name_lookup() -> None:
     @dataclass(frozen=True)
     class Local:
@@ -135,6 +166,8 @@ def test_field_default_materializes_defaults_and_rejects_required() -> None:
         if is_required(f):
             with pytest.raises(ValueError, match="required"):
                 field_default(f)
+        elif is_optional_secret(f):
+            assert field_default(f) is None
         else:
             assert field_default(f) is not None
 

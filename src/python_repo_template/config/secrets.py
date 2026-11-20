@@ -23,8 +23,9 @@ Whether a *default* backend exists is the schema author's choice, declared as
 
 Secrets are stored under a storage NAME: the profile's
 ``<field>_secret_name`` key in config.toml, written by ``init`` and
-``set-secret``. A missing name is a config error, never a fallback.
-Storage names are not secrets, so config.toml is a legal home for them.
+``set-secret``. A missing name is a config error, never a fallback; for an
+optional secret it means the secret is not set. Storage names are not
+secrets, so config.toml is a legal home for them.
 
 This module is itself optional. Nothing else in the config system imports it
 at module scope, so when the settings schema marks no field ``secret`` the
@@ -398,25 +399,32 @@ def require_backend(config: Mapping[str, Any], action: str) -> tuple[str, Any]:
     return name, _load_backend(name)
 
 
-def get_secret(key: str, profile: str | None, config: Mapping[str, Any]) -> str | None:
+def get_secret(
+    key: str, profile: str | None, config: Mapping[str, Any], *, optional: bool = False
+) -> str | None:
     """Read secret *key* from the profile's backend.
 
     Args:
         key: Schema field name of the secret.
         profile: Active profile name, or None.
         config: Merged reserved-key table for the active profile.
+        optional: The secret is optional (``secret(required=False)``): a
+            missing storage name means it is not set, not a config error.
 
     Returns:
         The secret value, or None when not stored -- including when no
         backend is configured at all (the user may be supplying secrets via
-        environment variables instead).
+        environment variables instead), and, for an optional secret, when
+        config.toml gives it no storage name.
 
     Raises:
-        ConfigError: If a configured backend is missing or unusable, or the
-            secret's storage name is not set in config.toml.
+        ConfigError: If a configured backend is missing or unusable, or a
+            required secret's storage name is not set in config.toml.
     """
     name = backend_name(config)
     if name is None:
+        return None
+    if optional and secret_name_key(key) not in config:
         return None
     backend = cast("_CredentialBackend", _load_backend(name))
     return backend.get(storage_name(key, config), service_name(profile), config)
