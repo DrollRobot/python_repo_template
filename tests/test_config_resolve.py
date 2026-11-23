@@ -5,10 +5,10 @@ fixed test objects (tests/_config_test_object.py), so nothing here touches the
 real user config directory or depends on the repo's FIXME example fields.
 
 The precedence, coercion, and profile tests use the secret-free test object,
-so they exercise the engine in a project that removed the secret-storage
-machinery too. Tests that need a secret field use SecretTestObject and, when
-they also need the machinery itself, carry the requires_secret_storage skip
-marker.
+so they exercise the engine in a project without the secret-storage machinery
+too. Tests that need a secret field use SecretTestObject. Tests that also
+need the machinery itself are in test_config_secrets.py, which ships only
+with the secret_storage feature.
 """
 
 from __future__ import annotations
@@ -22,19 +22,13 @@ from typing import Any
 import pytest
 
 from python_repo_template.config import resolve
-from python_repo_template.config.resolve import (
-    PROFILE_ENV,
-    resolve_settings,
-    resolve_with_sources,
-)
+from python_repo_template.config.resolve import PROFILE_ENV, resolve_settings
 from python_repo_template.config.schema import CLI_NAME, ENV_PREFIX, ConfigError
 from tests._config_test_object import (
     ConfigTestObject,
-    OptionalSecretTestObject,
     SecretTestObject,
     block_secrets_module,
     pin_prompt_policy,
-    requires_secret_storage,
 )
 
 pytestmark = pytest.mark.unit
@@ -94,16 +88,6 @@ def test_env_only_run_with_no_file(monkeypatch: pytest.MonkeyPatch, config_path:
     assert settings.tags == []
 
 
-@requires_secret_storage
-def test_env_only_run_supplies_secrets(monkeypatch: pytest.MonkeyPatch, config_path: Path) -> None:
-    """A secret field resolves from its env var with no backend in play."""
-    monkeypatch.setenv(ENV_PREFIX + "NAME", "from-env")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
-    settings = _resolve_secret(config_path)
-    assert settings.name == "from-env"
-    assert settings.token == "tok"  # noqa: S105
-
-
 def test_missing_required_is_actionable(config_path: Path) -> None:
     with pytest.raises(ConfigError) as excinfo:
         _resolve(config_path)
@@ -112,31 +96,6 @@ def test_missing_required_is_actionable(config_path: Path) -> None:
     assert ENV_PREFIX + "NAME" in message
     assert f"{CLI_NAME} init" in message
     assert str(config_path) in message
-
-
-@requires_secret_storage
-def test_missing_secret_without_backend_names_the_choice(config_path: Path) -> None:
-    """A missing secret with no backend configured points at picking one."""
-    with pytest.raises(ConfigError) as excinfo:
-        _resolve_secret(config_path)
-    message = str(excinfo.value)
-    assert "token" in message
-    assert ENV_PREFIX + "TOKEN" in message
-    assert "No credential_backend is configured" in message
-    assert f"{CLI_NAME} set credential_backend" in message
-
-
-@requires_secret_storage
-def test_missing_secret_under_none_policy_points_at_env(
-    monkeypatch: pytest.MonkeyPatch, config_path: Path
-) -> None:
-    """Under the 'none' policy the error names env vars, not set-secret."""
-    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
-    with pytest.raises(ConfigError) as excinfo:
-        _resolve_secret(config_path)
-    message = str(excinfo.value)
-    assert "CREDENTIAL_BACKEND is 'none'" in message
-    assert "set-secret" not in message
 
 
 # --- schema validation ---------------------------------------------------------------
@@ -224,60 +183,6 @@ def test_optional_secret_must_be_annotated_optional_str(config_path: Path) -> No
 )
 def test_is_optional_str(tp: Any, expected: bool) -> None:
     assert resolve._is_optional_str(tp) is expected
-
-
-# --- optional secrets ----------------------------------------------------------------
-
-
-@requires_secret_storage
-def test_optional_secret_missing_everywhere_is_none(
-    monkeypatch: pytest.MonkeyPatch, config_path: Path
-) -> None:
-    """An optional secret no layer provides is None, with no error."""
-    monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
-    settings, sources, _ = resolve_with_sources(OptionalSecretTestObject, config_path=config_path)
-    assert settings.extra is None
-    assert sources["extra"] == "not set"
-
-
-@requires_secret_storage
-def test_optional_secret_resolves_from_env(
-    monkeypatch: pytest.MonkeyPatch, config_path: Path
-) -> None:
-    monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
-    monkeypatch.setenv(ENV_PREFIX + "EXTRA", "from-env")
-    settings, sources, _ = resolve_with_sources(OptionalSecretTestObject, config_path=config_path)
-    assert settings.extra == "from-env"
-    assert sources["extra"] == f"env:{ENV_PREFIX}EXTRA"
-
-
-@requires_secret_storage
-def test_optional_secret_override_is_type_checked_as_str(
-    monkeypatch: pytest.MonkeyPatch, config_path: Path
-) -> None:
-    monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
-    settings: OptionalSecretTestObject = resolve_settings(
-        OptionalSecretTestObject, config_path=config_path, overrides={"extra": "ovr"}
-    )
-    assert settings.extra == "ovr"
-    with pytest.raises(ConfigError, match="'extra' in overrides"):
-        resolve_settings(OptionalSecretTestObject, config_path=config_path, overrides={"extra": 1})
-
-
-@requires_secret_storage
-def test_missing_required_secret_still_fails_beside_optional_one(
-    monkeypatch: pytest.MonkeyPatch, config_path: Path
-) -> None:
-    """Only the required secret is reported missing; the optional one is not."""
-    monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
-    with pytest.raises(ConfigError) as excinfo:
-        resolve_settings(OptionalSecretTestObject, config_path=config_path)
-    message = str(excinfo.value)
-    assert "Missing required configuration value(s): token." in message
-    assert ENV_PREFIX + "EXTRA" not in message
 
 
 # --- optional secret machinery -------------------------------------------------------

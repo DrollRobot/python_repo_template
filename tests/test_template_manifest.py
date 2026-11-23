@@ -117,9 +117,19 @@ PYTHON_VERSION = re.compile(r"(?<![\d.])3\.1\d(?!\d)")
 
 
 def _features(choice: str) -> list[str]:
-    """``--feature`` flags for a named feature set of the real manifest."""
+    """``--feature`` flags for a named feature set of the real manifest.
+
+    ``no-secrets`` is the defaults with secret storage off: the config system
+    without the code its own test files must not depend on.
+    """
     if choice == "defaults":
         return []
+    if choice == "no-secrets":
+        return [
+            flag
+            for name in ("secret_storage", "keyring", "keyvault")
+            for flag in ("--feature", f"{name}=false")
+        ]
     manifest = ts.load_manifest(ROOT)
     flags = []
     for name in manifest.features:
@@ -162,7 +172,7 @@ def test_real_template_validates_without_warnings(real_template: Path) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("choice", ["defaults", "all-off", "all-on"])
+@pytest.mark.parametrize("choice", ["defaults", "all-off", "all-on", "no-secrets"])
 def test_real_template_new_project_is_clean(real_template: Path, choice: str) -> None:
     project = real_template.parent / f"my-widget-{choice}"
     code, _out, err = run(
@@ -300,7 +310,7 @@ def test_real_template_python_versions(real_template: Path, python: str | None) 
 @pytest.mark.e2e
 @pytest.mark.slow
 @pytest.mark.live  # the bootstrap's uv sync fetches the project's dependencies
-@pytest.mark.parametrize("choice", ["defaults", "all-off", "all-on", "library"])
+@pytest.mark.parametrize("choice", ["defaults", "all-off", "all-on", "no-secrets", "library"])
 def test_real_template_new_project_passes_its_gates(
     real_template: Path, choice: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -326,9 +336,13 @@ def test_real_template_new_project_passes_its_gates(
         ["run", "ruff", "format", "--check", "."],
         ["run", "mypy"],
         ["run", "vulture"],
-        ["run", "pytest", "-m", "not live", "-q", "-p", "no:cacheprovider", *NEEDS_BASELINE],
+        ["run", "pytest", "-m", "not live", "-q", "-rs", "-p", "no:cacheprovider", *NEEDS_BASELINE],
     ):
         proc = subprocess.run(  # noqa: S603  (fixed argv list, no shell)
             [uv, *args], cwd=project, capture_output=True, text=True, check=False
         )
         assert proc.returncode == 0, f"uv {' '.join(args)}:\n{proc.stdout}\n{proc.stderr}"
+    # A feature's tests ship with the feature, so none skips because secret
+    # storage is missing. proc is the pytest run; -rs lists each skip's reason.
+    skips = [line for line in proc.stdout.splitlines() if line.startswith("SKIPPED")]
+    assert [line for line in skips if "secret" in line.split(": ", 1)[-1].lower()] == []

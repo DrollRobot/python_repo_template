@@ -152,6 +152,7 @@ managed = [
   "src/python_repo_template/config/file.py",
   "src/python_repo_template/config/paths.py",
   "src/python_repo_template/config/resolve.py",
+  "tests/_config_cli_support.py",
   "tests/_config_test_object.py",
   "tests/test_config_cli.py",
   "tests/test_config_file.py",
@@ -164,7 +165,11 @@ merge = ["src/python_repo_template/config/schema.py"]  # the project's own field
 [features.secret_storage]
 description = "secret backends behind the config system"
 requires = ["config_system"]
-managed = ["src/python_repo_template/config/secrets.py", "tests/test_config_secrets.py"]
+managed = [
+  "src/python_repo_template/config/secrets.py",
+  "tests/test_config_cli_secrets.py",
+  "tests/test_config_secrets.py",
+]
 
 [features.keyring]
 description = "OS keyring secret backend"

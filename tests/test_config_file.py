@@ -1,17 +1,15 @@
 """Unit tests for config.toml reading and validation in config/file.py.
 
-Mostly independent of the secret-storage machinery: the validation rules
-themselves know nothing about it, so the bulk of this file runs against the
-secret-free test object and keeps passing in a project that removed the
-machinery. The few cases that assert on the reserved backend keys (which the
-machinery owns) carry the requires_secret_storage skip marker; the cases
-about secret values in the file use SecretTestObject and need no machinery.
+Independent of the secret-storage machinery: the validation rules themselves
+know nothing about it, so this file runs against the secret-free test object
+and passes in a project without the machinery. The cases about secret values
+in the file use SecretTestObject and need no machinery. The cases that need
+the reserved backend keys accepted (the machinery owns them) are in
+test_config_secrets.py, which ships only with the secret_storage feature.
 """
 
 from __future__ import annotations
 
-import sys
-import types
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +22,6 @@ from tests._config_test_object import (
     SecretTestObject,
     block_secrets_module,
     pin_prompt_policy,
-    requires_secret_storage,
 )
 
 pytestmark = pytest.mark.unit
@@ -80,27 +77,6 @@ def test_validate_accepts_full_valid_document(tmp_path: Path) -> None:
     config_file.validate_config(document, ConfigTestObject, path)
 
 
-@requires_secret_storage
-def test_validate_accepts_backend_reserved_keys(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Reserved keys come from the secret machinery, not from this module."""
-    module = types.ModuleType("python_repo_template.config.fake_backend")
-    module.RESERVED_KEYS = {"fake_url": "help"}  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, module.__name__, module)
-    document, path = _load(
-        tmp_path,
-        """
-        name = "top"
-        credential_backend = "fake"
-
-        [profiles.a]
-        fake_url = "https://x.invalid/"
-        """,
-    )
-    config_file.validate_config(document, ConfigTestObject, path)
-
-
 def test_secret_reserved_keys_empty_when_machinery_removed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -112,34 +88,11 @@ def test_secret_reserved_keys_empty_when_machinery_removed(
         config_file.validate_config(document, ConfigTestObject, path)
 
 
-@requires_secret_storage
-@pytest.mark.parametrize(
-    "text",
-    [
-        'name = "top"\ntoken_secret_name = "kv-token"\n',
-        'name = "top"\n[profiles.a]\ntoken_secret_name = "kv-token"\n',
-    ],
-    ids=["top-level", "profile"],
-)
-def test_validate_accepts_secret_name_keys(tmp_path: Path, text: str) -> None:
-    """<secret>_secret_name is a legal reserved key while the machinery exists."""
-    document, path = _load(tmp_path, text)
-    config_file.validate_config(document, SecretTestObject, path)
-
-
 def test_validate_rejects_secret_name_key_for_non_secret_field(tmp_path: Path) -> None:
     """Only secret fields have storage names; 'name' is a plain option."""
     document, path = _load(tmp_path, 'name_secret_name = "x"\n')
     with pytest.raises(ConfigError, match="Unknown key 'name_secret_name'"):
         config_file.validate_config(document, ConfigTestObject, path)
-
-
-@requires_secret_storage
-@pytest.mark.parametrize("value", ['""', "3"], ids=["empty", "non-string"])
-def test_validate_rejects_bad_secret_name_value(tmp_path: Path, value: str) -> None:
-    document, path = _load(tmp_path, f"token_secret_name = {value}\n")
-    with pytest.raises(ConfigError, match="non-empty string"):
-        config_file.validate_config(document, SecretTestObject, path)
 
 
 def test_secret_name_keys_empty_when_machinery_removed(
