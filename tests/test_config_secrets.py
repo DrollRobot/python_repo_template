@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import sys
 import types
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,12 @@ import pytest
 
 from python_repo_template.config import file as config_file
 from python_repo_template.config import schema, secrets
-from python_repo_template.config.resolve import ERROR, inspect_settings, resolve_settings
+from python_repo_template.config.resolve import (
+    ERROR,
+    MISSING,
+    inspect_settings,
+    resolve_settings,
+)
 from python_repo_template.config.schema import APP_NAME, CLI_NAME, ENV_PREFIX, ConfigError
 from tests._config_test_object import (
     ConfigTestObject,
@@ -130,7 +136,7 @@ def test_get_secret_routes_to_selected_backend(monkeypatch: pytest.MonkeyPatch) 
 
     _install_fake_backend(monkeypatch, get=fake_get)
     config = {"credential_backend": "fake", "token_secret_name": "token", "extra": 1}
-    assert secrets.get_secret("token", "prof", config) == "value"
+    assert secrets.get_secret("token", "prof", config, default_name=None) == "value"
     assert calls == [("token", f"{APP_NAME}:prof", config)]
 
 
@@ -152,7 +158,7 @@ def test_backend_name_rejects_non_string() -> None:
 
 def test_get_secret_without_backend_skips_the_layer() -> None:
     """No credential_backend configured: nothing stored, nothing imported."""
-    assert secrets.get_secret("token", None, {}) is None
+    assert secrets.get_secret("token", None, {}, default_name=None) is None
 
 
 @pytest.mark.parametrize("operation", ["set", "delete"])
@@ -164,9 +170,9 @@ def test_writes_without_backend_fail_loudly(
 
     def write() -> None:
         if operation == "set":
-            secrets.set_secret("token", "s", None, {})
+            secrets.set_secret("token", "s", None, {}, default_name=None)
         else:
-            secrets.delete_secret("token", None, {})
+            secrets.delete_secret("token", None, {}, default_name=None)
 
     with pytest.raises(ConfigError) as excinfo:
         write()
@@ -178,7 +184,7 @@ def test_writes_without_backend_fail_loudly(
 
 def test_missing_backend_module_is_actionable() -> None:
     with pytest.raises(ConfigError, match=r"no such backend exists.*Available backends"):
-        secrets.get_secret("token", None, {"credential_backend": "nope"})
+        secrets.get_secret("token", None, {"credential_backend": "nope"}, default_name=None)
 
 
 def test_set_secret_routes_to_backend(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -190,10 +196,10 @@ def test_set_secret_routes_to_backend(monkeypatch: pytest.MonkeyPatch) -> None:
         delete=lambda key, service, config: stored.__delitem__(key),
     )
     config = {"credential_backend": "fake", "token_secret_name": "token"}
-    secrets.set_secret("token", "s", None, config)
-    assert secrets.get_secret("token", None, config) == "s"
-    secrets.delete_secret("token", None, config)
-    assert secrets.get_secret("token", None, config) is None
+    secrets.set_secret("token", "s", None, config, default_name=None)
+    assert secrets.get_secret("token", None, config, default_name=None) == "s"
+    secrets.delete_secret("token", None, config, default_name=None)
+    assert secrets.get_secret("token", None, config, default_name=None) is None
 
 
 def test_read_only_backend_rejects_writes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -204,29 +210,29 @@ def test_read_only_backend_rejects_writes(monkeypatch: pytest.MonkeyPatch) -> No
     )
     config = {"credential_backend": "fake"}
     with pytest.raises(ConfigError, match=r"read-only.*update it at the source"):
-        secrets.set_secret("token", "s", None, config)
+        secrets.set_secret("token", "s", None, config, default_name=None)
     with pytest.raises(ConfigError, match="read-only"):
-        secrets.delete_secret("token", None, config)
+        secrets.delete_secret("token", None, config, default_name=None)
 
 
 # --- storage names -------------------------------------------------------------------
 
 
-def test_storage_name_reads_config() -> None:
-    assert secrets.storage_name("token", {"token_secret_name": "kv-token"}) == "kv-token"
+def test_storage_name_from_config_beats_the_schema_default() -> None:
+    config = {"token_secret_name": "kv-token"}
+    assert secrets.storage_name("token", config, default_name="kv-default") == "kv-token"
 
 
-def test_storage_name_missing_is_actionable() -> None:
-    """No <field>_secret_name in config.toml: loud error, never a fallback."""
-    with pytest.raises(ConfigError, match="'token_secret_name' is not set"):
-        secrets.storage_name("token", {})
+def test_storage_name_falls_back_to_schema_default_then_field_name() -> None:
+    assert secrets.storage_name("token", {}, default_name="kv-default") == "kv-default"
+    assert secrets.storage_name("token", {}, default_name=None) == "token"
 
 
 def test_storage_name_rejects_bad_value() -> None:
     with pytest.raises(ConfigError, match="non-empty string"):
-        secrets.storage_name("token", {"token_secret_name": ""})
+        secrets.storage_name("token", {"token_secret_name": ""}, default_name=None)
     with pytest.raises(ConfigError, match="non-empty string"):
-        secrets.storage_name("token", {"token_secret_name": 3})
+        secrets.storage_name("token", {"token_secret_name": 3}, default_name=None)
 
 
 def test_secret_name_key_and_keys_and_help() -> None:
@@ -247,36 +253,37 @@ def test_dispatch_uses_storage_name_override(monkeypatch: pytest.MonkeyPatch) ->
         delete=lambda key, service, config: stored.__delitem__(key),
     )
     config = {"credential_backend": "fake", "token_secret_name": "kv-token"}
-    secrets.set_secret("token", "s", None, config)
+    secrets.set_secret("token", "s", None, config, default_name=None)
     assert stored == {"kv-token": "s"}
-    assert secrets.get_secret("token", None, config) == "s"
-    secrets.delete_secret("token", None, config)
+    assert secrets.get_secret("token", None, config, default_name=None) == "s"
+    secrets.delete_secret("token", None, config, default_name=None)
     assert stored == {}
 
 
-def test_dispatch_missing_storage_name_is_actionable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Backend configured but no storage name in config.toml: loud error."""
-    _install_fake_backend(monkeypatch, get=lambda key, service, config: "v")
-    with pytest.raises(ConfigError, match="'token_secret_name' is not set"):
-        secrets.get_secret("token", None, {"credential_backend": "fake"})
-
-
-def test_optional_secret_without_storage_name_is_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An optional secret with no storage name is None; the backend is never asked."""
-
-    def explode(key: str, service: str, config: dict[str, Any]) -> str:
-        raise AssertionError("the backend must not be asked for an unnamed optional secret")
-
-    _install_fake_backend(monkeypatch, get=explode)
+@pytest.mark.regression
+def test_dispatch_without_storage_name_uses_the_default_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No <field>_secret_name in config.toml: every operation uses the default name."""
+    stored: dict[str, str] = {}
+    _install_fake_backend(
+        monkeypatch,
+        get=lambda key, service, config: stored.get(key),
+        set=lambda key, value, service, config: stored.__setitem__(key, value),
+        delete=lambda key, service, config: stored.__delitem__(key),
+    )
     config = {"credential_backend": "fake"}
-    assert secrets.get_secret("extra", None, config, optional=True) is None
+    secrets.set_secret("token", "s", None, config, default_name="kv-default")
+    assert stored == {"kv-default": "s"}
+    assert secrets.get_secret("token", None, config, default_name="kv-default") == "s"
+    secrets.delete_secret("token", None, config, default_name="kv-default")
+    assert stored == {}
 
 
-def test_optional_secret_with_storage_name_reads_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = {"kv-extra": "s"}
-    _install_fake_backend(monkeypatch, get=lambda key, service, config: store.get(key))
-    config = {"credential_backend": "fake", "extra_secret_name": "kv-extra"}
-    assert secrets.get_secret("extra", None, config, optional=True) == "s"
+def test_get_secret_with_nothing_stored_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: None)
+    config = {"credential_backend": "fake"}
+    assert secrets.get_secret("extra", None, config, default_name=None) is None
 
 
 def test_reserved_config_passes_secret_name_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -315,7 +322,7 @@ def test_none_policy_disables_secret_storage(monkeypatch: pytest.MonkeyPatch) ->
     assert secrets.secret_name_keys(["token"]) == frozenset()
     assert secrets.reserved_config({"credential_backend": "fake"}, {}) == {}
     with pytest.raises(ConfigError, match="CREDENTIAL_BACKEND is 'none'"):
-        secrets.set_secret("token", "s", None, {})
+        secrets.set_secret("token", "s", None, {}, default_name=None)
 
 
 # --- read-only detection -------------------------------------------------------------
@@ -500,20 +507,44 @@ def test_optional_secret_missing_everywhere_is_none(
     assert report.sources["extra"] == "not set"
 
 
+@dataclass(frozen=True)
+class _NamedSecretObject:
+    """A required secret whose schema declares a default storage name."""
+
+    name: str = field(metadata={"help": "Required plain string"})
+    token: str = schema.secret(
+        help="Named secret",
+        default_secret_name="kv-token",  # noqa: S106  (a name, not a secret)
+    )
+
+
 @pytest.mark.regression
-def test_inspect_reports_missing_storage_name_and_resolves_the_rest(
+@pytest.mark.parametrize(
+    ("test_object", "stored_as"),
+    [(SecretTestObject, "token"), (_NamedSecretObject, "kv-token")],
+    ids=["field-name", "schema-default"],
+)
+def test_secret_without_storage_name_resolves_from_its_default_name(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path, test_object: type, stored_as: str
+) -> None:
+    store = {stored_as: "tok"}
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: store.get(key))
+    config_path.write_text('name = "n"\ncredential_backend = "fake"\n', encoding="utf-8")
+    settings = resolve_settings(test_object, config_path=config_path)
+    assert settings.token == "tok"  # noqa: S105
+
+
+def test_secret_with_nothing_stored_is_missing_and_names_set_secret(
     monkeypatch: pytest.MonkeyPatch, config_path: Path
 ) -> None:
-    """A secret with no storage name no longer hides every other setting."""
-    _install_fake_backend(monkeypatch, get=lambda key, service, config: "never-read")
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: None)
     config_path.write_text('name = "n"\ncredential_backend = "fake"\n', encoding="utf-8")
     report = inspect_settings(SecretTestObject, config_path=config_path)
     assert report.values["name"] == "n"
-    assert report.values["count"] == 3
-    assert "token" not in report.values
-    assert report.sources["token"] == ERROR
+    assert report.sources["token"] == MISSING
     assert len(report.problems) == 1
-    assert "'token_secret_name' is not set in config.toml" in report.problems[0]
+    assert f"'{CLI_NAME} set-secret token'" in report.problems[0]
+    assert f"{CLI_NAME} init" not in report.problems[0]
 
 
 def test_inspect_reports_an_unusable_backend_once(
@@ -619,18 +650,6 @@ def test_resolver_looks_up_secret_under_custom_name(
     )
     settings: SecretTestObject = resolve_settings(SecretTestObject, config_path=config_path)
     assert settings.token == "from-backend"  # noqa: S105
-
-
-@pytest.mark.integration
-def test_resolver_missing_secret_name_is_actionable(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Backend configured but no <field>_secret_name in config.toml: loud error."""
-    _install_fake_backend(monkeypatch, get=lambda key, service, config: "v")
-    config_path = tmp_path / "config.toml"
-    config_path.write_text('name = "n"\ncredential_backend = "fake"\n', encoding="utf-8")
-    with pytest.raises(ConfigError, match="'token_secret_name' is not set"):
-        resolve_settings(SecretTestObject, config_path=config_path)
 
 
 @pytest.mark.integration

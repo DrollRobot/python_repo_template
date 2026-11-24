@@ -9,9 +9,10 @@ Precedence, highest wins:
    selected: the profile's ``credential_backend`` key, else the schema's
    ``CREDENTIAL_BACKEND`` default (never under the ``"none"``/``"prompt"``
    policies). Secrets are looked up under the profile's
-   ``<field>_secret_name`` from config.toml, written by the config CLI; a
-   missing name fails loudly for a required secret, and leaves an optional
-   one unset.
+   ``<field>_secret_name`` from config.toml, written by the config CLI, else
+   the schema's ``default_secret_name``, else the field name. Nothing stored
+   there means the secret is missing: an error for a required secret, unset
+   for an optional one.
 4. config.toml: the selected profile table, then bare top-level keys.
 5. Schema field defaults - non-secret fields only. Secret values never
    live in source; a schema giving a secret field a default value is
@@ -350,7 +351,7 @@ def _resolve_field(
     if is_secret(f):
         secrets_module = layers.secrets_module
         secret = secrets_module.get_secret(
-            f.name, layers.profile_name, layers.backend_config, optional=is_optional_secret(f)
+            f.name, layers.profile_name, layers.backend_config, default_name=default_secret_name(f)
         )
         if secret is None:
             return None

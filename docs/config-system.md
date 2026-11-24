@@ -121,11 +121,19 @@ The two secret commands exist only when the schema has secret fields and its
 
 With `secret_storage` on, secret values live in a credential store, never in
 `config.toml` or on the command line, where shell history would keep them.
-The file holds only each secret's storage name (`<field>_secret_name`), which
-is not itself secret. `init` and `set-secret` ask for the name in plain view
-and for the value hidden. An optional secret with no storage name in the file
-is not set: declining it at `init` leaves the name out, and `set-secret`
-adds it later.
+Each secret is stored under a storage name, which is not itself secret:
+`<field>_secret_name` in the file when set, else the field's
+`default_secret_name` in the schema, else the field name. `init` and
+`set-secret` ask for the name in plain view and for the value hidden. A
+secret with nothing stored under its name is missing: an error if required,
+`None` if optional.
+
+```python
+api_key: str = secret(help="API key", default_secret_name="my-widget-api-key")
+```
+
+In a Key Vault shared with other apps, give each secret a distinctive
+`default_secret_name`, so the default can't match another app's secret.
 
 `CREDENTIAL_BACKEND` in `schema.py` sets the policy:
 

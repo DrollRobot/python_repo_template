@@ -23,9 +23,10 @@ Field conventions -- declare every field with :func:`option` or
   declared ``required=False``. An optional secret is annotated
   ``str | None`` and is ``None`` when no layer provides it, for example
   ``webhook_token: str | None = secret(help="...", required=False)``.
-  ``default_secret_name`` is the backend storage NAME the config CLI
-  offers at init and writes to config.toml as ``<field>_secret_name``;
-  runtime reads the name from config.toml only.
+  ``default_secret_name`` is the backend storage NAME used when
+  config.toml names none (``<field>_secret_name``), and the name the
+  config CLI offers at init; without it, the field name is the default.
+  In a Key Vault shared with other apps, pick a distinctive one.
 - Both take ``help``: the description used in prompts and comments.
 - All fields are keyword-only, so declaration order is free.
 - A schema with no secret fields never touches the secret machinery, which
@@ -129,9 +130,9 @@ def secret(
 
     Args:
         help: Description used in prompts and generated comments.
-        default_secret_name: Backend storage NAME (a name, not a value) the
-            config CLI offers at init and writes to config.toml as
-            ``<field>_secret_name``. Omit to offer the field name.
+        default_secret_name: Backend storage NAME (a name, not a value),
+            used when config.toml has no ``<field>_secret_name``, and
+            offered by the config CLI at init. Omit to use the field name.
         required: False declares an optional secret. Annotate the field
             ``str | None``. Its default, None, means "not set"; it is not a
             value in source.
@@ -239,8 +240,8 @@ def default_secret_name(f: Field[Any]) -> str | None:
         f: A dataclass field of the settings schema.
 
     Returns:
-        The ``default_secret_name`` metadata string, or None (the config
-        CLI then offers the field name).
+        The ``default_secret_name`` metadata string, or None (the field
+        name is then the default).
     """
     name = f.metadata.get("default_secret_name")
     return str(name) if name is not None else None

@@ -22,10 +22,11 @@ Whether a *default* backend exists is the schema author's choice, declared as
   available backends.
 
 Secrets are stored under a storage NAME: the profile's
-``<field>_secret_name`` key in config.toml, written by ``init`` and
-``set-secret``. A missing name is a config error, never a fallback; for an
-optional secret it means the secret is not set. Storage names are not
-secrets, so config.toml is a legal home for them.
+``<field>_secret_name`` key in config.toml when it has one (``init`` and
+``set-secret`` write it), else the schema's ``default_secret_name``, else
+the field name. A secret, optional or required, with nothing stored under
+its name is not set. Storage names are not secrets, so config.toml is a
+legal home for them.
 
 This module is itself optional. Nothing else in the config system imports it
 at module scope, so when the settings schema marks no field ``secret`` the
@@ -45,8 +46,8 @@ Backend module contract (structural, checked at call time):
 - Third-party imports must live inside the functions that use them, so the
   module itself always imports (backend discovery imports every backend).
 
-Where ``key`` is the *storage* name of the secret (the schema field name, or
-the profile's ``<field>_secret_name`` override), ``service`` is the
+Where ``key`` is the *storage* name of the secret (see
+:func:`storage_name`), ``service`` is the
 profile-scoped namespace (``python_repo_template:<profile>``), and ``config``
 is the merged reserved-key table for the active profile.
 """
@@ -178,25 +179,26 @@ def secret_name_help(secret_fields: Mapping[str, str | None]) -> dict[str, str]:
     }
 
 
-def storage_name(key: str, config: Mapping[str, Any]) -> str:
+def storage_name(key: str, config: Mapping[str, Any], *, default_name: str | None) -> str:
     """Return the backend storage name for secret field *key*.
 
     Args:
         key: Schema field name of the secret.
         config: Merged reserved-key table for the active profile.
+        default_name: The field's schema ``default_secret_name``, or None
+            when it declares none. Required, so every caller looks a secret
+            up under the same name it was stored under.
 
     Returns:
-        The profile's ``<key>_secret_name`` value from config.toml.
+        The profile's ``<key>_secret_name`` value from config.toml, else
+        *default_name*, else *key*.
 
     Raises:
-        ConfigError: If the name is missing or not a non-empty string.
+        ConfigError: If config.toml's name is not a non-empty string.
     """
     name = config.get(secret_name_key(key))
     if name is None:
-        raise ConfigError(
-            f"{secret_name_key(key)!r} is not set in config.toml. "
-            f"Run '{CLI_NAME} init', or '{CLI_NAME} set {secret_name_key(key)} <name>'."
-        )
+        return default_name or key
     if not isinstance(name, str) or not name:
         raise ConfigError(f"{secret_name_key(key)!r} must be a non-empty string, got {name!r}.")
     return name
@@ -400,7 +402,7 @@ def require_backend(config: Mapping[str, Any], action: str) -> tuple[str, Any]:
 
 
 def get_secret(
-    key: str, profile: str | None, config: Mapping[str, Any], *, optional: bool = False
+    key: str, profile: str | None, config: Mapping[str, Any], *, default_name: str | None
 ) -> str | None:
     """Read secret *key* from the profile's backend.
 
@@ -408,29 +410,34 @@ def get_secret(
         key: Schema field name of the secret.
         profile: Active profile name, or None.
         config: Merged reserved-key table for the active profile.
-        optional: The secret is optional (``secret(required=False)``): a
-            missing storage name means it is not set, not a config error.
+        default_name: The field's schema ``default_secret_name``, or None
+            (see :func:`storage_name`).
 
     Returns:
-        The secret value, or None when not stored -- including when no
-        backend is configured at all (the user may be supplying secrets via
-        environment variables instead), and, for an optional secret, when
-        config.toml gives it no storage name.
+        The secret value, or None when nothing is stored under its storage
+        name, or when no backend is configured at all (the user may be
+        supplying secrets via environment variables instead).
 
     Raises:
-        ConfigError: If a configured backend is missing or unusable, or a
-            required secret's storage name is not set in config.toml.
+        ConfigError: If a configured backend is missing or unusable, or
+            config.toml's storage name is malformed.
     """
     name = backend_name(config)
     if name is None:
         return None
-    if optional and secret_name_key(key) not in config:
-        return None
     backend = cast("_CredentialBackend", _load_backend(name))
-    return backend.get(storage_name(key, config), service_name(profile), config)
+    stored_as = storage_name(key, config, default_name=default_name)
+    return backend.get(stored_as, service_name(profile), config)
 
 
-def set_secret(key: str, value: str, profile: str | None, config: Mapping[str, Any]) -> None:
+def set_secret(
+    key: str,
+    value: str,
+    profile: str | None,
+    config: Mapping[str, Any],
+    *,
+    default_name: str | None,
+) -> None:
     """Store secret *key* in the profile's backend.
 
     Args:
@@ -438,35 +445,44 @@ def set_secret(key: str, value: str, profile: str | None, config: Mapping[str, A
         value: The secret value.
         profile: Active profile name, or None.
         config: Merged reserved-key table for the active profile.
+        default_name: The field's schema ``default_secret_name``, or None
+            (see :func:`storage_name`).
 
     Raises:
         ConfigError: If no backend is configured, the backend is missing,
-            unusable, or read-only, or the storage name is not set.
+            unusable, or read-only, or config.toml's storage name is
+            malformed.
     """
     name, backend = require_backend(config, f"store secret {key!r}")
     setter = getattr(backend, "set", None)
     if setter is None:
         raise ConfigError(_read_only_message(name, backend))
-    setter(storage_name(key, config), value, service_name(profile), config)
+    stored_as = storage_name(key, config, default_name=default_name)
+    setter(stored_as, value, service_name(profile), config)
 
 
-def delete_secret(key: str, profile: str | None, config: Mapping[str, Any]) -> None:
+def delete_secret(
+    key: str, profile: str | None, config: Mapping[str, Any], *, default_name: str | None
+) -> None:
     """Delete secret *key* from the profile's backend.
 
     Args:
         key: Schema field name of the secret.
         profile: Active profile name, or None.
         config: Merged reserved-key table for the active profile.
+        default_name: The field's schema ``default_secret_name``, or None
+            (see :func:`storage_name`).
 
     Raises:
         ConfigError: If no backend is configured, the backend is missing,
-            unusable, or read-only, or the storage name is not set.
+            unusable, or read-only, or config.toml's storage name is
+            malformed.
     """
     name, backend = require_backend(config, f"delete secret {key!r}")
     deleter = getattr(backend, "delete", None)
     if deleter is None:
         raise ConfigError(_read_only_message(name, backend))
-    deleter(storage_name(key, config), service_name(profile), config)
+    deleter(storage_name(key, config, default_name=default_name), service_name(profile), config)
 
 
 def is_read_only(config: Mapping[str, Any]) -> bool:

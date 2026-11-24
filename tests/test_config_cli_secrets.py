@@ -128,7 +128,7 @@ def test_init_writes_config_and_stores_secret(
     assert document["credential_backend"] == "fake"  # the user's choice is recorded
     assert "ratio" not in document  # empty input keeps the schema default
     assert "token" not in document  # secrets never reach the file
-    # The storage name is always written; runtime reads it from config.toml only.
+    # init always writes the storage name, pinning where the secret lives.
     assert document["token_secret_name"] == "token"  # noqa: S105  (a name, not a secret)
     assert fake_backend == {(APP_NAME, "token"): "tok"}
     assert "Stored token" in capsys.readouterr().out
@@ -295,7 +295,25 @@ def test_show_masks_secrets_and_reports_sources(
 @pytest.mark.regression
 @pytest.mark.integration
 @pytest.mark.usefixtures("secret_schema")
-def test_show_prints_settings_when_a_secret_name_is_missing(
+def test_show_without_secret_name_reads_the_default_name(
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (config_dir / "config.toml").write_text(
+        'name = "n"\ncredential_backend = "fake"\n', encoding="utf-8"
+    )
+    fake_backend[(APP_NAME, "token")] = "sekrit-value-xyz"
+    assert cli.main(["show"]) == 0
+    captured = capsys.readouterr()
+    assert "sekrit-value-xyz" not in captured.out
+    assert "= '********'  <- fake" in captured.out
+    assert captured.err == ""
+
+
+@pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
+def test_show_prints_settings_when_a_secret_is_missing(
     config_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (config_dir / "config.toml").write_text(
@@ -307,8 +325,8 @@ def test_show_prints_settings_when_a_secret_name_is_missing(
     assert next(line for line in lines if line.strip().startswith("name ")).endswith(
         "= 'n'  <- file:top-level"
     )
-    assert next(line for line in lines if line.strip().startswith("token ")).endswith("= <error>")
-    assert "'token_secret_name' is not set in config.toml" in captured.err
+    assert next(line for line in lines if line.strip().startswith("token ")).endswith("= <missing>")
+    assert "set-secret token" in captured.err
 
 
 # --- secrets -------------------------------------------------------------------------
@@ -395,12 +413,14 @@ def test_delete_secret_missing_fails_loudly(
 
 
 @pytest.mark.usefixtures("secret_schema")
-def test_delete_secret_without_storage_name_is_actionable(
-    config_dir: Path, capsys: pytest.CaptureFixture[str]
+def test_delete_secret_without_storage_name_uses_the_default_name(
+    config_dir: Path,
+    fake_backend: dict[tuple[str, str], str],
 ) -> None:
     (config_dir / "config.toml").write_text('credential_backend = "fake"\n', encoding="utf-8")
-    assert cli.main(["delete-secret", "token"]) == 1
-    assert "'token_secret_name' is not set" in capsys.readouterr().err
+    fake_backend[(APP_NAME, "token")] = "s3"
+    assert cli.main(["delete-secret", "token"]) == 0
+    assert fake_backend == {}
 
 
 @pytest.mark.integration
@@ -522,7 +542,7 @@ def test_set_secret_honors_schema_default_secret_name(
     feed_getpass(monkeypatch, ["s3"])
     assert cli.main(["set-secret", "token"]) == 0
     assert fake_backend == {(APP_NAME, "kv-token"): "s3"}
-    # The chosen name is persisted; runtime reads config.toml only.
+    # The chosen name is persisted.
     parsed = tomlkit.parse(config_text(config_dir))
     assert parsed["token_secret_name"] == "kv-token"  # noqa: S105  (a name, not a secret)
 

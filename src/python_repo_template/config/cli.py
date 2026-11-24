@@ -376,11 +376,11 @@ def _prompt_secret_names(table: Any, backend_config: dict[str, Any], secrets: An
     The name is not the secret, so it is echoed. Empty input keeps the
     offered default (an existing ``<field>_secret_name``, else the schema's
     ``default_secret_name``, else the field name). The result is always
-    written to *table*: runtime resolution reads names from config.toml
-    only, never from a fallback.
+    written to *table*, so the secret stays findable even if the schema's
+    default name changes later.
 
     Each optional secret is asked about first. Declining skips it entirely:
-    no storage name is written, so it resolves as not set.
+    nothing is written or stored, so it resolves as not set.
 
     Args:
         table: The mutable tomlkit table ``init`` is populating.
@@ -507,7 +507,13 @@ def _cmd_init(args: argparse.Namespace) -> int:
                     continue
                 value = getpass.getpass(f"{f.name} - secret VALUE (hidden, empty to skip): ")
                 if value:
-                    secrets.set_secret(f.name, value, args.profile, backend_config)
+                    secrets.set_secret(
+                        f.name,
+                        value,
+                        args.profile,
+                        backend_config,
+                        default_name=default_secret_name(f),
+                    )
                     print(
                         f"Stored {f.name} in the {secrets.backend_name(backend_config)!r} backend."
                     )
@@ -810,7 +816,9 @@ def _cmd_set_secret(args: argparse.Namespace) -> int:
     value = getpass.getpass(f"{args.key} - secret VALUE (hidden): ")
     if not value:
         raise ConfigError("Empty value; nothing stored.")
-    secrets.set_secret(args.key, value, profile, backend_config)
+    secrets.set_secret(
+        args.key, value, profile, backend_config, default_name=default_secret_name(f)
+    )
     service = secrets.service_name(profile)
     backend = secrets.backend_name(backend_config)
     print(f"Stored {args.key} in the {backend!r} backend (service {service!r}).")
@@ -836,7 +844,7 @@ def _cmd_delete_secret(args: argparse.Namespace) -> int:
     document = _load_document(paths.config_path())
     profile = _select_secret_profile(document, args.profile)
     backend_config = _backend_config(document, profile, secrets)
-    secrets.delete_secret(args.key, profile, backend_config)
+    secrets.delete_secret(args.key, profile, backend_config, default_name=default_secret_name(f))
     print(f"Deleted {args.key} from the {secrets.backend_name(backend_config)!r} backend.")
     return 0
 
