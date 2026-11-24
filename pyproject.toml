@@ -99,6 +99,9 @@ pythonpath = ["."]
 addopts = [
     "--cov=python_repo_template",
     "--cov=scripts",
+    # <template-only feature="container_job">
+    "--cov=container_deploy",
+    # </template-only>
     "--cov-report=term-missing",
     "--cov-fail-under=0", # FIXME set coverage goal
     "--strict-markers",
@@ -145,9 +148,15 @@ files = [
     "src",
     "tests",
     "scripts",
+    # <template-only feature="container_job">
+    "container_deploy",
+    # </template-only>
 ]
 mypy_path = [
     "scripts",
+    # <template-only feature="container_job">
+    "container_deploy",
+    # </template-only>
 ]
 
 # AGENTS: ONLY ADD OVERRIDES IF, AFTER RESEARCHING, THERE IS NO TYPE STUB AVAILABLE.
@@ -159,6 +168,9 @@ mypy_path = [
 paths = [
     "src",
     "scripts",
+    # <template-only feature="container_job">
+    "container_deploy",
+    # </template-only>
 ]
 min_confidence = 60
 ignore_names = [

@@ -1,4 +1,4 @@
-"""Tests for scripts/container_job.py.
+"""Tests for container_deploy/container_job.py.
 
 Azure is faked at the HTTP layer (:class:`FakeAzure`): PUTs store resources, GETs
 read them back, so a test can apply a plan and then plan again against the result.
@@ -20,11 +20,11 @@ from typing import Any
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "container_deploy"))
 
 import container_job
 
-EXAMPLE = Path(__file__).resolve().parent.parent / "scripts" / "container_job.example.toml"
+EXAMPLE = Path(container_job.__file__).resolve().parent / "container_job.example.toml"
 
 JOBS = "Microsoft.App/jobs"
 RULES = "Microsoft.Insights/scheduledQueryRules"
@@ -443,6 +443,99 @@ def test_load_config_refuses_secrets_without_a_key_vault(tmp_path: Path) -> None
         container_job.ConfigError, match=r"\[identity 1\] lists secrets, but the file has no"
     ):
         container_job.load_config(path)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("present", [0, 1], ids=["committed", "local"])
+def test_find_config_takes_the_file_that_exists(tmp_path: Path, present: int) -> None:
+    candidates = (tmp_path / "committed.toml", tmp_path / "local.toml")
+    candidates[present].write_text("", encoding="utf-8")
+
+    assert container_job.find_config(candidates) == candidates[present]
+
+
+@pytest.mark.unit
+def test_find_config_takes_the_first_and_warns_about_the_other(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    candidates = (tmp_path / "committed.toml", tmp_path / "local.toml")
+    for path in candidates:
+        path.write_text("", encoding="utf-8")
+
+    assert container_job.find_config(candidates) == candidates[0]
+    assert f"Ignoring {candidates[1]}" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+def test_find_config_names_every_place_it_looked(tmp_path: Path) -> None:
+    candidates = (tmp_path / "committed.toml", tmp_path / "local.toml")
+    (tmp_path / "local.toml").mkdir()  # a folder by the name is not a config file
+
+    with pytest.raises(container_job.ConfigError) as caught:
+        container_job.find_config(candidates)
+
+    assert str(candidates[0]) in str(caught.value)
+    assert str(candidates[1]) in str(caught.value)
+
+
+class _SignInReached(Exception):
+    """Raised by the stand-in for azure_token: main read the config and moved on."""
+
+
+def _stop_at_sign_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    def sign_in(subscription: str) -> tuple[str, str]:
+        raise _SignInReached(subscription)
+
+    monkeypatch.setattr(container_job, "azure_token", sign_in)
+
+
+@pytest.mark.integration
+def test_main_reads_the_default_config_when_none_is_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    local = tmp_path / "local.toml"
+    local.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(container_job, "DEFAULT_CONFIGS", (tmp_path / "committed.toml", local))
+    _stop_at_sign_in(monkeypatch)
+
+    with pytest.raises(_SignInReached):
+        container_job.main(["--dry-run"])
+
+    assert str(local) in capsys.readouterr().out
+
+
+@pytest.mark.integration
+def test_main_reads_a_given_config_over_the_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    default, given = tmp_path / "default.toml", tmp_path / "given.toml"
+    for path in (default, given):
+        path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(container_job, "DEFAULT_CONFIGS", (default,))
+    _stop_at_sign_in(monkeypatch)
+
+    with pytest.raises(_SignInReached):
+        container_job.main([str(given), "--dry-run"])
+
+    out = capsys.readouterr().out
+    assert str(given) in out
+    assert str(default) not in out
+
+
+@pytest.mark.integration
+def test_main_stops_when_no_config_is_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    candidates = (tmp_path / "committed.toml", tmp_path / "local.toml")
+    monkeypatch.setattr(container_job, "DEFAULT_CONFIGS", candidates)
+
+    with pytest.raises(SystemExit) as exited:
+        container_job.main(["--dry-run"])
+
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert str(candidates[0]) in err
+    assert str(candidates[1]) in err
 
 
 # region plans

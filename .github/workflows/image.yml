@@ -134,14 +134,14 @@ jobs:
       - name: Point the jobs at the new image
         if: env.PUBLISH == 'true'
         env:
-          # Every job's name, space-separated; scripts/container_job.py sets it.
+          # Every job's name, space-separated; container_deploy/container_job.py sets it.
           JOBS: ${{ vars.CONTAINER_APP_JOBS }}
           RESOURCE_GROUP: ${{ vars.CONTAINER_APP_RESOURCE_GROUP }}
           # registry/name@sha256:hash
           PUSHED_IMAGE: ${{ steps.push.outputs.image }}
         run: |
           if [ -z "$JOBS" ]; then
-            echo "::error::The CONTAINER_APP_JOBS repo variable is empty. Run scripts/container_job.py to set it."
+            echo "::error::The CONTAINER_APP_JOBS repo variable is empty. Run container_deploy/container_job.py to set it."
             exit 1
           fi
           az extension add --name containerapp --upgrade --only-show-errors

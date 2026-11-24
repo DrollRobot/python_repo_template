@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `container_job`: a repo can run several jobs. They share the repo's one
   image and differ in schedule, arguments and identity. A job added later
   starts on the image the others already run.
-- `container_job`: `scripts/container_job.py` removes a job, alert rule or
+- `container_job`: `container_deploy/container_job.py` removes a job, alert rule or
   identity that its config file no longer lists. It tags each one it manages
   with the repo's name (`container-job-repository`), removes only resources
   with this repo's tag, and stops when a name in the file belongs to another
@@ -31,7 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Breaking:** the config file of `scripts/container_job.py` has a new
+- **Breaking:** `container_job`: the setup script and its example config moved
+  from `scripts/` to `container_deploy/`, where the repo commits its own config,
+  `container_job.toml`. With no path given, the script reads that file, or else
+  `.local/container_deploy/container_job.toml`, kept out of git.
+- **Breaking:** the config file of `container_deploy/container_job.py` has a new
   layout. Jobs are `[[job]]` tables and the identities they run as are
   `[[identity]]` tables, each listing the Key Vault secrets it may read. The
   CI identity moves from `[job].ci_identity` to `[ci].identity`, the secrets
@@ -39,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[alert].rule` to each job's `alert_rule`.
 - **Breaking:** the image workflow reads the repo variable
   `CONTAINER_APP_JOBS`, every job's name, in place of `CONTAINER_APP_JOB`.
-  `scripts/container_job.py` sets it.
+  `container_deploy/container_job.py` sets it.
 - CI installs the newest uv that meets `required-version` in `pyproject.toml`,
   in place of a pinned 0.13.x.
 - `tests/test_unwanted_strings.py` scans only the files git would commit.
@@ -58,8 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** `container_job`: a repo's registry roles reach its own image
   alone, so one repo's CI can't replace the image another repo's jobs run.
-  `scripts/container_job.py` grants the jobs' identities `Container Registry
-  Repository Reader` and the CI identity `Container Registry Repository
+  `container_deploy/container_job.py` grants the jobs' identities `Container
+  Registry Repository Reader` and the CI identity `Container Registry Repository
   Writer`, each limited to the image named after the GitHub repo, in place of
   `AcrPull` and `AcrPush` on the whole registry, and removes those. This needs
   the registry's role assignment mode to be "RBAC Registry + ABAC Repository

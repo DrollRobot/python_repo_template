@@ -9,6 +9,7 @@
 .local
 .claude
 .vscode
+container_deploy
 .mypy_cache
 .pytest_cache
 .ruff_cache

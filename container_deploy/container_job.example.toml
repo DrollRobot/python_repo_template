@@ -1,11 +1,12 @@
-# scripts/container_job.example.toml
+# container_deploy/container_job.example.toml
 #
-# Example config for scripts/container_job.py. Copy it somewhere outside the
-# repo's tracked files (it holds your environment's names), fill in every
-# value, and run:
+# Example config for container_deploy/container_job.py. Copy it to
+# container_deploy/container_job.toml and commit it with the repo, or, to keep
+# your environment's names out of git, to .local/container_deploy/container_job.toml.
+# Fill in every value, and run:
 #
-#   uv run scripts/container_job.py path/to/your.toml --dry-run
-#   uv run scripts/container_job.py path/to/your.toml
+#   uv run container_deploy/container_job.py --dry-run
+#   uv run container_deploy/container_job.py
 #
 # Every run compares this file with Azure and GitHub and changes what differs,
 # so to add or drop a job, or change a schedule, arguments or the alert email

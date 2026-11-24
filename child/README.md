@@ -79,15 +79,15 @@ To run unattended, the package must:
   open a browser;
 - import every module from `python-repo-template --help`, the image's smoke test.
 
-The jobs and everything they need are described by a config file kept outside
-the repository's tracked files (start from `scripts/container_job.example.toml`).
-To create the jobs, to add or drop one, or to change a schedule, arguments or
-the alert email later, edit that file and run, with an account that can grant
-roles:
+The jobs and everything they need are described by
+`container_deploy/container_job.toml` (start from
+`container_deploy/container_job.example.toml`). To create the jobs, to add or
+drop one, or to change a schedule, arguments or the alert email later, edit
+that file and run, with an account that can grant roles:
 
 ```bash
-uv run scripts/container_job.py path/to/your.toml --dry-run
-uv run scripts/container_job.py path/to/your.toml
+uv run container_deploy/container_job.py --dry-run
+uv run container_deploy/container_job.py
 ```
 <!-- </template-only> -->
 

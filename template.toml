@@ -217,8 +217,8 @@ description = "scheduled Azure Container Apps job: image, image workflow, setup 
 default = false
 managed = [
   ".dockerignore",
-  "scripts/container_job.py",
-  "scripts/container_job.example.toml",
+  "container_deploy/container_job.py",
+  "container_deploy/container_job.example.toml",
   "tests/test_container_job.py",
 ]
 merge = [

@@ -44,9 +44,14 @@ It signs in through the Azure CLI (``az login``) and the GitHub CLI (``gh auth
 login``). Granting roles needs Owner or User Access Administrator rights. See
 ``container_job.example.toml`` for every setting.
 
+With no config path given, it reads ``container_job.toml`` from this script's folder,
+``container_deploy/``, where the repo commits it. When that file is absent, it reads
+``.local/container_deploy/container_job.toml``, kept out of git.
+
 Usage:
-    uv run scripts/container_job.py path/to/container_job.toml
-    uv run scripts/container_job.py path/to/container_job.toml --dry-run
+    uv run container_deploy/container_job.py --dry-run
+    uv run container_deploy/container_job.py
+    uv run container_deploy/container_job.py path/to/other.toml
 """
 
 from __future__ import annotations
@@ -66,12 +71,21 @@ import urllib.parse
 import urllib.request
 import uuid
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, NoReturn
 
 ARM = "https://management.azure.com"
+
+# Where the config is read from when no path is given, first match wins: next to this
+# script (committed with the repo), then the repo's .local folder (kept out of git).
+_HERE = Path(__file__).resolve().parent
+CONFIG_NAME = "container_job.toml"
+DEFAULT_CONFIGS = (
+    _HERE / CONFIG_NAME,
+    _HERE.parent / ".local" / "container_deploy" / CONFIG_NAME,
+)
 
 # ARM API versions, one per resource type this script touches.
 API_PROVIDERS = "2021-04-01"
@@ -581,6 +595,27 @@ def _check_references(
             f"[ci].identity {ci_identity} is also a job's identity; the image workflow needs "
             "an identity of its own."
         )
+
+
+def find_config(candidates: Sequence[Path]) -> Path:
+    """Return the first of *candidates* that is a file, warning about any others found.
+
+    Args:
+        candidates: Config paths, in the order they are tried.
+
+    Returns:
+        The first path that is a file.
+
+    Raises:
+        ConfigError: If none of them is a file.
+    """
+    found = [path for path in candidates if path.is_file()]
+    if not found:
+        tried = " or ".join(str(path) for path in candidates)
+        raise ConfigError(f"No config file at {tried}.")
+    for ignored in found[1:]:
+        warn(f"Ignoring {ignored}: {found[0]} comes first.")
+    return found[0]
 
 
 def load_config(path: Path) -> Config:
@@ -2202,7 +2237,15 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("config", type=Path, help="The TOML config file for the repo's jobs.")
+    parser.add_argument(
+        "config",
+        type=Path,
+        nargs="?",
+        help=(
+            "The TOML config file for the repo's jobs. Default: container_job.toml in this "
+            "script's folder, else .local/container_deploy/container_job.toml."
+        ),
+    )
     parser.add_argument(
         "--dry-run", action="store_true", help="List the differences without changing anything."
     )
@@ -2212,10 +2255,11 @@ def main(argv: list[str] | None = None) -> None:
 
     section("Container Apps jobs")
     try:
-        config = load_config(args.config)
+        path = args.config or find_config(DEFAULT_CONFIGS)
+        config = load_config(path)
     except ConfigError as exc:
         die(str(exc))
-    info("Config", str(args.config))
+    info("Config", str(path))
     info("Repository", config.repository)
     info("Jobs", ", ".join(job.name for job in config.jobs))
 

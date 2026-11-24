@@ -3,7 +3,8 @@
 With the `container_job` feature on, a project can run its package as one or
 more scheduled Azure Container Apps jobs. The feature ships the image build
 (`Dockerfile`), its workflow (`.github/workflows/image.yml`), and
-`scripts/container_job.py`, which creates the jobs and everything they need.
+`container_deploy/container_job.py`, which creates the jobs and everything they
+need.
 
 A repo builds one image. Every job runs that image, with its own schedule,
 arguments and identity, so a repo with several jobs gives its console script a
@@ -29,12 +30,19 @@ In a container, nobody answers prompts. Check that the package:
 
 ## 2. Create the jobs
 
-Copy `scripts/container_job.example.toml` somewhere outside the repo's tracked
-files, fill it in, and run the setup with an account that can grant roles:
+Copy `container_deploy/container_job.example.toml` to
+`container_deploy/container_job.toml`, fill it in, and commit it: the file is
+the whole description of the repo's jobs, so it belongs with the code. It holds
+your environment's names (subscription, vault, secret names, alert email), so
+to keep them out of git, copy it to `.local/container_deploy/container_job.toml`
+instead. The script reads the committed file when there is one, and the
+`.local` one otherwise.
+
+Run the setup with an account that can grant roles:
 
 ```bash
-uv run scripts/container_job.py path/to/your.toml --dry-run
-uv run scripts/container_job.py path/to/your.toml
+uv run container_deploy/container_job.py --dry-run
+uv run container_deploy/container_job.py
 ```
 
 The file has one `[[job]]` table per job and one `[[identity]]` table per
