@@ -98,6 +98,27 @@ def test_missing_required_is_actionable(config_path: Path) -> None:
     assert str(config_path) in message
 
 
+@pytest.mark.parametrize(
+    ("text", "kwargs", "command"),
+    [
+        ("count = 7\n", {}, f"'{CLI_NAME} set name <value>'"),
+        ("[profiles.a]\n", {"profile": "a"}, f"'{CLI_NAME} set name <value> --profile a'"),
+    ],
+    ids=["top-level", "profile"],
+)
+def test_missing_with_a_config_file_names_set_not_init(
+    config_path: Path, text: str, kwargs: dict[str, Any], command: str
+) -> None:
+    """init refuses an existing config, so the error names the command that works."""
+    _write(config_path, text)
+    with pytest.raises(ConfigError) as excinfo:
+        _resolve(config_path, **kwargs)
+    message = str(excinfo.value)
+    assert command in message
+    assert ENV_PREFIX + "NAME" in message
+    assert f"{CLI_NAME} init" not in message
+
+
 # --- schema validation ---------------------------------------------------------------
 
 

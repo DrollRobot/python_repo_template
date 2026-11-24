@@ -473,6 +473,21 @@ def test_missing_secret_under_none_policy_points_at_env(
     assert "set-secret" not in message
 
 
+def test_missing_secret_under_none_policy_with_a_file_points_at_env(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    """With a file but no command to run, the error names only the env var."""
+    monkeypatch.setattr("python_repo_template.config.schema.CREDENTIAL_BACKEND", "none")
+    config_path.write_text('name = "n"\n', encoding="utf-8")
+    with pytest.raises(ConfigError) as excinfo:
+        _resolve_secret(config_path)
+    message = str(excinfo.value)
+    assert message.endswith("Set the environment variable(s) above.")
+    assert ENV_PREFIX + "TOKEN" in message
+    assert "set-secret" not in message
+    assert f"{CLI_NAME} init" not in message
+
+
 def test_optional_secret_missing_everywhere_is_none(
     monkeypatch: pytest.MonkeyPatch, config_path: Path
 ) -> None:

@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on every run.
 - `config_system`: `show` prints every setting even when some are missing or
   invalid, then lists the problems.
+- `config_system`: with a config file present, a missing-value error names
+  the `set` or `set-secret` command to run, not `init`.
 
 ### Security
 

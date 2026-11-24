@@ -282,8 +282,15 @@ def _resolve(
         if profile_name is None and config.get("profiles"):
             message = _no_profile_message(path, sorted(config["profiles"]))
         else:
+            missing_plain = [name for name in missing if name not in secret_names]
             message = _missing_message(
-                missing, missing_secrets, document is not None, path, profile_name, backend_hint
+                missing,
+                missing_plain,
+                missing_secrets,
+                document is not None,
+                path,
+                profile_name,
+                backend_hint,
             )
         if problems is None:
             raise ConfigError(message)
@@ -602,6 +609,7 @@ def _no_profile_message(path: Path, profile_names: list[str]) -> str:
 
 def _missing_message(
     missing: list[str],
+    missing_plain: list[str],
     missing_secrets: list[str],
     file_exists: bool,
     path: Path,
@@ -610,9 +618,15 @@ def _missing_message(
 ) -> str:
     """Build the actionable error message for missing required values.
 
+    With no config file, it points at ``init``. With one, ``init`` would
+    refuse to run, so it names the ``set`` and ``set-secret`` commands that
+    fill each missing value instead.
+
     Args:
         missing: Field names that no layer provided.
-        missing_secrets: The subset of *missing* that are secret fields.
+        missing_plain: The subset of *missing* that are not secret fields.
+        missing_secrets: The subset of *missing* that are secret fields the
+            config CLI can store (empty under the ``"none"`` policy).
         file_exists: Whether the config file was found at all.
         path: Config file path.
         profile_name: The active profile, or None for bare top-level mode.
@@ -631,13 +645,24 @@ def _missing_message(
     message = (
         f"Missing required configuration value(s): {', '.join(missing)}. "
         f"Searched overrides, environment ({env_vars}), credential backend (secret fields), "
-        f"and {source}. "
-        f"Run '{CLI_NAME} init' to create the config interactively, or set the "
-        "environment variable(s) above."
+        f"and {source}."
     )
     if backend_hint:
         message += f" {backend_hint}"
-    if missing_secrets:
-        stores = " ".join(f"'{CLI_NAME} set-secret {name}'" for name in missing_secrets)
-        message += f" Store missing secret(s) with: {stores}."
+    if not file_exists:
+        message += (
+            f" Run '{CLI_NAME} init' to create the config interactively, or set the "
+            "environment variable(s) above."
+        )
+        if missing_secrets:
+            stores = " ".join(f"'{CLI_NAME} set-secret {name}'" for name in missing_secrets)
+            message += f" Store missing secret(s) with: {stores}."
+        return message
+    flag = f" --profile {profile_name}" if profile_name else ""
+    commands = [f"'{CLI_NAME} set {name} <value>{flag}'" for name in missing_plain]
+    commands += [f"'{CLI_NAME} set-secret {name}{flag}'" for name in missing_secrets]
+    if commands:
+        message += f" Run: {', '.join(commands)}. Or set the environment variable(s) above."
+    else:
+        message += " Set the environment variable(s) above."
     return message
