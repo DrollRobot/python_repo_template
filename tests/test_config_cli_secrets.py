@@ -292,6 +292,25 @@ def test_show_masks_secrets_and_reports_sources(
     assert "<- default" in out
 
 
+@pytest.mark.regression
+@pytest.mark.integration
+@pytest.mark.usefixtures("secret_schema")
+def test_show_prints_settings_when_a_secret_name_is_missing(
+    config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text(
+        'name = "n"\ncredential_backend = "fake"\n', encoding="utf-8"
+    )
+    assert cli.main(["show"]) == 1
+    captured = capsys.readouterr()
+    lines = captured.out.splitlines()
+    assert next(line for line in lines if line.strip().startswith("name ")).endswith(
+        "= 'n'  <- file:top-level"
+    )
+    assert next(line for line in lines if line.strip().startswith("token ")).endswith("= <error>")
+    assert "'token_secret_name' is not set in config.toml" in captured.err
+
+
 # --- secrets -------------------------------------------------------------------------
 
 

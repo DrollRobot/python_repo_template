@@ -32,6 +32,8 @@ and ``paths.CONFIG_DIR_ENV``.
 
 Missing required values raise ``ConfigError`` with an actionable message; the
 resolver never auto-creates config and never silently defaults.
+:func:`inspect_settings` is the one exception to raising: it reports every
+problem alongside the values that did resolve, for the config CLI's ``show``.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ import os
 import types
 import typing
 from collections.abc import Iterable, Mapping
-from dataclasses import fields
+from dataclasses import Field, dataclass, fields
 from pathlib import Path
 from typing import Any, cast, get_args, get_origin, get_type_hints
 
@@ -53,6 +55,7 @@ from python_repo_template.config.schema import (
     ConfigError,
     Settings,
     default_secret_name,
+    field_default,
     is_optional_secret,
     is_required,
     is_secret,
@@ -60,6 +63,38 @@ from python_repo_template.config.schema import (
 
 # Environment variable selecting the active profile.
 PROFILE_ENV = ENV_PREFIX + "PROFILE"
+
+# Provenance labels for fields that did not resolve (see SettingsReport).
+MISSING = "missing"
+ERROR = "error"
+
+
+@dataclass(frozen=True)
+class SettingsReport:
+    """What resolution found, including what it could not resolve.
+
+    Returned by :func:`inspect_settings`, which never raises for a missing
+    or invalid value, so a partial config can still be shown in full.
+
+    Attributes:
+        values: Field name to resolved value, for every field that resolved,
+            defaults and an unset optional secret's None included. A field
+            that did not resolve is absent.
+        sources: Field name to provenance label, for every field:
+            ``override``, ``env:<VAR>``, the backend name,
+            ``file:profiles.<name>``, ``file:top-level``, ``default``,
+            ``not set`` (an optional secret no layer provides), or, for a
+            field absent from *values*, :data:`MISSING` (a required value no
+            layer provides) or :data:`ERROR` (its value failed a check).
+        profile_name: The active profile, or None for bare top-level mode.
+        problems: Every problem found, in order, each naming its fix. Empty
+            when :func:`load_settings` would succeed.
+    """
+
+    values: dict[str, Any]
+    sources: dict[str, str]
+    profile_name: str | None
+    problems: list[str]
 
 
 def load_settings(
@@ -118,21 +153,23 @@ def resolve_settings(
         ConfigError: When a required value is missing from every layer, the
             config file is malformed, or a value has the wrong type.
     """
-    instance, _, _ = _resolve(schema, profile, overrides, config_path)
-    return instance
+    values, _, _ = _resolve(schema, profile, overrides, config_path, None)
+    return schema(**values)
 
 
-def resolve_with_sources(
+def inspect_settings(
     schema: type[Any],
     *,
     profile: str | None = None,
     overrides: Mapping[str, object] | None = None,
     config_path: Path | None = None,
-) -> tuple[Any, dict[str, str], str | None]:
-    """Resolve *schema* and report where each value came from.
+) -> SettingsReport:
+    """Resolve *schema* as far as possible and report every problem found.
 
-    Used by the config CLI's ``show`` command so "which tenant am I about to
-    hit, and why" is answerable in one step.
+    Used by the config CLI's ``show`` command, so the user sees the whole
+    config, and where each value came from, even when some values are
+    missing or invalid. Each problem is reported with the message
+    :func:`resolve_settings` would raise for it.
 
     Args:
         schema: Frozen dataclass defining the options.
@@ -141,16 +178,18 @@ def resolve_with_sources(
         config_path: Config file location; defaults to the standard path.
 
     Returns:
-        ``(instance, sources, profile_name)`` where ``sources`` maps each
-        field name to a provenance label (``override``, ``env:<VAR>``, the
-        backend name, ``file:profiles.<name>``, ``file:top-level``,
-        ``default``, or ``not set`` for an optional secret no layer
-        provides) and ``profile_name`` is the active profile, if any.
+        The report: resolved values, every field's provenance, the active
+        profile, and the problems.
 
     Raises:
-        ConfigError: As for :func:`resolve_settings`.
+        ConfigError: Only when there is nothing to resolve against: the
+            schema itself is invalid, the file is not valid TOML, its
+            ``default_profile`` or ``profiles`` is malformed, or the selected
+            profile does not exist.
     """
-    return _resolve(schema, profile, overrides, config_path)
+    problems: list[str] = []
+    values, sources, profile_name = _resolve(schema, profile, overrides, config_path, problems)
+    return SettingsReport(values, sources, profile_name, problems)
 
 
 def _resolve(
@@ -158,22 +197,30 @@ def _resolve(
     profile: str | None,
     overrides: Mapping[str, object] | None,
     config_path: Path | None,
-) -> tuple[Any, dict[str, str], str | None]:
-    """Shared resolution engine returning the instance, sources, and profile.
+    problems: list[str] | None,
+) -> tuple[dict[str, Any], dict[str, str], str | None]:
+    """Shared resolution engine returning the values, sources, and profile.
 
     Args:
         schema: Frozen dataclass defining the options.
         profile: Explicit profile name, or None to auto-select.
         overrides: Highest-precedence values keyed by field name.
         config_path: Config file location, or None for the standard path.
+        problems: None to raise at the first problem, as loading does. A list
+            to append each problem's message to instead and keep going, as
+            :func:`inspect_settings` does; a field with a problem is then
+            left out of the values.
 
     Returns:
-        ``(instance, sources, profile_name)`` as documented on
-        :func:`resolve_with_sources`.
+        ``(values, sources, profile_name)``, as the matching
+        :class:`SettingsReport` attributes. With *problems* None, *values*
+        holds every field, ready to build *schema*.
 
     Raises:
-        ConfigError: When a required value is missing from every layer, the
-            config file is malformed, or a value has the wrong type.
+        ConfigError: With *problems* None, when a required value is missing
+            from every layer, the config file is malformed, or a value has
+            the wrong type. Otherwise only as :func:`inspect_settings`
+            documents.
     """
     _validate_schema_secrets(schema)
     path = config_path if config_path is not None else paths.config_path()
@@ -181,7 +228,7 @@ def _resolve(
 
     document = config_file.read_config(path)
     config = document if document is not None else {}
-    config_file.validate_config(config, schema, path)
+    config_file.validate_config(config, schema, path, problems)
 
     profile_name = select_profile_name(profile, config, path)
     profile_values = config_file.profile_table(config, profile_name, path)
@@ -192,49 +239,31 @@ def _resolve(
     backend_config: dict[str, Any] = (
         secrets_module.reserved_config(config, profile_values) if secrets_module else {}
     )
+    layers = _Layers(path, config, profile_name, profile_values, secrets_module, backend_config)
     values: dict[str, Any] = {}
     sources: dict[str, str] = {}
     missing: list[str] = []
     for f in fields(schema):
-        optional_secret = is_optional_secret(f)
         # An optional secret is annotated 'str | None' (checked above): any
         # value a layer provides is a str, and None only means "not set".
-        tp = str if optional_secret else hints[f.name]
-        if f.name in overrides:
-            values[f.name] = _check_type(f.name, overrides[f.name], tp, "overrides")
-            sources[f.name] = "override"
+        tp = str if is_optional_secret(f) else hints[f.name]
+        try:
+            found = _resolve_field(f, tp, overrides, layers)
+        except ConfigError as exc:
+            if problems is None:
+                raise
+            if str(exc) not in problems:  # e.g. one unusable backend, many secrets
+                problems.append(str(exc))
+            sources[f.name] = ERROR
             continue
-        env_name = ENV_PREFIX + f.name.upper()
-        env_raw = os.environ.get(env_name)
-        if env_raw is not None:
-            values[f.name] = coerce_string(env_name, env_raw, tp)
-            sources[f.name] = f"env:{env_name}"
-            continue
-        if is_secret(f):
-            secret = secrets_module.get_secret(
-                f.name, profile_name, backend_config, optional=optional_secret
-            )
-            if secret is not None:
-                values[f.name] = secret
-                sources[f.name] = secrets_module.backend_name(backend_config)
-                continue
-        else:
-            if f.name in profile_values:
-                where = f"profile 'profiles.{profile_name}' in {path}"
-                values[f.name] = _check_type(f.name, profile_values[f.name], tp, where)
-                sources[f.name] = f"file:profiles.{profile_name}"
-                continue
-            if f.name in config:
-                where = f"the top level of {path}"
-                values[f.name] = _check_type(f.name, config[f.name], tp, where)
-                sources[f.name] = "file:top-level"
-                continue
-        if is_required(f):
+        if found is not None:
+            values[f.name], sources[f.name] = found
+        elif is_required(f):
             missing.append(f.name)
-        elif optional_secret:
-            sources[f.name] = "not set"
+            sources[f.name] = MISSING
         else:
-            sources[f.name] = "default"
+            values[f.name] = field_default(f)
+            sources[f.name] = "not set" if is_optional_secret(f) else "default"
 
     if missing:
         missing_secrets = [name for name in missing if name in secret_names]
@@ -251,13 +280,82 @@ def _resolve(
                 f"'{CLI_NAME} set credential_backend <name>' (available: {available})."
             )
         if profile_name is None and config.get("profiles"):
-            raise ConfigError(_no_profile_message(path, sorted(config["profiles"])))
-        raise ConfigError(
-            _missing_message(
+            message = _no_profile_message(path, sorted(config["profiles"]))
+        else:
+            message = _missing_message(
                 missing, missing_secrets, document is not None, path, profile_name, backend_hint
             )
+        if problems is None:
+            raise ConfigError(message)
+        problems.append(message)
+    return values, sources, profile_name
+
+
+@dataclass(frozen=True)
+class _Layers:
+    """The per-run inputs every field is resolved against.
+
+    Attributes:
+        path: Config file path, for error messages.
+        config: Parsed config document (empty when there is no file).
+        profile_name: The active profile, or None for bare top-level mode.
+        profile_values: The active profile's table (empty for None).
+        secrets_module: The secret machinery, or None when the schema has
+            no secret fields.
+        backend_config: Merged reserved-key table for the active profile.
+    """
+
+    path: Path
+    config: dict[str, Any]
+    profile_name: str | None
+    profile_values: dict[str, Any]
+    secrets_module: Any
+    backend_config: dict[str, Any]
+
+
+def _resolve_field(
+    f: Field[Any], tp: Any, overrides: Mapping[str, object], layers: _Layers
+) -> tuple[Any, str] | None:
+    """Return field *f*'s value and provenance from the first layer that has it.
+
+    Covers the overrides, environment, credential backend, and file layers;
+    the caller applies the default layer.
+
+    Args:
+        f: The schema field.
+        tp: The type its value must have.
+        overrides: Highest-precedence values keyed by field name.
+        layers: The run's config file, profile, and backend inputs.
+
+    Returns:
+        ``(value, source)``, or None when no layer provides the field.
+
+    Raises:
+        ConfigError: When a layer's value has the wrong type, or the
+            credential backend fails or is misconfigured.
+    """
+    if f.name in overrides:
+        return _check_type(f.name, overrides[f.name], tp, "overrides"), "override"
+    env_name = ENV_PREFIX + f.name.upper()
+    env_raw = os.environ.get(env_name)
+    if env_raw is not None:
+        return coerce_string(env_name, env_raw, tp), f"env:{env_name}"
+    if is_secret(f):
+        secrets_module = layers.secrets_module
+        secret = secrets_module.get_secret(
+            f.name, layers.profile_name, layers.backend_config, optional=is_optional_secret(f)
         )
-    return schema(**values), sources, profile_name
+        if secret is None:
+            return None
+        return secret, secrets_module.backend_name(layers.backend_config)
+    if f.name in layers.profile_values:
+        where = f"profile 'profiles.{layers.profile_name}' in {layers.path}"
+        value = _check_type(f.name, layers.profile_values[f.name], tp, where)
+        return value, f"file:profiles.{layers.profile_name}"
+    if f.name in layers.config:
+        where = f"the top level of {layers.path}"
+        return _check_type(f.name, layers.config[f.name], tp, where), "file:top-level"
+    return None
 
 
 def _validate_schema_secrets(schema: type[Any]) -> None:

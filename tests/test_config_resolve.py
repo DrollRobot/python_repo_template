@@ -398,6 +398,67 @@ def test_secret_in_file_is_rejected(config_path: Path) -> None:
         _resolve_secret(config_path)
 
 
+# --- inspect_settings ----------------------------------------------------------------
+
+
+def test_inspect_reports_missing_value_and_resolves_the_rest(config_path: Path) -> None:
+    _write(config_path, "count = 7\n")
+    report = resolve.inspect_settings(ConfigTestObject, config_path=config_path)
+    assert report.values == {"count": 7, "ratio": 0.5, "flag": False, "tags": []}
+    assert report.sources["name"] == resolve.MISSING
+    assert report.sources["count"] == "file:top-level"
+    assert report.sources["ratio"] == "default"
+    assert len(report.problems) == 1
+    assert "Missing required configuration value(s): name" in report.problems[0]
+
+
+def test_inspect_reports_every_problem_in_order(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    _write(config_path, 'name = "n"\ncount = "seven"\nnmae = "typo"\n')
+    monkeypatch.setenv(ENV_PREFIX + "FLAG", "maybe")
+    report = resolve.inspect_settings(ConfigTestObject, config_path=config_path)
+    assert report.values == {"name": "n", "ratio": 0.5, "tags": []}
+    assert report.sources["count"] == resolve.ERROR
+    assert report.sources["flag"] == resolve.ERROR
+    assert len(report.problems) == 3
+    assert "Unknown key 'nmae'" in report.problems[0]
+    assert "'count'" in report.problems[1]
+    assert f"{ENV_PREFIX}FLAG must be 'true' or 'false'" in report.problems[2]
+
+
+def test_inspect_of_valid_config_matches_load(config_path: Path) -> None:
+    _write(config_path, 'name = "n"\ncount = 7\n')
+    report = resolve.inspect_settings(ConfigTestObject, config_path=config_path)
+    assert report.problems == []
+    assert ConfigTestObject(**report.values) == _resolve(config_path)
+
+
+@pytest.mark.parametrize(
+    ("text", "kwargs", "match"),
+    [
+        ("name = ", {}, "Malformed TOML"),
+        ('profiles = "oops"\n', {}, r"'profiles'.*must be a table"),
+        ("[profiles.a]\n", {"profile": "b"}, "Profile 'b' not found"),
+    ],
+    ids=["malformed-toml", "malformed-profiles", "unknown-profile"],
+)
+def test_inspect_raises_when_nothing_can_resolve(
+    config_path: Path, text: str, kwargs: dict[str, Any], match: str
+) -> None:
+    _write(config_path, text)
+    with pytest.raises(ConfigError, match=match):
+        resolve.inspect_settings(ConfigTestObject, config_path=config_path, **kwargs)
+
+
+def test_load_still_raises_at_first_problem(config_path: Path) -> None:
+    """Loading stays strict: the first problem raises, with its own message."""
+    _write(config_path, 'name = "n"\ncount = "seven"\nnmae = "typo"\n')
+    with pytest.raises(ConfigError, match="Unknown key 'nmae'") as excinfo:
+        _resolve(config_path)
+    assert "'count'" not in str(excinfo.value)
+
+
 # --- public entry point --------------------------------------------------------------
 
 

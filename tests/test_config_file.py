@@ -132,6 +132,22 @@ def test_validate_rejects_secret_values_in_file(tmp_path: Path, text: str) -> No
         config_file.validate_config(document, SecretTestObject, path)
 
 
+def test_validate_collects_every_key_problem(tmp_path: Path) -> None:
+    document, path = _load(tmp_path, 'nmae = "typo"\ntoken = "leaked"\n[profiles.a]\ncuont = 1\n')
+    problems: list[str] = []
+    config_file.validate_config(document, SecretTestObject, path, problems)
+    assert len(problems) == 3
+    assert "Unknown key 'nmae' in the top level" in problems[0]
+    assert "Secrets must never be stored" in problems[1]
+    assert "Unknown key 'cuont' in profile 'profiles.a'" in problems[2]
+
+
+def test_validate_collecting_still_raises_on_malformed_profiles(tmp_path: Path) -> None:
+    document, path = _load(tmp_path, 'profiles = "oops"\n')
+    with pytest.raises(ConfigError, match=r"'profiles'.*must be a table"):
+        config_file.validate_config(document, ConfigTestObject, path, [])
+
+
 def test_validate_rejects_non_string_default_profile(tmp_path: Path) -> None:
     document, path = _load(tmp_path, "default_profile = 3\n")
     with pytest.raises(ConfigError, match=r"'default_profile'.*must be a string"):

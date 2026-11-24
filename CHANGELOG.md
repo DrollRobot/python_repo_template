@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   They often hold secrets.
 - Projects without `secret_storage` no longer carry its tests, which skipped
   on every run.
+- `config_system`: `show` prints every setting even when some are missing or
+  invalid, then lists the problems.
 
 ### Security
 

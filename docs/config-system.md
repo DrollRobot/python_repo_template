@@ -106,7 +106,7 @@ file, so it never needs editing by hand. It keeps the comments in the file.
 | `init` | Interactive first-time setup: prompts for each setting from the schema, and asks whether to set up each optional secret. `--force` starts the file over. |
 | `path` | Print the file's location. |
 | `open` | Open the file in the program the OS associates with it. |
-| `show` | The effective settings, with secrets masked and where each value came from. An unset optional secret shows as `None`. |
+| `show` | The effective settings, with secrets masked and where each value came from. An unset optional secret shows as `None`. A missing or invalid setting shows as `<missing>` or `<error>`, and the problems are listed after the settings. |
 | `set KEY VALUE` | Write a plain setting. |
 | `unset KEY` | Remove a setting, so its default applies again. |
 | `list-profiles` | List the profiles, marking the default. |

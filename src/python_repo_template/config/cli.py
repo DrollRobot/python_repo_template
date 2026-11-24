@@ -25,7 +25,9 @@ Command              Behavior
                      with the file type.
 ``show``             Effective config after full resolution, secrets masked
                      (an unset optional secret shows as None), with each
-                     value's provenance.
+                     value's provenance. Shows every setting even when
+                     some are missing or invalid, then lists the problems
+                     and exits 1.
 ``set KEY VALUE``    Write a non-secret to config.toml (comment-preserving).
                      Also accepts the reserved backend keys
                      (``credential_backend`` and whatever each backend
@@ -72,7 +74,7 @@ from python_repo_template.config import paths
 from python_repo_template.config import schema as schema_module
 from python_repo_template.config.resolve import (
     coerce_string,
-    resolve_with_sources,
+    inspect_settings,
     select_profile_name,
 )
 from python_repo_template.config.schema import (
@@ -573,25 +575,35 @@ def _cmd_open(args: argparse.Namespace) -> int:
 def _cmd_show(args: argparse.Namespace) -> int:
     """Print the effective configuration with provenance, secrets masked.
 
-    An optional secret that no layer provides prints as None: there is no
-    value to mask.
+    Every setting is printed, even when others are missing or invalid: a
+    setting that did not resolve prints as ``<missing>`` or ``<error>``, and
+    the problems follow on stderr, each naming its fix. An optional secret
+    that no layer provides prints as None: there is no value to mask.
 
     Args:
         args: Parsed CLI arguments (``profile``).
 
     Returns:
-        Process exit code.
+        Process exit code: 0 when the settings would load, 1 when a problem
+        was found.
     """
-    settings, sources, profile_name = resolve_with_sources(Settings, profile=args.profile)
+    report = inspect_settings(Settings, profile=args.profile)
     print(f"config file: {paths.config_path()}")
-    print(f"profile:     {profile_name or 'none (top-level keys)'}")
+    print(f"profile:     {report.profile_name or 'none (top-level keys)'}")
     width = max(len(f.name) for f in fields(Settings))
     for f in fields(Settings):
-        value = getattr(settings, f.name)
+        source = report.sources[f.name]
+        if f.name not in report.values:
+            print(f"  {f.name:<{width}} = <{source}>")
+            continue
+        value = report.values[f.name]
         if is_secret(f) and value is not None:
             value = _SECRET_MASK
-        print(f"  {f.name:<{width}} = {value!r}  <- {sources[f.name]}")
-    return 0
+        print(f"  {f.name:<{width}} = {value!r}  <- {source}")
+    sys.stdout.flush()  # the settings first, even when stdout is piped and buffered
+    for problem in report.problems:
+        print(f"ERROR: {problem}", file=sys.stderr)
+    return 1 if report.problems else 0
 
 
 def _reserved_value(key: str, value: str) -> str:

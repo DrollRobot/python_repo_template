@@ -293,6 +293,48 @@ def test_show_missing_required_is_actionable(capsys: pytest.CaptureFixture[str])
     assert "Missing required configuration value(s)" in capsys.readouterr().err
 
 
+def _show_line(out: str, name: str) -> str:
+    """Return the line of ``show`` output for setting *name*."""
+    return next(line for line in out.splitlines() if line.strip().startswith(f"{name} "))
+
+
+@pytest.mark.regression
+def test_show_prints_every_setting_when_one_is_missing(
+    config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text("count = 7\n", encoding="utf-8")
+    assert cli.main(["show"]) == 1
+    captured = capsys.readouterr()
+    assert _show_line(captured.out, "name").endswith("= <missing>")
+    assert _show_line(captured.out, "count").endswith("= 7  <- file:top-level")
+    assert _show_line(captured.out, "ratio").endswith("= 0.5  <- default")
+    assert "ERROR: Missing required configuration value(s): name" in captured.err
+
+
+def test_show_marks_invalid_values_and_lists_every_problem(
+    config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text(
+        'name = "n"\ncount = "seven"\nnmae = "typo"\n', encoding="utf-8"
+    )
+    assert cli.main(["show"]) == 1
+    captured = capsys.readouterr()
+    assert _show_line(captured.out, "name").endswith("= 'n'  <- file:top-level")
+    assert _show_line(captured.out, "count").endswith("= <error>")
+    errors = captured.err.splitlines()
+    assert len(errors) == 2
+    assert "Unknown key 'nmae'" in errors[0]
+    assert "'count'" in errors[1]
+
+
+def test_show_complete_config_exits_zero_with_no_errors(
+    config_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (config_dir / "config.toml").write_text('name = "n"\n', encoding="utf-8")
+    assert cli.main(["show"]) == 0
+    assert capsys.readouterr().err == ""
+
+
 # --- secrets -------------------------------------------------------------------------
 
 

@@ -108,7 +108,12 @@ def read_config(path: Path) -> dict[str, Any] | None:
         raise ConfigError(f"Malformed TOML in {path}: {exc}") from exc
 
 
-def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> None:
+def validate_config(
+    config: dict[str, Any],
+    schema: type[Any],
+    path: Path,
+    problems: list[str] | None = None,
+) -> None:
     """Validate the parsed config *document* against the settings *schema*.
 
     Checks performed:
@@ -127,6 +132,11 @@ def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> No
         config: Parsed TOML document.
         schema: Settings dataclass whose fields define the known options.
         path: File path, used in error messages only.
+        problems: None to raise on the first violation. A list to append
+            each key problem (unknown key, secret value, bad storage name)
+            to instead, so the config CLI's ``show`` can report them all. A
+            malformed ``default_profile`` or ``profiles`` still raises: the
+            file then has no shape to resolve against.
 
     Raises:
         ConfigError: On the first violation found, naming the offending key.
@@ -137,20 +147,25 @@ def validate_config(config: dict[str, Any], schema: type[Any], path: Path) -> No
     name_keys = secret_name_keys(secret_names)
     reserved_profile_keys = secret_reserved_keys() | name_keys
 
+    def report(message: str) -> None:
+        if problems is None:
+            raise ConfigError(message)
+        problems.append(message)
+
     def check_keys(table: dict[str, Any], allowed: frozenset[str], where: str) -> None:
         for key in table:
             if key in secret_names:
-                raise ConfigError(
+                report(
                     f"Secret value {key!r} found in {where} of {path}. Secrets must never be "
                     "stored in config.toml; store them with the config CLI's set-secret command."
                 )
-            if key not in plain_names and key not in allowed:
+            elif key not in plain_names and key not in allowed:
                 valid = ", ".join(sorted(plain_names | allowed))
-                raise ConfigError(f"Unknown key {key!r} in {where} of {path}. Valid keys: {valid}.")
-            if key in name_keys:
+                report(f"Unknown key {key!r} in {where} of {path}. Valid keys: {valid}.")
+            elif key in name_keys:
                 value = table[key]
                 if not isinstance(value, str) or not value:
-                    raise ConfigError(
+                    report(
                         f"{key!r} in {where} of {path} must be a non-empty string "
                         f"(a backend storage name), got {value!r}."
                     )

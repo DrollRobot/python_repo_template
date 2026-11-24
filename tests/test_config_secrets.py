@@ -27,7 +27,7 @@ import pytest
 
 from python_repo_template.config import file as config_file
 from python_repo_template.config import schema, secrets
-from python_repo_template.config.resolve import resolve_settings, resolve_with_sources
+from python_repo_template.config.resolve import ERROR, inspect_settings, resolve_settings
 from python_repo_template.config.schema import APP_NAME, CLI_NAME, ENV_PREFIX, ConfigError
 from tests._config_test_object import (
     ConfigTestObject,
@@ -479,9 +479,43 @@ def test_optional_secret_missing_everywhere_is_none(
     """An optional secret no layer provides is None, with no error."""
     monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
     monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
-    settings, sources, _ = resolve_with_sources(OptionalSecretTestObject, config_path=config_path)
-    assert settings.extra is None
-    assert sources["extra"] == "not set"
+    report = inspect_settings(OptionalSecretTestObject, config_path=config_path)
+    assert report.problems == []
+    assert report.values["extra"] is None
+    assert report.sources["extra"] == "not set"
+
+
+@pytest.mark.regression
+def test_inspect_reports_missing_storage_name_and_resolves_the_rest(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    """A secret with no storage name no longer hides every other setting."""
+    _install_fake_backend(monkeypatch, get=lambda key, service, config: "never-read")
+    config_path.write_text('name = "n"\ncredential_backend = "fake"\n', encoding="utf-8")
+    report = inspect_settings(SecretTestObject, config_path=config_path)
+    assert report.values["name"] == "n"
+    assert report.values["count"] == 3
+    assert "token" not in report.values
+    assert report.sources["token"] == ERROR
+    assert len(report.problems) == 1
+    assert "'token_secret_name' is not set in config.toml" in report.problems[0]
+
+
+def test_inspect_reports_an_unusable_backend_once(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    def broken(key: str, service: str, config: Any) -> str:
+        raise ConfigError("No usable keyring.")
+
+    _install_fake_backend(monkeypatch, get=broken)
+    config_path.write_text(
+        'name = "n"\ncredential_backend = "fake"\n'
+        'token_secret_name = "t"\nextra_secret_name = "e"\n',
+        encoding="utf-8",
+    )
+    report = inspect_settings(OptionalSecretTestObject, config_path=config_path)
+    assert report.sources["token"] == report.sources["extra"] == ERROR
+    assert report.problems == ["No usable keyring."]
 
 
 def test_optional_secret_resolves_from_env(
@@ -490,9 +524,9 @@ def test_optional_secret_resolves_from_env(
     monkeypatch.setenv(ENV_PREFIX + "NAME", "n")
     monkeypatch.setenv(ENV_PREFIX + "TOKEN", "tok")
     monkeypatch.setenv(ENV_PREFIX + "EXTRA", "from-env")
-    settings, sources, _ = resolve_with_sources(OptionalSecretTestObject, config_path=config_path)
-    assert settings.extra == "from-env"
-    assert sources["extra"] == f"env:{ENV_PREFIX}EXTRA"
+    report = inspect_settings(OptionalSecretTestObject, config_path=config_path)
+    assert report.values["extra"] == "from-env"
+    assert report.sources["extra"] == f"env:{ENV_PREFIX}EXTRA"
 
 
 def test_optional_secret_override_is_type_checked_as_str(
