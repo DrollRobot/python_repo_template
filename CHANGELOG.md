@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `config_system`: with a config file present, a missing-value error names
   the `set` or `set-secret` command to run, not `init`.
 - On Windows, `new` and `update` write `.template.toml` with LF line endings.
+- The live test of `scripts/wait_for_ci.py` passes on a commit with no
+  workflow runs.
 
 ### Security
 

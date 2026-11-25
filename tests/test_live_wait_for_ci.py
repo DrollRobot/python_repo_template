@@ -2,8 +2,9 @@
 
 Run with:  uv run pytest -m live tests/test_live_wait_for_ci.py -s --no-cov
 
-The commit checked is the upstream branch's, which GitHub has. Whether its jobs passed is not
-the script's business, so either verdict passes; what must hold is that a verdict comes back.
+The commit checked is the upstream branch's, which GitHub has. Whether its jobs passed, or any
+ran (none do for a commit pushed before the workflows existed), is not the script's business,
+so any verdict passes; what must hold is that a verdict comes back.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import pytest
 pytestmark = [pytest.mark.live, pytest.mark.e2e, pytest.mark.slow]
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
+VERDICTS = ("RESULT: PASSED", "RESULT: FAILED", "RESULT: NO RUNS")
 
 
 @pytest.fixture
@@ -66,8 +68,8 @@ def test_through_gh_a_verdict_comes_back(
     out, err = capsys.readouterr()
     print(err + out)
     assert "through gh, checking every 10 s" in err
-    assert code in (ci.EXIT_PASSED, ci.EXIT_FAILED), out
-    assert out.strip().splitlines()[-1].startswith(("RESULT: PASSED", "RESULT: FAILED"))
+    assert code in (ci.EXIT_PASSED, ci.EXIT_FAILED, ci.EXIT_NO_RUNS), out
+    assert out.strip().splitlines()[-1].startswith(VERDICTS)
 
 
 def test_signed_out_reads_a_public_repository_and_refuses_a_private_one(
@@ -89,5 +91,6 @@ def test_signed_out_reads_a_public_repository_and_refuses_a_private_one(
         assert code == ci.EXIT_ERROR
         assert "is private or does not exist" in out
     else:
-        assert code in (ci.EXIT_PASSED, ci.EXIT_FAILED), out
+        assert code in (ci.EXIT_PASSED, ci.EXIT_FAILED, ci.EXIT_NO_RUNS), out
+        assert out.strip().splitlines()[-1].startswith(VERDICTS)
         assert "through the GitHub API (signed out), checking every 60 s" in err
