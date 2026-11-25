@@ -1257,6 +1257,17 @@ def test_update_records_new_feature(synced: Fixture) -> None:
 
 
 @pytest.mark.integration
+def test_child_config_is_written_with_lf(synced: Fixture) -> None:
+    # Children commit LF (.gitattributes). Only a Windows run can catch a CRLF write.
+    fx = synced
+    assert b"\r" not in (fx.child / ".template.toml").read_bytes()
+    fx.add_lint_feature()  # update records the new feature, then bumps the pin
+    code, _out, err = fx.update()
+    assert code == 0, err
+    assert b"\r" not in (fx.child / ".template.toml").read_bytes()
+
+
+@pytest.mark.integration
 def test_update_asks_about_new_feature(synced: Fixture, monkeypatch: pytest.MonkeyPatch) -> None:
     fx = synced
     fx.add_lint_feature()

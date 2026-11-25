@@ -1388,7 +1388,7 @@ def bump_pin(path: Path, commit: str) -> None:
     )
     if n != 1:
         raise ConfigError(f"{path}: could not find the `commit = ...` line to update")
-    path.write_text(new, "utf-8")
+    path.write_text(new, "utf-8", newline="\n")
 
 
 def with_feature_choices(text: str, features: dict[str, Feature], choices: dict[str, bool]) -> str:
@@ -1464,7 +1464,7 @@ def record_new_features(manifest: Manifest, cfg: ChildConfig, *, yes: bool) -> C
         raise ConfigError(
             f"{path}: could not add to [features]; add these by hand, then rerun: {summary}"
         )
-    path.write_text(text, "utf-8")
+    path.write_text(text, "utf-8", newline="\n")
     print(f"recorded in {cfg.config}: {summary}")
     return load_child_config(cfg.root, manifest)
 
@@ -2530,6 +2530,7 @@ def cmd_new(args: argparse.Namespace, root: Path) -> int:
             features={n: n in enabled for n in manifest.features},
         ),
         "utf-8",
+        newline="\n",
     )
     git(target, "add", "-A")
 
