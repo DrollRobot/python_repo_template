@@ -26,11 +26,13 @@ line holding only the tag in the file's comment syntax (`# <template-only>` ...
 
 ## Linking to a project's repo
 
-A project's repository name may be spelled unlike its package. Write a link
-to the project's repo as `DrollRobot/python_repo_template`, or
+A project's repository may be owned by an organization rather than its GitHub
+user, and its name may be spelled unlike its package. Write a link to the
+project's repo as `DrollRobot/python_repo_template`, or
 `DrollRobot.github.io/python_repo_template` for its docs site, and `cd` into a
-clone as `cd python_repo_template`: these take the repository name. Anywhere
-else, `python_repo_template` is the package name.
+clone as `cd python_repo_template`: these take the repository's owner and
+name. Anywhere else, `DrollRobot` is the project's GitHub user and
+`python_repo_template` is the package name.
 
 ## Moving to a new Python release
 

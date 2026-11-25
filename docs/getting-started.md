@@ -28,6 +28,9 @@ project's files use:
 - your GitHub user (no default).
 - the GitHub repository's name, for links (default: the name of the
   repository the directory was cloned from, else the directory's name).
+- the GitHub repository's owner, for links: a user or organization (default:
+  the owner of the repository the directory was cloned from, else your GitHub
+  user).
 - the Python version.
 - whatever the chosen license names: the copyright holder and year, and for
   the proprietary license, also the company.

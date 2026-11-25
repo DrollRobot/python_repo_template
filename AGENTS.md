@@ -44,9 +44,11 @@ from it and keeps them in sync, as `template.toml` directs.
   every occurrence is replaced by the project's own value. Do not write them
   in shipped prose outside a template-only block unless the project's value
   belongs there.
-- Links to a project's repo take its repo name, which may differ from its
-  package name: write `DrollRobot/python_repo_template`,
+- Links to a project's repo take its repo owner and name, which may differ
+  from its GitHub user and package name: write
+  `DrollRobot/python_repo_template`,
   `DrollRobot.github.io/python_repo_template` or `cd python_repo_template`.
+  A bare `DrollRobot` is the project's GitHub user, never the repo owner.
 - Run `uv run scripts/template_sync.py validate` after changing
   `template.toml` or any marker. The `template-validate` pre-commit hook runs
   it too.

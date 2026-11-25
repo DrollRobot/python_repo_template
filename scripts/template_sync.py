@@ -111,6 +111,8 @@ _HEX_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _FORMAT_REF_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 # The last path segment of a git remote URL, less any .git: the repository's name.
 _REPO_NAME_RE = re.compile(r"([^/:]+?)(?:\.git)?/*$")
+# The path segment before the repository's name: the account that owns it.
+_REPO_OWNER_RE = re.compile(r"([^/:]+)/[^/:]+?(?:\.git)?/*$")
 # Leftover conflict markers from an earlier update. Only the labelled forms:
 # a bare "=======" is a legitimate setext heading in Markdown.
 _CONFLICT_RE = re.compile(rb"^(?:<{7}|>{7}) ", re.MULTILINE)
@@ -258,16 +260,32 @@ def origin_url(root: Path) -> str:
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
+def target_origin_url(target: Path) -> str:
+    """Return the ``origin`` URL of the repository whose root is ``target``, or ``""``.
+
+    Only a repository whose root is ``target`` counts, never one it sits inside.
+    """
+    return origin_url(target) if (target / ".git").is_dir() else ""
+
+
 def repo_name(target: Path) -> str:
     """Return the name of the repository ``target`` was cloned from, else ``target``'s name.
 
-    Only a repository whose root is ``target`` counts, never one it sits inside.
     Cloning names the folder after the repository, so the fallback is usually
     right too.
     """
-    url = origin_url(target) if (target / ".git").is_dir() else ""
-    match = _REPO_NAME_RE.search(url)
+    match = _REPO_NAME_RE.search(target_origin_url(target))
     return match.group(1) if match else target.name
+
+
+def repo_owner(target: Path) -> str:
+    """Return the account that owns the repository ``target`` was cloned from, or ``""``.
+
+    The owner is the URL's path segment before the repository's name: ``jane``
+    in ``https://github.com/jane/widget.git`` or ``git@github.com:jane/widget.git``.
+    """
+    match = _REPO_OWNER_RE.search(target_origin_url(target))
+    return match.group(1) if match else ""
 
 
 def gitlink_sha(root: Path, treeish: str, path: str) -> str | None:
@@ -2278,7 +2296,9 @@ def resolve_values(
 
     The default for ``project`` is the target directory's name; for ``repo``,
     the name of the repository the target was cloned from, else the target
-    directory's name (:func:`repo_name`); for any other key it is the
+    directory's name (:func:`repo_name`); for ``repo_owner``, the account that
+    owns that repository (:func:`repo_owner`), else the ``github_user`` value,
+    so it is settled after ``github_user``; for any other key it is the
     template's own literal, so an unset placeholder stays a visible
     placeholder rather than being guessed. Only the keys in ``ask``
     are prompted for; the rest take their defaults. A ``required`` key has no
@@ -2304,10 +2324,13 @@ def resolve_values(
         defaults["project"] = target.name
     if "repo" in defaults:
         defaults["repo"] = repo_name(target)
+    owner = repo_owner(target) if "repo_owner" in defaults else ""
     required = manifest.required_keys
     interactive = not yes and sys.stdin.isatty()
-    values = {}
-    for key in manifest.value_keys:
+    values: dict[str, str] = {}
+    for key in sorted(manifest.value_keys, key=lambda k: k == "repo_owner"):
+        if key == "repo_owner":
+            defaults[key] = owner or values.get("github_user") or defaults[key]
         if key in given:
             values[key] = given[key]
         elif key in required and interactive:

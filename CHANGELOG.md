@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** a project's links use its GitHub repository's name, which
   `new` asks for. Before its next `update`, an existing project needs
   `repo = "<repository name>"` under `[values]` in `.template.toml`.
+- **Breaking:** a project's links use its GitHub repository's owner, which
+  `new` asks for, so a repo owned by an organization links correctly. Before
+  its next `update`, an existing project needs `repo_owner = "<owner>"` under
+  `[values]` in `.template.toml`.
 
 ### Fixed
 

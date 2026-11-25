@@ -1905,6 +1905,112 @@ def test_update_names_a_value_the_project_lacks(fx3: Fixture) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Repo owner: links name the account that owns the repo, which may be an
+# organization; a bare handle stays the github_user
+# ---------------------------------------------------------------------------
+
+# The format-3 template plus a repo owner and name, which links use.
+MANIFEST_OWNER = MANIFEST_V3.replace("manifest_format = 3", "manifest_format = 4").replace(
+    '"<HOLDER>" = "holder"\n',
+    '"<HOLDER>" = "holder"\n'
+    '"Octocat/demo_template" = { key = "repo_owner", format = "{}/{repo}" }\n'
+    '"cd demo_template" = { key = "repo", format = "cd {}" }\n',
+)
+FILES_OWNER = {
+    **FILES_V3,
+    "README.md": "# demo-template\n\nby Octocat\n"
+    "git clone https://github.com/Octocat/demo_template\ncd demo_template\n",
+}
+
+
+@pytest.fixture
+def fxw(tmp_path: Path) -> Fixture:
+    return Fixture(tmp_path, MANIFEST_OWNER, FILES_OWNER)
+
+
+@pytest.mark.unit
+def test_repo_owner_tokens_replace_whole_links() -> None:
+    manifest = ts.parse_manifest(MANIFEST_OWNER, Path("."), where="t")
+    assert manifest.placeholder_values()["repo_owner"] == "Octocat"
+    values = {
+        "project": "My Widget", "github_user": "jane", "holder": "J",
+        "repo": "Widget", "repo_owner": "acme",
+    }  # fmt: skip
+    replacements = manifest.replacements(values)
+    text = "by Octocat\ngithub.com/Octocat/demo_template\ncd demo_template\n"
+    assert ts.substitute(text, replacements) == "by jane\ngithub.com/acme/Widget\ncd Widget\n"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("origin", "owner"),
+    [
+        ("https://github.com/acme/Widget.Repo.git", "acme"),
+        ("git@github.com:acme/widget-repo.git", "acme"),
+        ("https://github.com/acme/widget_repo/", "acme"),
+        ("git@example.com:widget.git", ""),
+        (None, ""),
+    ],
+)
+def test_repo_owner_reads_the_origin_remote(tmp_path: Path, origin: str | None, owner: str) -> None:
+    target = tmp_path / "widget"
+    assert ts.repo_owner(target) == ""  # not created yet
+    target.mkdir()
+    sh(target, "init", "-q")
+    if origin:
+        sh(target, "remote", "add", "origin", origin)
+    assert ts.repo_owner(target) == owner
+
+
+@pytest.mark.integration
+def test_repo_owner_ignores_a_repository_the_target_sits_in(tmp_path: Path) -> None:
+    sh(tmp_path, "init", "-q")
+    sh(tmp_path, "remote", "add", "origin", "https://github.com/acme/outer.git")
+    (tmp_path / "widget").mkdir()
+    assert ts.repo_owner(tmp_path / "widget") == ""
+
+
+@pytest.mark.unit
+def test_resolve_values_offers_the_github_user_as_the_repo_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No remote: the owner prompt offers the github_user typed before it.
+    manifest = ts.parse_manifest(MANIFEST_OWNER, Path("."), where="t")
+    ask = tty(monkeypatch, ["jane", "", "", "", ""])
+    values = ts.resolve_values(manifest, {}, tmp_path / "widget", yes=False)
+    assert [c.args[0] for c in ask.call_args_list] == [
+        "github_user (required): ",
+        "holder [<HOLDER>]: ",
+        "project [widget]: ",
+        "repo [widget]: ",
+        "repo_owner [jane]: ",
+    ]
+    assert values["repo_owner"] == "jane"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("origin", "owner"), [(None, "jane"), ("https://github.com/acme/widget.git", "acme")]
+)
+def test_new_repo_owner_defaults_to_the_cloned_repositorys_owner(
+    fxw: Fixture, origin: str | None, owner: str
+) -> None:
+    if origin:
+        # An empty clone of a new GitHub repository.
+        fxw.child.mkdir()
+        sh(fxw.child, "init", "-q")
+        sh(fxw.child, "remote", "add", "origin", origin)
+    code, _out, err = run(
+        "--template", fxw.template, "new", fxw.child, "-y", "--set", "github_user=jane"
+    )
+    assert code == 0, err
+    assert tomllib.loads(fxw.read(".template.toml"))["values"]["repo_owner"] == owner
+    readme = fxw.read("README.md")
+    assert "by jane\n" in readme
+    assert f"git clone https://github.com/{owner}/widget\n" in readme
+
+
+# ---------------------------------------------------------------------------
 # Features with options: one choice among several, or none
 # ---------------------------------------------------------------------------
 

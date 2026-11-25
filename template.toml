@@ -58,17 +58,19 @@ next_steps = [
 "<COPYRIGHT YEAR>" = "copyright_year"
 "<COMPANY>" = "company"
 
-# The GitHub repository's name, for links; it may be spelled unlike the
-# package. `new` offers the name of the repository the project was cloned
-# from, else the project folder's name. Each literal holds the whole link
-# part, since the bare name is also the project's snake spelling.
+# The GitHub repository's owner and name, for links. The owner may be an
+# organization rather than the github_user; the name may be spelled unlike the
+# package. `new` offers the owner and name of the repository the project was
+# cloned from, else the github_user and the project folder's name. Each
+# literal holds the whole link part, since the bare name is also the project's
+# snake spelling.
 [tokens."DrollRobot/python_repo_template"]
-key = "repo"
-format = "{github_user}/{}"
+key = "repo_owner"
+format = "{}/{repo}"
 
 [tokens."DrollRobot.github.io/python_repo_template"]
-key = "repo"
-format = "{github_user}.github.io/{}"
+key = "repo_owner"
+format = "{}.github.io/{repo}"
 
 [tokens."cd python_repo_template"]
 key = "repo"
