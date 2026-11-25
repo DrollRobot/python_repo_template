@@ -45,6 +45,7 @@ next_steps = [
   "uv run detect-secrets audit .secrets.baseline   # mark each finding real or false",
   "git grep -n FIXME                               # placeholders left for you",
   "git commit",
+  "git switch -c develop                           # work lands here; main takes releases",
 ]
 
 [tokens]

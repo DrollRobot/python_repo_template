@@ -24,6 +24,7 @@ git clone https://github.com/DrollRobot/python_repo_template.git
 cd python_repo_template
 uv sync --all-groups --all-extras
 uv run pre-commit install
+uv run pre-commit install --hook-type pre-push
 ```
 
 ## Running checks
@@ -64,7 +65,7 @@ All functions must be fully annotated. The package ships a `py.typed` marker,
 so downstream consumers depend on its type information.
 
 ## Pull requests
-1. Branch from `main` and open a PR against `main`.
+1. Branch from `develop` and open a PR against `develop`.
 2. Run the checks and tests in [AGENTS.TESTING.md](AGENTS.TESTING.md) and ensure
    they pass clean.
 3. Update `CHANGELOG.md` under `## [Unreleased]`.

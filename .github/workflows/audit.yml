@@ -5,21 +5,14 @@
 # This audit.yml is part of a starter repo scaffold.
 #
 # Purpose: Runs the security gates on every push to any branch and on every
-# pull request to main.
+# pull request.
 #
 #   audit       -- `uv audit` checks all locked dependencies against the OSV
 #                  vulnerability database.
 #   secret-scan -- detect-secrets scans every tracked file, and enforces that
 #                  every .secrets.baseline entry is an audited false positive.
 #
-# GitHub setup (one-time, to make these gates actually block merges):
-#   1. Push this file so the workflow runs at least once.
-#   2. Settings -> Branches -> branch protection rule for main.
-#   3. Under "Require status checks to pass before merging", add both the
-#      "audit" and "secret-scan" statuses.
-#
-# Without branch protection these jobs report pass/fail but do not prevent
-# merging. To suppress a dependency false positive, add a pyproject.toml
+# To suppress a dependency false positive, add a pyproject.toml
 # [tool.uv.audit] ignore entry with a justification comment.
 # =============================================================================
 # </template-only>
@@ -33,7 +26,6 @@ on:
   push:
     branches: ['**']
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read

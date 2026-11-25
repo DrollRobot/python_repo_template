@@ -71,6 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The live test of `scripts/wait_for_ci.py` passes on a commit with no
   workflow runs.
 - `CONTRIBUTING.md` gives the project's clone URL.
+- `CONTRIBUTING.md` sends pull requests to `develop`, and its setup installs
+  the pre-push hook.
+- CI, the security audit and the image build run on every pull request.
+- `new`'s next steps create the `develop` branch, which Dependabot targets.
 
 ### Security
 

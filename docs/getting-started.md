@@ -60,9 +60,11 @@ cd ../my-widget
 uv run detect-secrets audit .secrets.baseline    # mark each finding real or false
 git grep -n FIXME                                # placeholders left for you to fill in
 git commit
+git switch -c develop                            # work lands here; main takes releases
 ```
 
 The pre-commit hooks refuse the commit until every baseline entry is audited.
+Pull requests and Dependabot target `develop`; a release merges it into `main`.
 
 Then write some code. To bring in the template's later changes, see
 [Staying in sync](staying-in-sync.md).
