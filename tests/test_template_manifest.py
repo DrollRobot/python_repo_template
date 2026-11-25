@@ -233,6 +233,26 @@ def test_real_template_links_use_the_repo_name(real_template: Path) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("choice", ["all-on", "all-off"])
+def test_real_template_agent_docs_match_the_features(real_template: Path, choice: str) -> None:
+    # The agent rules name a feature's files only in a project that has the feature.
+    project = real_template.parent / f"agent-docs-{choice}"
+    code, _out, err = run(
+        "--template", real_template, "new", project, NO_BOOTSTRAP, "-y", *PROJECT_VALUES,
+        *_features(choice),
+    )  # fmt: skip
+    assert code == 0, err
+    agents = (project / "AGENTS.md").read_text()
+    testing = (project / "AGENTS.TESTING.md").read_text()
+    on = choice == "all-on"
+    assert ("src/my_widget/config/schema.py" in agents) is on
+    assert ("src/my_widget/config/secrets.py" in agents) is on
+    assert "never in plain text on disk" in agents
+    assert ("mark_remote_disposable.py" in testing) is on
+    assert ("no remote check" in testing) is not on
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     ("license_answer", "license_keys"),
     [

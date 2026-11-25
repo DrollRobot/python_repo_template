@@ -19,11 +19,14 @@ conventions, required checks, and how to run tests.
 
 ## General rules
 <!-- <template-only feature="config_system"> -->
-- Environment values are are stored in the config system. Package config schema
-  is defined in src/name/config/schema.py.
+- Environment values are stored in the config system. Package config schema
+  is defined in src/python_repo_template/config/schema.py.
 <!-- </template-only> -->
-- Secrets are stored only in keyvault or keyring. Never in source, never in
-  plain-text on disk.
+- Secrets never go in source, and never in plain text on disk.
+<!-- <template-only feature="secret_storage"> -->
+- Secrets are stored only through the config system's secret backends
+  (src/python_repo_template/config/secrets.py).
+<!-- </template-only> -->
 
 <!-- <template-only> -->
 ## Template maintenance

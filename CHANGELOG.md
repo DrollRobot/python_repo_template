@@ -75,6 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the pre-push hook.
 - CI, the security audit and the image build run on every pull request.
 - `new`'s next steps create the `develop` branch, which Dependabot targets.
+- The agent rules in `AGENTS.md` and `AGENTS.TESTING.md` cover only the
+  features a project has, and name its real paths.
 
 ### Security
 

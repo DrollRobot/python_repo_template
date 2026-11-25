@@ -57,7 +57,7 @@ are two kinds:
 |---|---|---|
 | Changes | This computer | Another system (cloud resource, database, API tenant, ...) |
 | Command | `uv run pytest --run-destructive-local` | `uv run pytest --run-destructive-remote` |
-| Safety check (tests fail unless it passes) | `DISPOSABLE_ENVIRONMENT` is `1` | `tests/verify_remote_disposable.py` finds the remote marker |
+| Safety check (tests fail unless it passes) | `DISPOSABLE_ENVIRONMENT` is `1` | The remote check (see Remote) |
 
 ### Local
 The user sets `DISPOSABLE_ENVIRONMENT` once per computer:
@@ -82,6 +82,7 @@ uv run pytest --run-destructive-local
 ```
 
 ### Remote
+<!-- <template-only feature="remote_disposable_scripts"> -->
 A marker on the remote system determines if it's safe to change.
 `scripts/mark_remote_disposable.py` creates the marker (only humans may mark).
 `tests/verify_remote_disposable.py` checks for the marker on every test run.
@@ -93,3 +94,8 @@ If the user has approved running destructive tests in the current session, run f
 ```
 uv run pytest --run-destructive-remote
 ```
+<!-- </template-only> -->
+<!-- <template-only feature="!remote_disposable_scripts"> -->
+This project has no remote check, so every `destructive_remote` test fails.
+Don't write them.
+<!-- </template-only> -->
