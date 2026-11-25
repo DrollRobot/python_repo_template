@@ -77,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `new`'s next steps create the `develop` branch, which Dependabot targets.
 - The agent rules in `AGENTS.md` and `AGENTS.TESTING.md` cover only the
   features a project has, and name its real paths.
+- `mkdocs`: the docs home page installs from the project's repo, not PyPI.
 
 ### Security
 

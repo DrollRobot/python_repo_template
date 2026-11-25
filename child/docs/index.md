@@ -4,7 +4,7 @@
 TEMPLATE SETUP NOTES -- template-only: scripts/template_sync.py never ships it
 =============================================================================
 This docs/index.md is part of a starter repo scaffold.
-It becomes the homepage of your MkDocs site (and the PyPI long description
+It becomes the homepage of your MkDocs site.
 - Fill in the overview, installation, and quick-start sections.
 =============================================================================
 -->
@@ -19,16 +19,10 @@ It becomes the homepage of your MkDocs site (and the PyPI long description
 ```
 # FIXME: add installation instructions here
 
-# pip install from PyPI
-pip install python-repo-template
-
 # pip install from repo
 git clone https://github.com/DrollRobot/python_repo_template.git
 cd python_repo_template
 pip install .
-
-# uv tool install from PyPI
-uv tool install python-repo-template
 
 # uv tool install from repo
 uv tool install git+https://github.com/DrollRobot/python_repo_template.git
