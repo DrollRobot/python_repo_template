@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the repo's name (`container-job-repository`), removes only resources
   with this repo's tag, and stops when a name in the file belongs to another
   repo's resource.
+- Dependabot assigns its pull requests to your GitHub user, so you are
+  notified of each one.
 
 ### Changed
 

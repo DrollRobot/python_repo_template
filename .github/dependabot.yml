@@ -18,6 +18,8 @@
 #   - Change interval to "monthly" if weekly PRs are too noisy.
 #   - Adjust open-pull-requests-limit if you want more or fewer open at once.
 #   - target-branch is develop, where work lands; change it if yours differs.
+#   - assignees is your GitHub user: Dependabot assigns its PRs to you, so
+#     you get notified.
 # =============================================================================
 # </template-only>
 
@@ -40,6 +42,7 @@ updates:
   - package-ecosystem: "uv"
     directory: "/"
     target-branch: "develop"
+    assignees: ["DrollRobot"]
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -55,6 +58,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "develop"
+    assignees: ["DrollRobot"]
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
