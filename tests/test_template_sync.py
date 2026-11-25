@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -773,7 +774,7 @@ def test_unknown_key(fx: Fixture) -> None:
 @pytest.mark.parametrize(
     ("value", "message"),
     [
-        ("4", "manifest_format = 4, but this tool reads formats up to 3"),
+        ("5", "manifest_format = 5, but this tool reads formats up to 4"),
         ("0", "positive integer"),
         ("true", "positive integer"),
         ('"2"', "positive integer"),
@@ -786,13 +787,13 @@ def test_bad_format(fx: Fixture, value: str, message: str) -> None:
 
 @pytest.mark.integration
 def test_newer_format_is_refused_before_its_keys(fx: Fixture) -> None:
-    # A format-4 manifest with a key this tool has never heard of: the number is what's reported.
+    # A format-5 manifest with a key this tool has never heard of: the number is what's reported.
     fx.set_manifest(
-        MANIFEST.replace("manifest_format = 2", "manifest_format = 4") + "\n[future]\nx = 1\n"
+        MANIFEST.replace("manifest_format = 2", "manifest_format = 5") + "\n[future]\nx = 1\n"
     )
     code, _out, err = fx.validate()
     assert code == 2, err
-    assert "reads formats up to 3" in err
+    assert "reads formats up to 4" in err
     assert "unknown key" not in err
 
 
@@ -1752,6 +1753,155 @@ def test_update_across_a_version_bump_keeps_the_pinned_version(fxv: Fixture) -> 
     assert code == 0, err
     assert fxv.read("ci.yml") == 'name: ci\nmatrix:\n  python: ["3.12"]\nrun: test -x\n'
     assert fxv.read(".python-version") == "3.12\n"
+
+
+# ---------------------------------------------------------------------------
+# Formats that name other keys: repo links, spelled apart from the project
+# ---------------------------------------------------------------------------
+
+# The format-3 template plus a repo name, which links use. Its literals hold the
+# whole link part: the bare name is also the project's snake spelling.
+MANIFEST_REPO = MANIFEST_V3.replace("manifest_format = 3", "manifest_format = 4").replace(
+    '"<HOLDER>" = "holder"\n',
+    '"<HOLDER>" = "holder"\n'
+    '"Octocat/demo_template" = { key = "repo", format = "{github_user}/{}" }\n'
+    '"cd demo_template" = { key = "repo", format = "cd {}" }\n',
+)
+FILES_REPO = {
+    **FILES_V3,
+    "README.md": "# demo-template\n\ngit clone https://github.com/Octocat/demo_template\n"
+    "cd demo_template\n",
+}
+
+
+@pytest.fixture
+def fxr(tmp_path: Path) -> Fixture:
+    return Fixture(tmp_path, MANIFEST_REPO, FILES_REPO)
+
+
+@pytest.mark.unit
+def test_token_render_and_unformat_with_refs() -> None:
+    token = ts.Token("repo", format="{github_user}/{}", refs=("github_user",))
+    assert token.render("my-widget", {"github_user": "jane"}) == "jane/my-widget"
+    assert token.unformat("Octocat/demo", {"github_user": "Octocat"}) == "demo"
+    assert token.unformat("Octocat/demo", {"github_user": "jane"}) is None
+    assert token.unformat("Octocat/demo") is None
+
+
+@pytest.mark.unit
+def test_repo_tokens_replace_whole_links() -> None:
+    manifest = ts.parse_manifest(MANIFEST_REPO, Path("."), where="t")
+    assert manifest.placeholder_values()["repo"] == "demo_template"
+    values = {"project": "My Widget", "github_user": "jane", "holder": "J", "repo": "Widget"}
+    replacements = manifest.replacements(values)
+    text = "github.com/Octocat/demo_template\ncd demo_template\nimport demo_template\n"
+    assert ts.substitute(text, replacements) == (
+        "github.com/jane/Widget\ncd Widget\nimport my_widget\n"
+    )
+
+
+@pytest.mark.unit
+def test_keys_in_counts_the_keys_a_format_names() -> None:
+    text = (
+        'manifest_format = 4\n[tokens]\n"<USER>" = "github_user"\n'
+        '"<USER>/<REPO>" = { key = "repo", format = "{github_user}/{}" }\n'
+        '"<REPO>" = "repo"\n'
+    )
+    manifest = ts.parse_manifest(text, Path("."), where="t")
+    assert manifest.keys_in(["see <USER>/<REPO>"]) == {"repo", "github_user"}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("tokens", "fmt", "message"),
+    [
+        ('"a/x" = { key = "r", format = "{u}/{}" }\n"a" = "u"', 3, "needs manifest_format = 4"),
+        ('"a/x" = { key = "r", format = "{nope}/{}" }', 4, "format names {nope}"),
+        ('"x/x" = { key = "r", format = "{r}/{}" }', 4, "format names {r}"),
+        (
+            '"a" = "u"\n"a/x" = { key = "r", format = "{u}/{}" }\n'
+            '"x-a/x" = { key = "s", format = "{r}-{}" }',
+            4,
+            "format names {r}",
+        ),
+    ],
+)
+def test_parse_manifest_rejects_bad_format_refs(tokens: str, fmt: int, message: str) -> None:
+    with pytest.raises(ts.ConfigError, match=re.escape(message)):
+        ts.parse_manifest(f"manifest_format = {fmt}\n[tokens]\n{tokens}\n", Path("."), where="t")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("origin", "name"),
+    [
+        ("https://github.com/jane/Widget.Repo.git", "Widget.Repo"),
+        ("git@github.com:jane/widget-repo.git", "widget-repo"),
+        ("https://github.com/jane/widget_repo/", "widget_repo"),
+        (None, "widget"),
+    ],
+)
+def test_repo_name_reads_the_origin_remote(tmp_path: Path, origin: str | None, name: str) -> None:
+    target = tmp_path / "widget"
+    assert ts.repo_name(target) == "widget"  # not created yet
+    target.mkdir()
+    sh(target, "init", "-q")
+    if origin:
+        sh(target, "remote", "add", "origin", origin)
+    assert ts.repo_name(target) == name
+
+
+@pytest.mark.integration
+def test_repo_name_ignores_a_repository_the_target_sits_in(tmp_path: Path) -> None:
+    sh(tmp_path, "init", "-q")
+    sh(tmp_path, "remote", "add", "origin", "https://github.com/jane/outer.git")
+    (tmp_path / "widget").mkdir()
+    assert ts.repo_name(tmp_path / "widget") == "widget"
+
+
+@pytest.mark.integration
+def test_new_fills_repo_links(fxr: Fixture) -> None:
+    code, _out, err = run(
+        "--template", fxr.template, "new", fxr.child, "-y", "--set", "project=My Widget",
+        "--set", "github_user=jane", "--set", "repo=widget-repo",
+    )  # fmt: skip
+    assert code == 0, err
+    assert fxr.read("README.md") == (
+        "# my-widget\n\ngit clone https://github.com/jane/widget-repo\ncd widget-repo\n"
+    )
+    assert fxr.exists("pkg/my_widget/__init__.py")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("origin", [None, "https://github.com/jane/Widget.Repo.git"])
+def test_new_repo_defaults_to_the_cloned_repository(fxr: Fixture, origin: str | None) -> None:
+    if origin:
+        # An empty clone of a new GitHub repository.
+        fxr.child.mkdir()
+        sh(fxr.child, "init", "-q")
+        sh(fxr.child, "remote", "add", "origin", origin)
+    code, _out, err = run(
+        "--template", fxr.template, "new", fxr.child, "-y", "--set", "github_user=jane"
+    )
+    assert code == 0, err
+    repo = "Widget.Repo" if origin else "widget"
+    assert tomllib.loads(fxr.read(".template.toml"))["values"]["repo"] == repo
+    assert f"https://github.com/jane/{repo}\n" in fxr.read("README.md")
+
+
+@pytest.mark.integration
+def test_update_names_a_value_the_project_lacks(fx3: Fixture) -> None:
+    code, _out, err = run(
+        "--template", fx3.template, "new", fx3.child, "-y", "--set", "github_user=jane"
+    )
+    assert code == 0, err
+    fx3.child_commit()
+    fx3.set_manifest(MANIFEST_REPO)
+    fx3.edit_template("README.md", FILES_REPO["README.md"])
+    code, _out, err = fx3.update()
+    assert code == 2
+    assert "[values] missing repo (every template token needs a value)" in err
+    assert 'add to [values]:\n  repo = "..."' in err
 
 
 # ---------------------------------------------------------------------------

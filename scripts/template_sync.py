@@ -40,7 +40,8 @@ into a child: ``<template-only>`` blocks are stripped (always; or, when tagged
 any listed term holds), and each ``[tokens]`` literal is replaced by the
 child's value, in contents and paths. A token may derive its replacement from
 the value (``transform = "snake"``, ``"kebab"`` or ``"upper"``), so one value
-feeds several spellings; may place it in surrounding text (``format``); may map
+feeds several spellings; may place it in surrounding text (``format``), which
+may hold other keys' values too (``"{github_user}/{}"``); may map
 named values to fixed text (``aliases``); and may be ``required``, so ``new``
 never falls back to the template's own literal. A marker is a line holding
 nothing but the tag and the file's comment syntax, e.g. ``# <template-only>``
@@ -72,7 +73,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -95,7 +96,8 @@ CHILD_CONFIG_PATHS = (CHILD_CONFIG_NAME, f"{LOCAL_DIR}/{CHILD_CONFIG_NAME}")
 #   3  [tokens] tables (transform, required, format, aliases); [features.x] conflicts
 #      and options; any-of markers, <template-only feature="a|b">; [new] bootstrap
 #      and next_steps
-MANIFEST_FORMAT = 3
+#   4  token formats that name other value keys, format = "{github_user}/{}"
+MANIFEST_FORMAT = 4
 STRATEGIES = ("managed", "merge", "seed")
 RULE_KINDS = (*STRATEGIES, "exclude")
 CHILD_STRATEGIES = (*STRATEGIES, "ignore")
@@ -105,6 +107,10 @@ EXIT_OK, EXIT_DRIFT, EXIT_CONFIG = 0, 1, 2
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+# A token format's reference to another value key: {github_user}.
+_FORMAT_REF_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+# The last path segment of a git remote URL, less any .git: the repository's name.
+_REPO_NAME_RE = re.compile(r"([^/:]+?)(?:\.git)?/*$")
 # Leftover conflict markers from an earlier update. Only the labelled forms:
 # a bare "=======" is a legitimate setext heading in Markdown.
 _CONFLICT_RE = re.compile(rb"^(?:<{7}|>{7}) ", re.MULTILINE)
@@ -250,6 +256,18 @@ def origin_url(root: Path) -> str:
     """Return the URL of ``root``'s ``origin`` remote, or ``""`` if it has none."""
     proc = git(root, "remote", "get-url", "origin", check=False)
     return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def repo_name(target: Path) -> str:
+    """Return the name of the repository ``target`` was cloned from, else ``target``'s name.
+
+    Only a repository whose root is ``target`` counts, never one it sits inside.
+    Cloning names the folder after the repository, so the fallback is usually
+    right too.
+    """
+    url = origin_url(target) if (target / ".git").is_dir() else ""
+    match = _REPO_NAME_RE.search(url)
+    return match.group(1) if match else target.name
 
 
 def gitlink_sha(root: Path, treeish: str, path: str) -> str | None:
@@ -580,6 +598,8 @@ class Token:
         required: Whether ``new`` must be given a value (no fallback to the literal).
         format: Text around the value, ``{}`` marking where it goes (``"=={}.*"``).
         aliases: Named values -> the replacement text they stand for, used as-is.
+        refs: Other value keys :attr:`format` names, ``{key}`` marking where each
+            one's value goes, as given (format 4).
     """
 
     key: str
@@ -587,12 +607,23 @@ class Token:
     required: bool = False
     format: str | None = None
     aliases: dict[str, str] = field(default_factory=dict)
+    refs: tuple[str, ...] = ()
 
-    def render(self, value: str) -> str:
+    def _around(self, form: str, values: Mapping[str, str]) -> tuple[str, str]:
+        """Return the text of ``form`` before and after its ``{}``, each ``{ref}`` filled in."""
+        before, _, after = form.partition("{}")
+
+        def fill(text: str) -> str:
+            return _FORMAT_REF_RE.sub(lambda m: values[m[1]] if m[1] in self.refs else m[0], text)
+
+        return fill(before), fill(after)
+
+    def render(self, value: str, values: Mapping[str, str] | None = None) -> str:
         """Return what replaces this token's literal for ``value``.
 
         Args:
             value: The child's value for :attr:`key`.
+            values: The child's values, for the keys :attr:`refs` names.
 
         Returns:
             The alias text if ``value`` names an alias, else the value transformed
@@ -600,17 +631,32 @@ class Token:
 
         Raises:
             ValueError: If the transformed value is not a valid name of its kind.
+            KeyError: If ``values`` lacks a key :attr:`refs` names.
         """
         if value in self.aliases:
             return self.aliases[value]
         derived = transform_value(value, self.transform)
-        return self.format.replace("{}", derived) if self.format else derived
+        if self.format is None:
+            return derived
+        prefix, suffix = self._around(self.format, values or {})
+        return prefix + derived + suffix
 
-    def unformat(self, literal: str) -> str | None:
-        """Return the value whose rendering is ``literal``, or ``None`` if it can't be one."""
+    def unformat(self, literal: str, values: Mapping[str, str] | None = None) -> str | None:
+        """Return the value whose rendering is ``literal``, or ``None`` if it can't be one.
+
+        Args:
+            literal: A rendering of this token.
+            values: Values for the keys :attr:`refs` names; with one missing, ``None``.
+
+        Returns:
+            The value, or ``None``.
+        """
         if self.format is None:
             return literal
-        prefix, suffix = self.format.split("{}")
+        known = values or {}
+        if any(ref not in known for ref in self.refs):
+            return None
+        prefix, suffix = self._around(self.format, known)
         if len(literal) < len(prefix) + len(suffix):
             return None
         if not (literal.startswith(prefix) and literal.endswith(suffix)):
@@ -731,12 +777,13 @@ class Manifest:
         """Map each value key to the template's own value: its first literal, unformatted.
 
         Substituting these changes nothing, as long as every literal of a key
-        is a rendering of that value (``validate`` checks this).
+        is a rendering of that value (``validate`` checks this). Tokens whose
+        format names other keys come last, so those keys have their values.
         """
         values: dict[str, str] = {}
-        for literal, token in self.tokens.items():
+        for literal, token in sorted(self.tokens.items(), key=lambda item: bool(item[1].refs)):
             if token.key not in values:
-                values[token.key] = token.unformat(literal) or literal
+                values[token.key] = token.unformat(literal, values) or literal
         return values
 
     def option_of(self, name: str) -> str | None:
@@ -744,8 +791,9 @@ class Manifest:
         return next((f.name for f in self.features.values() if name in f.options), None)
 
     def keys_in(self, texts: list[str]) -> set[str]:
-        """Return the value keys with a token literal in any of ``texts``."""
-        return {t.key for literal, t in self.tokens.items() if any(literal in s for s in texts)}
+        """Return the value keys with a token literal in any of ``texts``, and those it names."""
+        hits = [t for literal, t in self.tokens.items() if any(literal in s for s in texts)]
+        return {t.key for t in hits} | {ref for t in hits for ref in t.refs}
 
     def aliases_of(self, key: str) -> list[str]:
         """Return the alias names the tokens of ``key`` declare, sorted."""
@@ -766,7 +814,7 @@ class Manifest:
         result: dict[str, str] = {}
         for literal, token in self.tokens.items():
             try:
-                result[literal] = token.render(values[token.key])
+                result[literal] = token.render(values[token.key], values)
             except ValueError as e:
                 raise ConfigError(f"[values] {token.key}: {e}") from None
         return result
@@ -841,12 +889,32 @@ def _parse_token(literal: str, raw: object, fmt: int, where: str) -> Token:
         raise ConfigError(f"{tw}: required must be a boolean")
     if form is not None and (not isinstance(form, str) or form.count("{}") != 1):
         raise ConfigError(f'{tw}: format must be a string holding "{{}}" exactly once')
+    refs = tuple(dict.fromkeys(_FORMAT_REF_RE.findall(form or "")))
+    if refs and fmt < 4:
+        raise ConfigError(f"{tw}: a format naming another key ({{key}}) needs manifest_format = 4")
     valid_aliases = isinstance(aliases, dict) and all(
         isinstance(k, str) and k and isinstance(v, str) for k, v in aliases.items()
     )
     if not valid_aliases:
         raise ConfigError(f"{tw}: aliases must be a table of names to strings")
-    return Token(key, transform, required, form, dict(aliases))
+    return Token(key, transform, required, form, dict(aliases), refs)
+
+
+def _check_token_refs(tokens: dict[str, Token], where: str) -> None:
+    """Check that each key a token's format names is another token's, which names none itself.
+
+    Raises:
+        ConfigError: On the first reference that breaks the rule.
+    """
+    naming = {t.key for t in tokens.values() if t.refs}
+    keys = {t.key for t in tokens.values()}
+    for literal, token in tokens.items():
+        for ref in token.refs:
+            if ref == token.key or ref not in keys or ref in naming:
+                raise ConfigError(
+                    f"{where}: [tokens] {literal!r}: format names {{{ref}}}, which must be "
+                    "another token's key, and one whose own formats name no key"
+                )
 
 
 def parse_manifest(text: str, root: Path, *, where: str) -> Manifest:
@@ -890,6 +958,7 @@ def parse_manifest(text: str, root: Path, *, where: str) -> Manifest:
         literal: _parse_token(literal, value, fmt, w)
         for literal, value in _table(raw.get("tokens", {}), f"{w}: [tokens]").items()
     }
+    _check_token_refs(tokens, w)
 
     paths: dict[str, str] = {}
     for prefix, target in _table(raw.get("paths", {}), f"{w}: [paths]").items():
@@ -1278,8 +1347,10 @@ def load_child_config(root: Path, manifest: Manifest) -> ChildConfig:
     values = _table(raw.get("values", {}), f"{w}: [values]")
     missing = [k for k in manifest.value_keys if k not in values]
     if missing:
+        lines = "\n".join(f'  {k} = "..."' for k in missing)
         raise ConfigError(
-            f"{w}: [values] missing {', '.join(missing)} (every template token needs a value)"
+            f"{w}: [values] missing {', '.join(missing)} (every template token needs a value); "
+            f"add to [values]:\n{lines}"
         )
     _reject_unknown(values, manifest.value_keys, f"{w}: [values]")
     if not all(isinstance(v, str) for v in values.values()):
@@ -2205,9 +2276,11 @@ def resolve_values(
 ) -> dict[str, str]:
     """Settle token values for a new child: ``--set``, else a prompt, else the default.
 
-    The default for ``project`` is the target directory's name; for any other
-    key it is the template's own literal, so an unset placeholder stays a
-    visible placeholder rather than being guessed. Only the keys in ``ask``
+    The default for ``project`` is the target directory's name; for ``repo``,
+    the name of the repository the target was cloned from, else the target
+    directory's name (:func:`repo_name`); for any other key it is the
+    template's own literal, so an unset placeholder stays a visible
+    placeholder rather than being guessed. Only the keys in ``ask``
     are prompted for; the rest take their defaults. A ``required`` key has no
     default: it is prompted for until answered, whether in ``ask`` or not, and
     without a terminal (or with ``-y``) it must come from ``--set``.
@@ -2229,6 +2302,8 @@ def resolve_values(
     defaults = manifest.placeholder_values()
     if "project" in defaults:
         defaults["project"] = target.name
+    if "repo" in defaults:
+        defaults["repo"] = repo_name(target)
     required = manifest.required_keys
     interactive = not yes and sys.stdin.isatty()
     values = {}

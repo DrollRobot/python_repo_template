@@ -12,7 +12,7 @@
 # `<template-only feature="x">` blocks do the same for parts of a file. A
 # feature with `options` is one choice among them, or none: `new` asks once.
 
-manifest_format = 3
+manifest_format = 4
 
 exclude = [
   "template.toml",
@@ -56,6 +56,22 @@ next_steps = [
 "<COPYRIGHT HOLDER>" = "copyright_holder"
 "<COPYRIGHT YEAR>" = "copyright_year"
 "<COMPANY>" = "company"
+
+# The GitHub repository's name, for links; it may be spelled unlike the
+# package. `new` offers the name of the repository the project was cloned
+# from, else the project folder's name. Each literal holds the whole link
+# part, since the bare name is also the project's snake spelling.
+[tokens."DrollRobot/python_repo_template"]
+key = "repo"
+format = "{github_user}/{}"
+
+[tokens."DrollRobot.github.io/python_repo_template"]
+key = "repo"
+format = "{github_user}.github.io/{}"
+
+[tokens."cd python_repo_template"]
+key = "repo"
+format = "cd {}"
 
 # The Python version. A project pins one: `python = "3.13"` gives it
 # requires-python "==3.13.*" and CI on 3.13 alone; `new` offers the template's

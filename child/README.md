@@ -16,7 +16,7 @@
 <!-- FIXME: one paragraph -- what this package does, and who should use it -->
 <!-- <template-only feature="mkdocs"> -->
 
-Documentation: https://DrollRobot.github.io/python-repo-template/
+Documentation: https://DrollRobot.github.io/python_repo_template/
 <!-- </template-only> -->
 
 ## Installation

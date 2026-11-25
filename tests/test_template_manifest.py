@@ -209,6 +209,30 @@ def test_real_template_new_project_is_clean(real_template: Path, choice: str) ->
 
 
 @pytest.mark.integration
+def test_real_template_links_use_the_repo_name(real_template: Path) -> None:
+    # A repo spelled unlike the package: every link takes the repo's spelling.
+    project = real_template.parent / "repo-links"
+    code, _out, err = run(
+        "--template", real_template, "new", project, NO_BOOTSTRAP, "-y", *PROJECT_VALUES,
+        "--set", "project=my_widget", "--set", "repo=my-widget", *_features("all-on"),
+    )  # fmt: skip
+    assert code == 0, err
+    linked: dict[str, set[str]] = {}
+    for rel in sh(project, "ls-files").split():
+        text = (project / rel).read_text("utf-8", "replace")
+        for name in re.findall(r"(?:github\.com/octo-dev/|octo-dev\.github\.io/)([\w.-]+)", text):
+            linked.setdefault(rel, set()).add(name.removesuffix(".git"))
+    expected = {
+        "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "mkdocs.yml", "docs/index.md",
+        ".github/ISSUE_TEMPLATE/config.yml",
+    }  # fmt: skip
+    assert {rel for rel, names in linked.items() if names == {"my-widget"}} >= expected
+    assert {rel: names for rel, names in linked.items() if "my_widget" in names} == {}
+    for rel in ("CONTRIBUTING.md", "docs/index.md"):
+        assert "github.com/octo-dev/my-widget.git\ncd my-widget\n" in (project / rel).read_text()
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     ("license_answer", "license_keys"),
     [
@@ -241,7 +265,7 @@ def test_real_template_asks_only_for_the_values_its_license_uses(
     )  # fmt: skip
     assert code == 0, err
     asked = {c.args[0].split(" ", 1)[0] for c in ask.call_args_list}
-    assert asked == {"license", "python", *license_keys}
+    assert asked == {"license", "python", "repo", *license_keys}
     # No license: no LICENSE file, and no License section in the README.
     licensed = license_answer != "none"
     assert (project / "LICENSE").exists() is licensed

@@ -26,6 +26,8 @@ project's files use:
   `my-widget` or `my_widget` gives both the `my_widget` package and the
   `my-widget` distribution.
 - your GitHub user (no default).
+- the GitHub repository's name, for links (default: the name of the
+  repository the directory was cloned from, else the directory's name).
 - the Python version.
 - whatever the chosen license names: the copyright holder and year, and for
   the proprietary license, also the company.

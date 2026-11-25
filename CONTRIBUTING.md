@@ -20,8 +20,8 @@ Thank you for your interest in contributing!
 ## Setting up a development environment
 Requires Python 3.15 and [uv](https://docs.astral.sh/uv/).
 ```
-git clone https://github.com/FIXME/python-repo-template.git
-cd python-repo-template
+git clone https://github.com/DrollRobot/python_repo_template.git
+cd python_repo_template
 uv sync --all-groups --all-extras
 uv run pre-commit install
 ```

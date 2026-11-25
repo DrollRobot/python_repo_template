@@ -1,7 +1,7 @@
-# FIXME: set site_name, site_description, and repo_url for your project
+# FIXME: set site_description for your project
 site_name: python-repo-template
 site_description: FIXME
-repo_url: https://github.com/DrollRobot/python-repo-template
+repo_url: https://github.com/DrollRobot/python_repo_template
 
 theme:
   name: material

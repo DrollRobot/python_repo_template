@@ -11,7 +11,7 @@
 # ships only with the mkdocs feature.
 #
 # To customize:
-#   - The GitHub username and project name in the docs URL are tokens;
+#   - The GitHub username and repository name in the docs URL are tokens;
 #     scripts/template_sync.py fills them in.
 #   - Update the URL if you host docs somewhere other than GitHub Pages.
 # =============================================================================
@@ -23,6 +23,6 @@ blank_issues_enabled: false
 # <template-only feature="mkdocs">
 contact_links:
   - name: Documentation
-    url: https://DrollRobot.github.io/python-repo-template/
+    url: https://DrollRobot.github.io/python_repo_template/
     about: Check the docs before opening an issue.
 # </template-only>

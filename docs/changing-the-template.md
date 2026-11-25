@@ -24,6 +24,14 @@ line holding only the tag in the file's comment syntax (`# <template-only>` ...
 `# </template-only>`). Tagged blocks (`feature="mkdocs"`, `feature="!mkdocs"`,
 `feature="a|b"`) reach only the projects whose features match.
 
+## Linking to a project's repo
+
+A project's repository name may be spelled unlike its package. Write a link
+to the project's repo as `DrollRobot/python_repo_template`, or
+`DrollRobot.github.io/python_repo_template` for its docs site, and `cd` into a
+clone as `cd python_repo_template`: these take the repository name. Anywhere
+else, `python_repo_template` is the package name.
+
 ## Moving to a new Python release
 
 When Python ships a release (in October, when the oldest version also reaches
